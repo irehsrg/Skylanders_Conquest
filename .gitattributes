@@ -1,0 +1,23 @@
+# Auto detect text files and normalize line endings
+* text=auto
+
+# Source code
+*.cpp text
+*.h text
+*.cs text
+*.py text
+*.md text
+*.txt text
+
+# Unreal binary assets -> Git LFS
+*.uasset filter=lfs diff=lfs merge=lfs -text
+*.umap filter=lfs diff=lfs merge=lfs -text
+
+# Other binary assets -> Git LFS
+*.png filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
+*.tga filter=lfs diff=lfs merge=lfs -text
+*.fbx filter=lfs diff=lfs merge=lfs -text
+*.wav filter=lfs diff=lfs merge=lfs -text
+*.mp3 filter=lfs diff=lfs merge=lfs -text
+*.psd filter=lfs diff=lfs merge=lfs -text

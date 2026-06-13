@@ -1,0 +1,273 @@
+================================================================================
+           SKYLANDERS CONQUEST - MOBA HUD LAYOUT (SMITE-STYLE)
+================================================================================
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│                                                                              │
+│                         ┌─────────────────────┐                             │
+│                         │   TARGET INFO       │                             │
+│                         │  Enemy Name Here    │                             │
+│                         │ ███████████░░░░ 75% │  ← Target Health (Top Center)
+│                         │    750 / 1000       │                             │
+│                         └─────────────────────┘                             │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                               ┌──────────┐   │
+│                                                               │ 💰  1,250 │   │
+│            GAME AREA                                          │          │   │
+│                                                               │ 🏆    15 │   │
+│         (Third Person View)                                   │   3 / 5  │   │
+│                                                               │          │   │
+│                                                               └──────────┘   │
+│                                                               ↑ Resources     │
+│                                                               (Top Right)     │
+│                      +                                                       │
+│                   ← Crosshair                                                │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────┐     │
+│  │                     PLAYER STATS & ABILITIES                       │     │
+│  │  ┌────┐  ┌──────────────────────┐  ┌────┬────┬────┬────┐          │     │
+│  │  │ 📷 │  │ ████████████░░░  80% │  │ Q  │ E  │ R  │ F  │          │     │
+│  │  │    │  │  800 / 1000  HP      │  │[🔫]│[💥]│[⚡]│[💣]│← Abilities│     │
+│  │  │    │  │ ███████░░░░░░  50%   │  │ 3  │    │ 10 │    │← Cooldown│     │
+│  │  │LVL │  │  250 / 500   MP      │  └────┴────┴────┴────┘          │     │
+│  │  │ 12 │  └──────────────────────┘                                  │     │
+│  │  └────┘                                                             │     │
+│  │  Portrait   Health/Mana Bars            Ability Slots               │     │
+│  └────────────────────────────────────────────────────────────────────┘     │
+│                    ↑ Bottom Center HUD                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+                           DETAILED BREAKDOWN
+================================================================================
+
+1. TOP CENTER - TARGET HEALTH BAR
+   ┌───────────────────────┐
+   │   Enemy Spyro         │  ← Enemy name
+   │ ███████████░░░░░  75% │  ← Health bar (Red)
+   │     750 / 1000        │  ← Numeric health
+   └───────────────────────┘
+   - Only visible when targeting an enemy
+   - Shows enemy name, health bar, and HP numbers
+   - Position: X=0 (center), Y=150 from top
+
+2. TOP RIGHT - RESOURCES
+   ┌─────────────┐
+   │ 💰   1,250  │  ← Coins/Gold
+   │ 🏆      15  │  ← Player Score/Kills
+   │ 🗡️    3/5   │  ← Team Score
+   └─────────────┘
+   - Always visible
+   - Shows coins collected, player kills, team score
+   - Position: X=-200 from right edge, Y=20 from top
+
+3. CENTER - CROSSHAIR
+   Simple cross or dot for aiming
+   - Position: Screen center
+   - Small and unobtrusive
+   - Changes color when targeting enemy (white → red)
+
+4. BOTTOM CENTER - MAIN PLAYER HUD
+
+   A. Character Portrait (80x80 pixels)
+      ┌──────┐
+      │ 📷   │  ← Trigger Happy portrait
+      │      │
+      │ LVL  │  ← Current level
+      │  12  │
+      └──────┘
+
+   B. Health Bar (300x25 pixels)
+      ████████████░░░░  80%
+      Red fill (#FF0000), Dark red background (#440000)
+      Shows: Current HP / Max HP (e.g., "800 / 1000")
+
+   C. Mana Bar (300x20 pixels)
+      ███████░░░░░░░░░  50%
+      Blue fill (#0080FF), Dark blue background (#000044)
+      Shows: Current MP / Max MP (e.g., "250 / 500")
+
+   D. Ability Slots (4 slots, 60x60 pixels each, Ultimate is 70x70)
+
+      Slot 1 (Basic Attack/LMB):
+      ┌──────┐
+      │  🔫  │  ← Icon
+      │      │
+      │ LMB  │  ← Hotkey
+      └──────┘
+
+      Slot 2 (Ability 1/E):
+      ┌──────┐
+      │  💥  │
+      │      │
+      │  E   │
+      └──────┘
+
+      Slot 3 (Ability 2/R):
+      ┌──────┐
+      │  ⚡  │
+      │ ▓▓▓▓ │  ← Cooldown overlay (semi-transparent)
+      │  10  │  ← Seconds remaining
+      │  R   │
+      └──────┘
+
+      Slot 4 (Ultimate/F) - LARGER:
+      ┌────────┐
+      │   💣   │  ← Ultimate ability
+      │ ══════ │  ← Gold border
+      │        │
+      │   F    │
+      └────────┘
+
+================================================================================
+                            COLOR SCHEME
+================================================================================
+
+PRIMARY COLORS:
+- Background Panels: Dark Purple/Black (#1A0033, 80% opacity)
+- Borders: Bright Purple (#8B00FF)
+- Accent: Orange (#FF6600)
+
+STAT COLORS:
+- Health Bar Fill: Gradient Red → Yellow → Green based on %
+  100-75%: Green (#00FF00)
+  74-40%:  Yellow (#FFFF00)
+  39-0%:   Red (#FF0000)
+
+- Mana Bar Fill: Bright Blue (#00BFFF)
+- Level Badge: Gold (#FFD700)
+- Coins: Gold (#FFD700)
+- Text: White (#FFFFFF) or Light Gray (#CCCCCC)
+
+ABILITY SLOTS:
+- Background: Dark Gray (#2A2A2A)
+- Border (Ready): Bright Purple (#8B00FF)
+- Border (On Cooldown): Dark Gray (#555555)
+- Cooldown Overlay: Black (#000000, 70% opacity)
+- Ultimate Border: Gold (#FFD700)
+
+================================================================================
+                           SIZE REFERENCE
+================================================================================
+
+Assuming 1920x1080 screen resolution:
+
+BOTTOM HUD PANEL:
+- Width: 800 pixels
+- Height: 120 pixels
+- Position: Center-bottom, 20 pixels from bottom edge
+
+CHARACTER PORTRAIT:
+- Size: 80x80 pixels
+- Margin: 10 pixels padding
+
+HEALTH/MANA CONTAINER:
+- Width: 320 pixels
+- Height: 60 pixels
+
+ABILITY SLOTS:
+- Slots 1-3: 60x60 pixels each
+- Slot 4 (Ultimate): 70x70 pixels
+- Spacing: 10 pixels between slots
+
+TOP RIGHT RESOURCES:
+- Width: 180 pixels
+- Height: 100 pixels
+- Position: 20 pixels from top, 20 pixels from right
+
+TARGET HEALTH BAR:
+- Width: 400 pixels
+- Height: 80 pixels
+- Position: Centered horizontally, 150 pixels from top
+
+================================================================================
+                         ANIMATION NOTES
+================================================================================
+
+HEALTH/MANA BARS:
+- Smooth interpolation when values change (0.3 second lerp)
+- Flash red when taking damage
+- Pulse green when healing
+
+ABILITY COOLDOWNS:
+- Circular wipe animation for cooldown timer
+- Glow effect when ability becomes available
+- Pulse animation on ultimate ready
+
+COIN COUNTER:
+- Scale up briefly (+10%) when coins added
+- Gold particle burst effect
+
+LEVEL UP:
+- Screen flash
+- Level badge pulses and glows
+- Sound effect + visual burst
+
+================================================================================
+                      WIDGET HIERARCHY SUMMARY
+================================================================================
+
+WBP_MainHUD (Main HUD Widget)
+├── Canvas Panel
+│   ├── Bottom HUD Container (Horizontal Box)
+│   │   ├── Character Portrait Container (Vertical Box)
+│   │   │   ├── Portrait Image
+│   │   │   └── Level Badge Overlay
+│   │   ├── Stats Container (Vertical Box)
+│   │   │   ├── Health Bar (Progress Bar)
+│   │   │   ├── Health Text (Text Block)
+│   │   │   ├── Mana Bar (Progress Bar)
+│   │   │   └── Mana Text (Text Block)
+│   │   └── Abilities Container (Horizontal Box)
+│   │       ├── Ability Slot 1 (User Widget Component)
+│   │       ├── Ability Slot 2 (User Widget Component)
+│   │       ├── Ability Slot 3 (User Widget Component)
+│   │       └── Ability Slot 4 (User Widget Component)
+│   └── Top Right Resources (Vertical Box)
+│       ├── Coins Display (Horizontal Box)
+│       │   ├── Coin Icon
+│       │   └── Coin Text
+│       ├── Kills Display (Horizontal Box)
+│       │   ├── Kill Icon
+│       │   └── Kill Text
+│       └── Team Score Display (Horizontal Box)
+│           ├── Score Icon
+│           └── Score Text
+
+WBP_TargetHealthBar (Target Widget)
+└── Canvas Panel
+    └── Target Container (Vertical Box)
+        ├── Enemy Name Text
+        ├── Health Bar
+        └── Health Text
+
+WBP_AbilitySlot (Reusable Component Widget)
+└── Overlay
+    ├── Background Image
+    ├── Ability Icon Image
+    ├── Cooldown Overlay (Radial Fill)
+    ├── Cooldown Text
+    ├── Hotkey Text
+    └── Ready Indicator (Glow effect)
+
+================================================================================
+
+This layout follows SMITE's design philosophy:
+- Important information at screen bottom (easy to glance at)
+- Abilities clearly visible and accessible
+- Target info at top (context for what you're looking at)
+- Resources top-right (secondary info, less critical)
+- Minimal center obstruction (crosshair only)
+
+================================================================================
