@@ -233,8 +233,8 @@ void USkylandersShopWidget::BuildLayout()
 		for (const FSkylandersItemData& Item : AllItems)
 		{
 			// Outer border (card frame)
-			FLinearColor BorderColor;
-			FString CatLabel;
+			FLinearColor BorderColor(0.3f, 0.3f, 0.3f, 1.0f);
+			FString CatLabel = TEXT("ITEM");
 			switch (Item.Category)
 			{
 			case ESkylandersItemCategory::Offense:
@@ -271,7 +271,7 @@ void USkylandersShopWidget::BuildLayout()
 			CardInner->AddChild(CardVBox);
 
 			// Category tag (small, colored)
-			FLinearColor CatTextColor;
+			FLinearColor CatTextColor(0.8f, 0.8f, 0.8f);
 			switch (Item.Category)
 			{
 			case ESkylandersItemCategory::Offense:
