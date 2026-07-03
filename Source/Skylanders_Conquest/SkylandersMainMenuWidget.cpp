@@ -13,6 +13,7 @@
 #include "Fonts/SlateFontInfo.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "GameFramework/PlayerController.h"
 
 // ---- Shared style constants ----
 static const FLinearColor MenuGold(0.95f, 0.78f, 0.20f, 1.0f);
@@ -176,6 +177,14 @@ UVerticalBox* USkylandersMainMenuWidget::BuildSettingsScreen()
 // ---- Handlers ----
 void USkylandersMainMenuWidget::OnPlayClicked()
 {
+	// FInputModeUIOnly flags the game viewport as ignore-input, and that flag
+	// survives OpenLevel — restore game input before travel or the match loads
+	// with dead controls.
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->bShowMouseCursor = false;
+	}
 	UGameplayStatics::OpenLevel(this, GameLevelName);
 }
 
@@ -197,6 +206,11 @@ void USkylandersMainMenuWidget::OnBackClicked()
 void USkylandersMainMenuWidget::OnSelectTriggerHappy()
 {
 	// Only one character for now; selecting just starts the match.
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		PC->SetInputMode(FInputModeGameOnly());
+		PC->bShowMouseCursor = false;
+	}
 	UGameplayStatics::OpenLevel(this, GameLevelName);
 }
 

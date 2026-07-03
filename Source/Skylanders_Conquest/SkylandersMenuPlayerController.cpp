@@ -11,6 +11,7 @@ void ASkylandersMenuPlayerController::BeginPlay()
 	MenuWidget = CreateWidget<USkylandersMainMenuWidget>(this, USkylandersMainMenuWidget::StaticClass());
 	if (MenuWidget)
 	{
+		MenuWidget->SetIsFocusable(true); // Needed for SetWidgetToFocus below to take
 		MenuWidget->AddToViewport();
 	}
 
