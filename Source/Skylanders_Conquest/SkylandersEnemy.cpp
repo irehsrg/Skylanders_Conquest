@@ -293,28 +293,29 @@ void ASkylandersEnemy::TakeDamage_Custom(float DamageAmount, AActor* DamageCause
 		DmgNum->SetDamageNumber(DamageAmount, DmgColor, bBigHit);
 	}
 
-	// Getting hit forces aggro (even from outside aggro range)
-	if (CurrentState == EEnemyState::Idle || CurrentState == EEnemyState::Returning)
-	{
-		ASkylandersCharacter* Player = FindPlayer();
-		if (Player)
-		{
-			CurrentState = EEnemyState::Chasing;
-			UE_LOG(LogTemp, Log, TEXT("Enemy '%s' aggro'd by damage!"), *EnemyName);
-		}
-	}
-
-	// SMITE tower aggro rule: if the damage causer is a player, notify enemy towers
-	// so they switch aggro to the player temporarily
+	// Resolve the attacking player (DamageCauser might be a projectile)
+	ASkylandersCharacter* AttackingPlayer = nullptr;
 	if (DamageCauser)
 	{
-		// DamageCauser might be a projectile - get the actual player via GetInstigator
-		ASkylandersCharacter* AttackingPlayer = Cast<ASkylandersCharacter>(DamageCauser);
+		AttackingPlayer = Cast<ASkylandersCharacter>(DamageCauser);
 		if (!AttackingPlayer)
 		{
 			APawn* DmgInstigator = DamageCauser->GetInstigator();
 			AttackingPlayer = Cast<ASkylandersCharacter>(DmgInstigator);
 		}
+	}
+
+	// Getting hit by the PLAYER forces aggro (even from outside aggro range).
+	// Tower/titan/minion damage must not send the camp hunting the player.
+	if (AttackingPlayer && (CurrentState == EEnemyState::Idle || CurrentState == EEnemyState::Returning))
+	{
+		CurrentState = EEnemyState::Chasing;
+		UE_LOG(LogTemp, Log, TEXT("Enemy '%s' aggro'd by player damage!"), *EnemyName);
+	}
+
+	// SMITE tower aggro rule: if the damage causer is a player, notify enemy towers
+	// so they switch aggro to the player temporarily
+	{
 		if (AttackingPlayer)
 		{
 			// Notify enemy towers

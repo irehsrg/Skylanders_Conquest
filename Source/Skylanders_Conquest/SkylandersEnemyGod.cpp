@@ -861,31 +861,21 @@ void ASkylandersEnemyGod::PerformAttack(AActor* Target)
 	ASkylandersCharacter* PlayerTarget = Cast<ASkylandersCharacter>(Target);
 	if (PlayerTarget)
 	{
-		// Apply protections formula against player
+		// The player's TakeDamage_Custom applies the protections formula itself —
+		// pre-mitigating here would count protections twice. Compute the mitigated
+		// value only for lifesteal. (It also spawns the damage number.)
 		float TargetProtections = PlayerTarget->GetEffectiveProtections();
 		float DamageReduction = TargetProtections / (TargetProtections + 100.0f);
-		float FinalDamage = EffectiveDamage * (1.0f - DamageReduction);
+		float MitigatedDamage = EffectiveDamage * (1.0f - DamageReduction);
 
-		PlayerTarget->TakeDamage_Custom(FinalDamage);
+		PlayerTarget->TakeDamage_Custom(EffectiveDamage);
 
-		// Lifesteal from items
+		// Lifesteal from items (based on damage actually dealt)
 		if (ItemBonusStats.Lifesteal > 0.0f)
 		{
-			float HealAmount = FinalDamage * ItemBonusStats.Lifesteal;
+			float HealAmount = MitigatedDamage * ItemBonusStats.Lifesteal;
 			float EffMaxHP = MaxHealth + ItemBonusStats.MaxHealth;
 			CurrentHealth = FMath::Min(CurrentHealth + HealAmount, EffMaxHP);
-		}
-
-		// Spawn damage number
-		FVector NumberLoc = Target->GetActorLocation() + FVector(0.0f, 0.0f, 80.0f);
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		ASkylandersDamageNumber* DmgNum = GetWorld()->SpawnActor<ASkylandersDamageNumber>(
-			ASkylandersDamageNumber::StaticClass(), NumberLoc, FRotator::ZeroRotator, SpawnParams);
-		if (DmgNum)
-		{
-			FColor DmgColor = bCrit ? FColor(255, 200, 0) : FColor::Red;
-			DmgNum->SetDamageNumber(FinalDamage, DmgColor, bCrit);
 		}
 		return;
 	}
@@ -959,36 +949,26 @@ void ASkylandersEnemyGod::UseAbility()
 		}
 	}
 
-	// Apply protections formula
+	// The player's TakeDamage_Custom applies the protections formula itself —
+	// pre-mitigating here would count protections twice. Compute the mitigated
+	// value only for lifesteal. (It also spawns the damage number.)
 	float TargetProtections = Player->GetEffectiveProtections();
 	float DamageReduction = TargetProtections / (TargetProtections + 100.0f);
-	float FinalDamage = BurstDamage * (1.0f - DamageReduction);
+	float MitigatedDamage = BurstDamage * (1.0f - DamageReduction);
 
 	// Deal burst damage
-	Player->TakeDamage_Custom(FinalDamage);
+	Player->TakeDamage_Custom(BurstDamage);
 
-	// Lifesteal from ability damage
+	// Lifesteal from ability damage (based on damage actually dealt)
 	if (ItemBonusStats.Lifesteal > 0.0f)
 	{
-		float HealAmount = FinalDamage * ItemBonusStats.Lifesteal;
+		float HealAmount = MitigatedDamage * ItemBonusStats.Lifesteal;
 		float EffMaxHP = MaxHealth + ItemBonusStats.MaxHealth;
 		CurrentHealth = FMath::Min(CurrentHealth + HealAmount, EffMaxHP);
 	}
 
-	// Spawn damage number for the ability hit
-	FVector NumberLoc = Player->GetActorLocation() + FVector(0.0f, 0.0f, 100.0f);
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	ASkylandersDamageNumber* DmgNum = GetWorld()->SpawnActor<ASkylandersDamageNumber>(
-		ASkylandersDamageNumber::StaticClass(), NumberLoc, FRotator::ZeroRotator, SpawnParams);
-	if (DmgNum)
-	{
-		// Purple color, large text for ability damage
-		DmgNum->SetDamageNumber(FinalDamage, FColor(160, 32, 240), true);
-	}
-
 	UE_LOG(LogTemp, Log, TEXT("Enemy God '%s' used ability! Burst: %.0f, After protections: %.0f"),
-		*GodName, BurstDamage, FinalDamage);
+		*GodName, BurstDamage, MitigatedDamage);
 }
 
 // ========== DAMAGE AND DEATH ==========

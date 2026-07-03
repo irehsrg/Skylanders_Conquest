@@ -413,7 +413,7 @@ void ASkylandersTower::TakeDamage_Custom(float DamageAmount, AActor* DamageCause
 			ASkylandersDamageNumber::StaticClass(), NumberLoc, FRotator::ZeroRotator, SpawnParams);
 		if (DmgNum)
 		{
-			DmgNum->SetDamageNumber(0.0f, FColor::White, false);
+			DmgNum->SetTextLabel(TEXT("IMMUNE"), FColor::White);
 		}
 		return;
 	}
@@ -461,9 +461,15 @@ void ASkylandersTower::Die()
 		}
 	}
 
-	// Hide but don't destroy (rubble could go here later)
+	// Hide but don't destroy (rubble could go here later).
+	// Collision must go too, or the invisible tower keeps blocking movement
+	// and absorbing projectiles.
 	BaseMesh->SetVisibility(false);
 	TowerMesh->SetVisibility(false);
+	SetActorEnableCollision(false);
+	CurrentTarget = nullptr;
+	ForcedPlayerTarget = nullptr;
+	ForcedPlayerTimer = 0.0f;
 	if (HealthBarComp) HealthBarComp->SetVisibility(false);
 
 	// Kill feed notifications
@@ -506,6 +512,7 @@ void ASkylandersTower::RespawnPhoenix()
 	CurrentHealth = MaxHealth;
 	BaseMesh->SetVisibility(true);
 	TowerMesh->SetVisibility(true);
+	SetActorEnableCollision(true);
 	if (HealthBarComp) HealthBarComp->SetVisibility(true);
 	bHealthBarInitialized = false; // Re-cache health bar
 	UpdateHealthBar();

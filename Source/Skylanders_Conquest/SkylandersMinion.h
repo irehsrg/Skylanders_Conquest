@@ -82,9 +82,12 @@ public:
 
 	bool bDead;
 	float AttackTimer;
+
+	UPROPERTY()
 	AActor* CurrentTarget;
 
 	// Forced aggro target (e.g. player attacked this minion)
+	UPROPERTY()
 	AActor* ForcedAggroTarget;
 	float ForcedAggroTimer; // How long forced aggro lasts
 

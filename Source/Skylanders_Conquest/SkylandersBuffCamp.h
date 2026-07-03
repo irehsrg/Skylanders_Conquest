@@ -81,9 +81,11 @@ public:
 	UPROPERTY()
 	AActor* BuffedPlayer;
 
-	float OriginalBasePower;
-	float OriginalWalkSpeed; // For speed buff restore
-	float OriginalManaRegen; // For mana buff restore
+	// Buff removal subtracts the exact bonus that was applied — never restore an
+	// absolute snapshot, since the player may level up or gain other buffs meanwhile
+	float AppliedPowerBonus;
+	float AppliedSpeedBonus;
+	float AppliedManaRegenBonus;
 
 	// ========== AI ==========
 

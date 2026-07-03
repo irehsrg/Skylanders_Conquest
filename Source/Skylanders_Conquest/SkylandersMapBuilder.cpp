@@ -61,8 +61,9 @@ void ASkylandersMapBuilder::BuildMap()
 	// North jungle ground (darker)
 	SpawnGround(FVector(0, 2000, -50), FVector(100, 30, 1), FLinearColor(0.06f, 0.15f, 0.06f));
 
-	// South jungle ground
-	SpawnGround(FVector(0, -1800, -50), FVector(100, 20, 1), FLinearColor(0.06f, 0.15f, 0.06f));
+	// South jungle ground — reaches Y=-600 so it meets the lane ground edge
+	// (a narrower plane left a 200-unit bottomless strip on the way to Mid Camp)
+	SpawnGround(FVector(0, -1800, -50), FVector(100, 24, 1), FLinearColor(0.06f, 0.15f, 0.06f));
 
 	// No walls — open map for now, can add in editor later
 
@@ -70,43 +71,70 @@ void ASkylandersMapBuilder::BuildMap()
 	// PLAYER (BLUE) SIDE — negative X
 	// ========================================================================
 
+	// NOTE: structures spawn DEFERRED so Team/bIsPhoenix/etc. are set before
+	// BeginPlay runs — BeginPlay derives colors and per-type setup from them.
+
 	// Spawn Area
-	BlueSpawnArea = World->SpawnActor<ASkylandersSpawnArea>(
-		ASkylandersSpawnArea::StaticClass(), FVector(-5500, 0, 0), FRotator::ZeroRotator, SP);
+	{
+		FTransform T(FRotator::ZeroRotator, FVector(-5500, 0, 0));
+		BlueSpawnArea = World->SpawnActorDeferred<ASkylandersSpawnArea>(
+			ASkylandersSpawnArea::StaticClass(), T, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (BlueSpawnArea)
+		{
+			BlueSpawnArea->Team = ETowerTeam::Friendly;
+			BlueSpawnArea->FinishSpawning(T);
+		}
+	}
 
 	// Titan
-	BlueTitan = World->SpawnActor<ASkylandersTitan>(
-		ASkylandersTitan::StaticClass(), FVector(-4500, 0, 150), FRotator::ZeroRotator, SP);
-	if (BlueTitan)
 	{
-		BlueTitan->Team = ETowerTeam::Friendly;
-		BlueTitan->TitanName = TEXT("Blue Titan");
-		BlueTitan->AttackDamage = 120.0f;
+		FTransform T(FRotator::ZeroRotator, FVector(-4500, 0, 150));
+		BlueTitan = World->SpawnActorDeferred<ASkylandersTitan>(
+			ASkylandersTitan::StaticClass(), T, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (BlueTitan)
+		{
+			BlueTitan->Team = ETowerTeam::Friendly;
+			BlueTitan->TitanName = TEXT("Blue Titan");
+			BlueTitan->AttackDamage = 120.0f;
+			BlueTitan->FinishSpawning(T);
+		}
 	}
 
 	// Phoenix (inner structure, respawns)
-	BluePhoenix = World->SpawnActor<ASkylandersTower>(
-		ASkylandersTower::StaticClass(), FVector(-3000, 0, 15), FRotator::ZeroRotator, SP);
-	if (BluePhoenix)
 	{
-		BluePhoenix->Team = ETowerTeam::Friendly;
-		BluePhoenix->TowerName = TEXT("Blue Phoenix");
-		BluePhoenix->bIsPhoenix = true;
-		BluePhoenix->MaxHealth = 2500.0f;
-		BluePhoenix->CurrentHealth = 2500.0f;
-		BluePhoenix->AttackDamage = 100.0f;
-		BluePhoenix->AttackRange = 1000.0f;
-		BluePhoenix->PhoenixRespawnTime = 180.0f;
+		FTransform T(FRotator::ZeroRotator, FVector(-3000, 0, 15));
+		BluePhoenix = World->SpawnActorDeferred<ASkylandersTower>(
+			ASkylandersTower::StaticClass(), T, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (BluePhoenix)
+		{
+			BluePhoenix->Team = ETowerTeam::Friendly;
+			BluePhoenix->TowerName = TEXT("Blue Phoenix");
+			BluePhoenix->bIsPhoenix = true;
+			BluePhoenix->MaxHealth = 2500.0f;
+			BluePhoenix->CurrentHealth = 2500.0f;
+			BluePhoenix->AttackDamage = 100.0f;
+			BluePhoenix->AttackRange = 1000.0f;
+			BluePhoenix->PhoenixRespawnTime = 180.0f;
+			BluePhoenix->FinishSpawning(T);
+		}
 	}
 
 	// Tower (outer structure)
-	BlueTower = World->SpawnActor<ASkylandersTower>(
-		ASkylandersTower::StaticClass(), FVector(-1500, 0, 15), FRotator::ZeroRotator, SP);
-	if (BlueTower)
 	{
-		BlueTower->Team = ETowerTeam::Friendly;
-		BlueTower->TowerName = TEXT("Blue Tower");
-		BlueTower->AttackDamage = 50.0f;
+		FTransform T(FRotator::ZeroRotator, FVector(-1500, 0, 15));
+		BlueTower = World->SpawnActorDeferred<ASkylandersTower>(
+			ASkylandersTower::StaticClass(), T, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (BlueTower)
+		{
+			BlueTower->Team = ETowerTeam::Friendly;
+			BlueTower->TowerName = TEXT("Blue Tower");
+			BlueTower->AttackDamage = 50.0f;
+			BlueTower->FinishSpawning(T);
+		}
 	}
 
 	// Minion Spawner
@@ -123,42 +151,66 @@ void ASkylandersMapBuilder::BuildMap()
 	// ========================================================================
 
 	// Spawn Area
-	RedSpawnArea = World->SpawnActor<ASkylandersSpawnArea>(
-		ASkylandersSpawnArea::StaticClass(), FVector(5500, 0, 0), FRotator::ZeroRotator, SP);
+	{
+		FTransform T(FRotator::ZeroRotator, FVector(5500, 0, 0));
+		RedSpawnArea = World->SpawnActorDeferred<ASkylandersSpawnArea>(
+			ASkylandersSpawnArea::StaticClass(), T, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (RedSpawnArea)
+		{
+			RedSpawnArea->Team = ETowerTeam::Enemy;
+			RedSpawnArea->FinishSpawning(T);
+		}
+	}
 
 	// Titan
-	RedTitan = World->SpawnActor<ASkylandersTitan>(
-		ASkylandersTitan::StaticClass(), FVector(4500, 0, 150), FRotator::ZeroRotator, SP);
-	if (RedTitan)
 	{
-		RedTitan->Team = ETowerTeam::Enemy;
-		RedTitan->TitanName = TEXT("Red Titan");
-		RedTitan->AttackDamage = 120.0f;
+		FTransform T(FRotator::ZeroRotator, FVector(4500, 0, 150));
+		RedTitan = World->SpawnActorDeferred<ASkylandersTitan>(
+			ASkylandersTitan::StaticClass(), T, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (RedTitan)
+		{
+			RedTitan->Team = ETowerTeam::Enemy;
+			RedTitan->TitanName = TEXT("Red Titan");
+			RedTitan->AttackDamage = 120.0f;
+			RedTitan->FinishSpawning(T);
+		}
 	}
 
 	// Phoenix
-	RedPhoenix = World->SpawnActor<ASkylandersTower>(
-		ASkylandersTower::StaticClass(), FVector(3000, 0, 15), FRotator::ZeroRotator, SP);
-	if (RedPhoenix)
 	{
-		RedPhoenix->Team = ETowerTeam::Enemy;
-		RedPhoenix->TowerName = TEXT("Red Phoenix");
-		RedPhoenix->bIsPhoenix = true;
-		RedPhoenix->MaxHealth = 2500.0f;
-		RedPhoenix->CurrentHealth = 2500.0f;
-		RedPhoenix->AttackDamage = 100.0f;
-		RedPhoenix->AttackRange = 1000.0f;
-		RedPhoenix->PhoenixRespawnTime = 180.0f;
+		FTransform T(FRotator::ZeroRotator, FVector(3000, 0, 15));
+		RedPhoenix = World->SpawnActorDeferred<ASkylandersTower>(
+			ASkylandersTower::StaticClass(), T, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (RedPhoenix)
+		{
+			RedPhoenix->Team = ETowerTeam::Enemy;
+			RedPhoenix->TowerName = TEXT("Red Phoenix");
+			RedPhoenix->bIsPhoenix = true;
+			RedPhoenix->MaxHealth = 2500.0f;
+			RedPhoenix->CurrentHealth = 2500.0f;
+			RedPhoenix->AttackDamage = 100.0f;
+			RedPhoenix->AttackRange = 1000.0f;
+			RedPhoenix->PhoenixRespawnTime = 180.0f;
+			RedPhoenix->FinishSpawning(T);
+		}
 	}
 
 	// Tower
-	RedTower = World->SpawnActor<ASkylandersTower>(
-		ASkylandersTower::StaticClass(), FVector(1500, 0, 15), FRotator::ZeroRotator, SP);
-	if (RedTower)
 	{
-		RedTower->Team = ETowerTeam::Enemy;
-		RedTower->TowerName = TEXT("Red Tower");
-		RedTower->AttackDamage = 50.0f;
+		FTransform T(FRotator::ZeroRotator, FVector(1500, 0, 15));
+		RedTower = World->SpawnActorDeferred<ASkylandersTower>(
+			ASkylandersTower::StaticClass(), T, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (RedTower)
+		{
+			RedTower->Team = ETowerTeam::Enemy;
+			RedTower->TowerName = TEXT("Red Tower");
+			RedTower->AttackDamage = 50.0f;
+			RedTower->FinishSpawning(T);
+		}
 	}
 
 	// Minion Spawner
@@ -185,8 +237,12 @@ void ASkylandersMapBuilder::BuildMap()
 	// ========================================================================
 
 	// --- Bull Demon King (major objective, north center) ---
-	BullDemonKing = World->SpawnActor<ASkylandersBuffCamp>(
-		ASkylandersBuffCamp::StaticClass(), FVector(0, 2500, 75), FRotator::ZeroRotator, SP);
+	{
+		FTransform T(FRotator::ZeroRotator, FVector(0, 2500, 75));
+		BullDemonKing = World->SpawnActorDeferred<ASkylandersBuffCamp>(
+			ASkylandersBuffCamp::StaticClass(), T, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	}
 	if (BullDemonKing)
 	{
 		BullDemonKing->CampName = TEXT("Bull Demon King");
@@ -200,50 +256,71 @@ void ASkylandersMapBuilder::BuildMap()
 		BullDemonKing->BuffDuration = 90.0f;
 		BullDemonKing->XPReward = 200.0f;
 		BullDemonKing->CoinReward = 150;
+		BullDemonKing->FinishSpawning(FTransform(FRotator::ZeroRotator, FVector(0, 2500, 75)));
 	}
 
 	// --- Damage Camp (north of lane, slightly west) ---
-	DamageCamp = World->SpawnActor<ASkylandersBuffCamp>(
-		ASkylandersBuffCamp::StaticClass(), FVector(-600, 1300, 75), FRotator::ZeroRotator, SP);
-	if (DamageCamp)
 	{
-		DamageCamp->CampName = TEXT("Damage Buff");
-		DamageCamp->BuffType = EBuffType::Damage;
-		DamageCamp->BuffDamageMultiplier = 1.25f;
+		FTransform T(FRotator::ZeroRotator, FVector(-600, 1300, 75));
+		DamageCamp = World->SpawnActorDeferred<ASkylandersBuffCamp>(
+			ASkylandersBuffCamp::StaticClass(), T, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (DamageCamp)
+		{
+			DamageCamp->CampName = TEXT("Damage Buff");
+			DamageCamp->BuffType = EBuffType::Damage;
+			DamageCamp->BuffDamageMultiplier = 1.25f;
+			DamageCamp->FinishSpawning(T);
+		}
 	}
 
 	// --- Mid Camp (south of lane, XP/Gold only) ---
-	MidCamp = World->SpawnActor<ASkylandersBuffCamp>(
-		ASkylandersBuffCamp::StaticClass(), FVector(0, -1500, 75), FRotator::ZeroRotator, SP);
-	if (MidCamp)
 	{
-		MidCamp->CampName = TEXT("Mid Harpies");
-		MidCamp->BuffType = EBuffType::None;
-		MidCamp->MaxHealth = 300.0f;
-		MidCamp->CurrentHealth = 300.0f;
-		MidCamp->XPReward = 80.0f;
-		MidCamp->CoinReward = 40;
-		MidCamp->RespawnDelay = 60.0f;
+		FTransform T(FRotator::ZeroRotator, FVector(0, -1500, 75));
+		MidCamp = World->SpawnActorDeferred<ASkylandersBuffCamp>(
+			ASkylandersBuffCamp::StaticClass(), T, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (MidCamp)
+		{
+			MidCamp->CampName = TEXT("Mid Harpies");
+			MidCamp->BuffType = EBuffType::None;
+			MidCamp->MaxHealth = 300.0f;
+			MidCamp->CurrentHealth = 300.0f;
+			MidCamp->XPReward = 80.0f;
+			MidCamp->CoinReward = 40;
+			MidCamp->RespawnDelay = 60.0f;
+			MidCamp->FinishSpawning(T);
+		}
 	}
 
 	// --- Blue Buff (Blue side, north jungle) ---
-	BlueBlueBuff = World->SpawnActor<ASkylandersBuffCamp>(
-		ASkylandersBuffCamp::StaticClass(), FVector(-2500, 1500, 75), FRotator::ZeroRotator, SP);
-	if (BlueBlueBuff)
 	{
-		BlueBlueBuff->CampName = TEXT("Blue Buff");
-		BlueBlueBuff->BuffType = EBuffType::Mana;
-		BlueBlueBuff->BuffDuration = 90.0f;
+		FTransform T(FRotator::ZeroRotator, FVector(-2500, 1500, 75));
+		BlueBlueBuff = World->SpawnActorDeferred<ASkylandersBuffCamp>(
+			ASkylandersBuffCamp::StaticClass(), T, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (BlueBlueBuff)
+		{
+			BlueBlueBuff->CampName = TEXT("Blue Buff");
+			BlueBlueBuff->BuffType = EBuffType::Mana;
+			BlueBlueBuff->BuffDuration = 90.0f;
+			BlueBlueBuff->FinishSpawning(T);
+		}
 	}
 
 	// --- Blue Buff (Red side, north jungle) ---
-	RedBlueBuff = World->SpawnActor<ASkylandersBuffCamp>(
-		ASkylandersBuffCamp::StaticClass(), FVector(2500, 1500, 75), FRotator::ZeroRotator, SP);
-	if (RedBlueBuff)
 	{
-		RedBlueBuff->CampName = TEXT("Blue Buff");
-		RedBlueBuff->BuffType = EBuffType::Mana;
-		RedBlueBuff->BuffDuration = 90.0f;
+		FTransform T(FRotator::ZeroRotator, FVector(2500, 1500, 75));
+		RedBlueBuff = World->SpawnActorDeferred<ASkylandersBuffCamp>(
+			ASkylandersBuffCamp::StaticClass(), T, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (RedBlueBuff)
+		{
+			RedBlueBuff->CampName = TEXT("Blue Buff");
+			RedBlueBuff->BuffType = EBuffType::Mana;
+			RedBlueBuff->BuffDuration = 90.0f;
+			RedBlueBuff->FinishSpawning(T);
+		}
 	}
 
 	// ========================================================================

@@ -56,8 +56,9 @@ ASkylandersBuffCamp::ASkylandersBuffCamp()
 
 	// Buff tracking
 	BuffedPlayer = nullptr;
-	OriginalBasePower = 0.0f;
-	OriginalWalkSpeed = 0.0f;
+	AppliedPowerBonus = 0.0f;
+	AppliedSpeedBonus = 0.0f;
+	AppliedManaRegenBonus = 0.0f;
 
 	// AI
 	LeashRange = 800.0f;
@@ -85,30 +86,21 @@ void ASkylandersBuffCamp::BeginPlay()
 	// Save spawn location as home
 	HomeLocation = GetActorLocation();
 
-	// Configure appearance based on buff type
-	if (BuffType == EBuffType::Speed)
-	{
-		CampName = TEXT("Speed Buff");
-	}
-	else
-	{
-		CampName = TEXT("Damage Buff");
-	}
-
-	// Create dynamic material with color based on buff type
+	// Color based on buff type (CampName is set by the map builder / editor)
 	if (BodyMesh)
 	{
 		UMaterialInstanceDynamic* DynMat = BodyMesh->CreateAndSetMaterialInstanceDynamic(0);
 		if (DynMat)
 		{
-			if (BuffType == EBuffType::Speed)
+			FLinearColor CampColor;
+			switch (BuffType)
 			{
-				DynMat->SetVectorParameterValue(FName("Color"), FLinearColor(0.2f, 1.0f, 0.3f, 1.0f));
+			case EBuffType::Speed: CampColor = FLinearColor(0.2f, 1.0f, 0.3f, 1.0f); break; // Green
+			case EBuffType::Mana:  CampColor = FLinearColor(0.2f, 0.5f, 1.0f, 1.0f); break; // Blue
+			case EBuffType::None:  CampColor = FLinearColor(0.6f, 0.6f, 0.6f, 1.0f); break; // Gray (XP/gold only)
+			default:               CampColor = FLinearColor(1.0f, 0.6f, 0.0f, 1.0f); break; // Orange (Damage)
 			}
-			else
-			{
-				DynMat->SetVectorParameterValue(FName("Color"), FLinearColor(1.0f, 0.6f, 0.0f, 1.0f));
-			}
+			DynMat->SetVectorParameterValue(FName("Color"), CampColor);
 		}
 	}
 
@@ -177,6 +169,19 @@ void ASkylandersBuffCamp::UpdateAI(float DeltaTime)
 	{
 		ASkylandersCharacter* PlayerTarget = Cast<ASkylandersCharacter>(AggroTarget);
 		if (PlayerTarget && PlayerTarget->CurrentHealth <= 0.0f)
+		{
+			bHasValidTarget = false;
+			AggroTarget = nullptr;
+		}
+	}
+
+	// Drop aggro once the target escapes the leash radius (the camp itself never
+	// leaves the leash, so without this it would wait at the edge forever instead
+	// of returning home to heal)
+	if (bHasValidTarget)
+	{
+		float TargetDistFromHome = FVector::Dist2D(AggroTarget->GetActorLocation(), HomeLocation);
+		if (TargetDistFromHome > LeashRange)
 		{
 			bHasValidTarget = false;
 			AggroTarget = nullptr;
@@ -389,16 +394,17 @@ void ASkylandersBuffCamp::Die()
 		Player->AddCoins(CoinReward);
 		UE_LOG(LogTemp, Log, TEXT("Player rewarded: %.0f XP, %d coins"), XPReward, CoinReward);
 
-		// Apply buff based on type
+		// Apply buff based on type — record the applied bonus so removal can
+		// subtract exactly that amount (level-ups/other buffs stay intact)
 		if (BuffType == EBuffType::Speed)
 		{
-			// Speed buff - save original and increase by 30%
-			OriginalWalkSpeed = Player->BaseMaxWalkSpeed;
-			Player->BaseMaxWalkSpeed *= 1.30f;
+			// Speed buff - +30% of current base speed
+			AppliedSpeedBonus = Player->BaseMaxWalkSpeed * 0.30f;
+			Player->BaseMaxWalkSpeed += AppliedSpeedBonus;
 			Player->GetCharacterMovement()->MaxWalkSpeed = Player->BaseMaxWalkSpeed;
 
 			UE_LOG(LogTemp, Log, TEXT("Speed Buff applied! BaseMaxWalkSpeed: %.1f -> %.1f for %.0fs"),
-				OriginalWalkSpeed, Player->BaseMaxWalkSpeed, BuffDuration);
+				Player->BaseMaxWalkSpeed - AppliedSpeedBonus, Player->BaseMaxWalkSpeed, BuffDuration);
 
 			// Kill feed: buff acquired
 			if (GEngine)
@@ -410,11 +416,11 @@ void ASkylandersBuffCamp::Die()
 		else if (BuffType == EBuffType::Mana)
 		{
 			// Mana buff (blue buff) - double mana regen
-			OriginalManaRegen = Player->ManaRegenRate;
-			Player->ManaRegenRate *= 2.0f;
+			AppliedManaRegenBonus = Player->ManaRegenRate;
+			Player->ManaRegenRate += AppliedManaRegenBonus;
 
 			UE_LOG(LogTemp, Log, TEXT("Mana Buff applied! ManaRegen: %.1f -> %.1f for %.0fs"),
-				OriginalManaRegen, Player->ManaRegenRate, BuffDuration);
+				AppliedManaRegenBonus, Player->ManaRegenRate, BuffDuration);
 
 			// Kill feed: buff acquired
 			if (GEngine)
@@ -425,12 +431,12 @@ void ASkylandersBuffCamp::Die()
 		}
 		else if (BuffType == EBuffType::Damage)
 		{
-			// Damage buff - save original and multiply
-			OriginalBasePower = Player->BasePower;
-			Player->BasePower *= BuffDamageMultiplier;
+			// Damage buff - +X% of current base power
+			AppliedPowerBonus = Player->BasePower * (BuffDamageMultiplier - 1.0f);
+			Player->BasePower += AppliedPowerBonus;
 
 			UE_LOG(LogTemp, Log, TEXT("Damage Buff applied! BasePower: %.1f -> %.1f for %.0fs"),
-				OriginalBasePower, Player->BasePower, BuffDuration);
+				Player->BasePower - AppliedPowerBonus, Player->BasePower, BuffDuration);
 
 			// Kill feed: buff acquired
 			if (GEngine)
@@ -461,29 +467,34 @@ void ASkylandersBuffCamp::RemoveBuff()
 	{
 		if (BuffType == EBuffType::Speed)
 		{
-			Player->BaseMaxWalkSpeed = OriginalWalkSpeed;
-			Player->GetCharacterMovement()->MaxWalkSpeed = OriginalWalkSpeed;
-			UE_LOG(LogTemp, Log, TEXT("Speed Buff expired! BaseMaxWalkSpeed restored to %.1f"), OriginalWalkSpeed);
+			// Never drop below the item-adjusted base (RecalculateItemBonuses may
+			// have rewritten BaseMaxWalkSpeed while the buff was active)
+			Player->BaseMaxWalkSpeed = FMath::Max(
+				Player->BaseMaxWalkSpeed - AppliedSpeedBonus,
+				500.0f + Player->ItemBonusStats.MovementSpeed);
+			Player->GetCharacterMovement()->MaxWalkSpeed = Player->BaseMaxWalkSpeed;
+			UE_LOG(LogTemp, Log, TEXT("Speed Buff expired! BaseMaxWalkSpeed now %.1f"), Player->BaseMaxWalkSpeed);
 			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Red, TEXT("Speed Buff Expired!"));
 		}
 		else if (BuffType == EBuffType::Mana)
 		{
-			Player->ManaRegenRate = OriginalManaRegen;
-			UE_LOG(LogTemp, Log, TEXT("Mana Buff expired! ManaRegen restored to %.1f"), OriginalManaRegen);
+			Player->ManaRegenRate = FMath::Max(Player->ManaRegenRate - AppliedManaRegenBonus, 0.0f);
+			UE_LOG(LogTemp, Log, TEXT("Mana Buff expired! ManaRegen now %.1f"), Player->ManaRegenRate);
 			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Red, TEXT("Blue Buff Expired!"));
 		}
 		else if (BuffType == EBuffType::Damage)
 		{
-			Player->BasePower = OriginalBasePower;
-			UE_LOG(LogTemp, Log, TEXT("Damage Buff expired! BasePower restored to %.1f"), OriginalBasePower);
+			Player->BasePower = FMath::Max(Player->BasePower - AppliedPowerBonus, 0.0f);
+			UE_LOG(LogTemp, Log, TEXT("Damage Buff expired! BasePower now %.1f"), Player->BasePower);
 			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Red, TEXT("Damage Buff Expired!"));
 		}
 		// BuffType::None has no buff to remove
 	}
 
 	BuffedPlayer = nullptr;
-	OriginalBasePower = 0.0f;
-	OriginalWalkSpeed = 0.0f;
+	AppliedPowerBonus = 0.0f;
+	AppliedSpeedBonus = 0.0f;
+	AppliedManaRegenBonus = 0.0f;
 }
 
 void ASkylandersBuffCamp::RespawnCamp()

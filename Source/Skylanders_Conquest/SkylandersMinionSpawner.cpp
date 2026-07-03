@@ -76,8 +76,8 @@ void ASkylandersMinionSpawner::SpawnWave()
 	// Start staggered spawning
 	SpawnNextMinion();
 
-	float HpMult = 1.0f + WaveNumber * 0.08f;
-	float DmgMult = 1.0f + WaveNumber * 0.05f;
+	float HpMult = 1.0f + (WaveNumber - 1) * 0.08f;
+	float DmgMult = 1.0f + (WaveNumber - 1) * 0.05f;
 	UE_LOG(LogTemp, Log, TEXT("Wave %d scaling: HP x%.2f, DMG x%.2f"), WaveNumber, HpMult, DmgMult);
 
 	UE_LOG(LogTemp, Log, TEXT("Wave %d: Spawning %d %s minions (%d melee, %d ranged)"),
@@ -94,11 +94,12 @@ void ASkylandersMinionSpawner::SpawnNextMinion()
 	FVector SpawnLoc = SpawnQueue[SpawnQueueIndex].Value;
 	SpawnQueueIndex++;
 
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-	ASkylandersMinion* Minion = GetWorld()->SpawnActor<ASkylandersMinion>(
-		ASkylandersMinion::StaticClass(), SpawnLoc, FRotator::ZeroRotator, SpawnParams);
+	// Deferred spawn: Team/MinionType must be set BEFORE BeginPlay runs, because
+	// BeginPlay derives collision, body color, and per-type stats from them.
+	FTransform SpawnTransform(FRotator::ZeroRotator, SpawnLoc);
+	ASkylandersMinion* Minion = GetWorld()->SpawnActorDeferred<ASkylandersMinion>(
+		ASkylandersMinion::StaticClass(), SpawnTransform, nullptr, nullptr,
+		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
 
 	if (Minion)
 	{
@@ -106,40 +107,19 @@ void ASkylandersMinionSpawner::SpawnNextMinion()
 		Minion->MinionType = Type;
 		Minion->LaneTargetPoint = LaneTargetPoint;
 
-		if (Type == EMinionType::Melee)
-		{
-			Minion->MaxHealth = 150.0f;
-			Minion->CurrentHealth = 150.0f;
-			Minion->AttackDamage = 12.0f;
-			Minion->AttackRange = 120.0f;
-			Minion->MoveSpeed = 350.0f;
-			Minion->GetCharacterMovement()->MaxWalkSpeed = 350.0f;
-		}
-		else
-		{
-			Minion->MaxHealth = 80.0f;
-			Minion->CurrentHealth = 80.0f;
-			Minion->AttackDamage = 18.0f;
-			Minion->AttackRange = 600.0f;
-			Minion->MoveSpeed = 300.0f;
-			Minion->GetCharacterMovement()->MaxWalkSpeed = 300.0f;
+		// BeginPlay applies the per-type base stats (melee defaults / ranged overrides)
+		Minion->FinishSpawning(SpawnTransform);
 
-			if (Minion->BodyMesh)
-			{
-				Minion->BodyMesh->SetRelativeScale3D(FVector(0.3f, 0.3f, 0.7f));
-			}
-		}
-
-		// Wave scaling: minions get tougher each wave
-		float WaveHpMult = 1.0f + WaveNumber * 0.08f;
-		float WaveDmgMult = 1.0f + WaveNumber * 0.05f;
-		float WaveXpMult = 1.0f + WaveNumber * 0.10f;
+		// Wave scaling on top of base stats: wave 1 is baseline, +8%/+5%/+10% per wave after
+		float WaveHpMult = 1.0f + (WaveNumber - 1) * 0.08f;
+		float WaveDmgMult = 1.0f + (WaveNumber - 1) * 0.05f;
+		float WaveXpMult = 1.0f + (WaveNumber - 1) * 0.10f;
 
 		Minion->MaxHealth *= WaveHpMult;
 		Minion->CurrentHealth *= WaveHpMult;
 		Minion->AttackDamage *= WaveDmgMult;
 		Minion->XPReward *= WaveXpMult;
-		Minion->CoinReward += WaveNumber; // +1 coin per wave
+		Minion->CoinReward += WaveNumber - 1; // +1 coin per wave after the first
 	}
 
 	// Schedule next minion

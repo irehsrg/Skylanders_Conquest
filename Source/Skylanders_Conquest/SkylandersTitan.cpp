@@ -334,7 +334,7 @@ void ASkylandersTitan::TakeDamage_Custom(float DamageAmount, AActor* DamageCause
 			ASkylandersDamageNumber::StaticClass(), NumberLoc, FRotator::ZeroRotator, SpawnParams);
 		if (DmgNum)
 		{
-			DmgNum->SetDamageNumber(0.0f, FColor::White, false);
+			DmgNum->SetTextLabel(TEXT("IMMUNE"), FColor::White);
 		}
 		return;
 	}
@@ -387,9 +387,11 @@ void ASkylandersTitan::Die()
 		ShowEndScreen(false); // Player loses
 	}
 
-	// Hide titan
+	// Hide titan (collision too, or the invisible body keeps blocking)
 	BodyMesh->SetVisibility(false);
 	HeadMesh->SetVisibility(false);
+	SetActorEnableCollision(false);
+	CurrentTarget = nullptr;
 	if (HealthBarComp) HealthBarComp->SetVisibility(false);
 }
 
@@ -414,12 +416,12 @@ void ASkylandersTitan::ShowEndScreen(bool bVictory)
 		PC->bShowMouseCursor = true;
 	}
 
-	// Pause the game after a short delay
+	// Pause the game after a short delay (weak-bound so a vanished PC can't be called)
 	FTimerHandle PauseTimer;
-	GetWorld()->GetTimerManager().SetTimer(PauseTimer, [PC]()
+	GetWorld()->GetTimerManager().SetTimer(PauseTimer, FTimerDelegate::CreateWeakLambda(PC, [PC]()
 	{
 		PC->SetPause(true);
-	}, 3.0f, false);
+	}), 3.0f, false);
 }
 
 void ASkylandersTitan::UpdateHealthBar()

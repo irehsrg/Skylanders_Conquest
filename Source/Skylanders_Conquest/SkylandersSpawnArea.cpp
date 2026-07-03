@@ -17,6 +17,8 @@ ASkylandersSpawnArea::ASkylandersSpawnArea()
 
 	SpawnRadius = 500.0f;
 	FountainDPS = 500.0f; // Kills most enemies in ~2-4 seconds
+	Team = ETowerTeam::Friendly;
+	FountainPulseAccumulator = 0.0f;
 
 	// Create trigger sphere
 	SpawnZone = CreateDefaultSubobject<USphereComponent>(TEXT("SpawnZone"));
@@ -54,7 +56,7 @@ void ASkylandersSpawnArea::BeginPlay()
 	// Update sphere radius in case it was changed in editor
 	SpawnZone->SetSphereRadius(SpawnRadius);
 
-	// Create a simple translucent blue material at runtime
+	// Create a simple translucent team-colored material at runtime
 	UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr,
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
 	if (BaseMat && PlatformMesh)
@@ -62,7 +64,10 @@ void ASkylandersSpawnArea::BeginPlay()
 		UMaterialInstanceDynamic* DynMat = UMaterialInstanceDynamic::Create(BaseMat, this);
 		if (DynMat)
 		{
-			DynMat->SetVectorParameterValue(FName("Color"), FLinearColor(0.1f, 0.3f, 0.8f, 0.3f));
+			FLinearColor PlatformColor = (Team == ETowerTeam::Friendly)
+				? FLinearColor(0.1f, 0.3f, 0.8f, 0.3f)
+				: FLinearColor(0.8f, 0.15f, 0.1f, 0.3f);
+			DynMat->SetVectorParameterValue(FName("Color"), PlatformColor);
 			PlatformMesh->SetMaterial(0, DynMat);
 		}
 	}
@@ -78,21 +83,47 @@ void ASkylandersSpawnArea::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Fountain damage: hurt all enemies inside spawn area
-	TArray<AActor*> OverlappingActors;
-	SpawnZone->GetOverlappingActors(OverlappingActors);
-	for (AActor* Actor : OverlappingActors)
+	// Fountain damage: hurt everything hostile to this base, in discrete pulses
+	// (per-frame TakeDamage_Custom would spawn a damage-number actor every frame)
+	FountainPulseAccumulator += DeltaTime;
+	if (FountainPulseAccumulator >= FountainPulseInterval)
 	{
-		ASkylandersEnemyGod* EGod = Cast<ASkylandersEnemyGod>(Actor);
-		if (EGod && EGod->CurrentState != EGodAIState::Dead)
-		{
-			EGod->TakeDamage_Custom(FountainDPS * DeltaTime, this);
-		}
+		float PulseDamage = FountainDPS * FountainPulseAccumulator;
+		FountainPulseAccumulator = 0.0f;
 
-		ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
-		if (Minion && Minion->Team == ETowerTeam::Enemy && !Minion->bDead)
+		TArray<AActor*> OverlappingActors;
+		SpawnZone->GetOverlappingActors(OverlappingActors);
+		for (AActor* Actor : OverlappingActors)
 		{
-			Minion->TakeDamage_Custom(FountainDPS * DeltaTime, this);
+			if (Team == ETowerTeam::Friendly)
+			{
+				ASkylandersEnemyGod* EGod = Cast<ASkylandersEnemyGod>(Actor);
+				if (EGod && EGod->CurrentState != EGodAIState::Dead)
+				{
+					EGod->TakeDamage_Custom(PulseDamage, this);
+				}
+
+				ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
+				if (Minion && Minion->Team == ETowerTeam::Enemy && !Minion->bDead)
+				{
+					Minion->TakeDamage_Custom(PulseDamage, this);
+				}
+			}
+			else
+			{
+				// Enemy base fountain burns the player and friendly minions
+				ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(Actor);
+				if (Player && Player->CurrentHealth > 0.0f)
+				{
+					Player->TakeDamage_Custom(PulseDamage);
+				}
+
+				ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
+				if (Minion && Minion->Team == ETowerTeam::Friendly && !Minion->bDead)
+				{
+					Minion->TakeDamage_Custom(PulseDamage, this);
+				}
+			}
 		}
 	}
 
@@ -115,6 +146,9 @@ void ASkylandersSpawnArea::OnPlayerEnterSpawn(UPrimitiveComponent* OverlappedCom
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
 	bool bFromSweep, const FHitResult& SweepResult)
 {
+	// Only the player's own base heals and allows shopping
+	if (Team != ETowerTeam::Friendly) return;
+
 	ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(OtherActor);
 	if (Player)
 	{
@@ -131,6 +165,8 @@ void ASkylandersSpawnArea::OnPlayerEnterSpawn(UPrimitiveComponent* OverlappedCom
 void ASkylandersSpawnArea::OnPlayerExitSpawn(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
 {
+	if (Team != ETowerTeam::Friendly) return;
+
 	ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(OtherActor);
 	if (Player)
 	{

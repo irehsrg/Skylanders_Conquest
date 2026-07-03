@@ -472,6 +472,20 @@ void ASkylandersMinion::TakeDamage_Custom(float DamageAmount, AActor* DamageCaus
 			}
 		}
 
+		// SMITE tower aggro rule: attacking anything inside tower range draws tower
+		// fire — this must apply even when this minion stays locked on enemy minions
+		// (NotifyPlayerAggro itself checks that the player is inside the tower's range)
+		TArray<AActor*> AllTowers;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
+		for (AActor* TowerActor : AllTowers)
+		{
+			ASkylandersTower* Tower = Cast<ASkylandersTower>(TowerActor);
+			if (Tower && Tower->Team == ETowerTeam::Enemy)
+			{
+				Tower->NotifyPlayerAggro(AttackingPlayer);
+			}
+		}
+
 		if (!bFightingMinions)
 		{
 			ForcedAggroTarget = AttackingPlayer;
@@ -508,18 +522,6 @@ void ASkylandersMinion::TakeDamage_Custom(float DamageAmount, AActor* DamageCaus
 							Ally->ForcedAggroTimer = 3.0f;
 						}
 					}
-				}
-			}
-
-			// SMITE tower aggro rule: notify enemy towers to target the player
-			TArray<AActor*> AllTowers;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
-			for (AActor* TowerActor : AllTowers)
-			{
-				ASkylandersTower* Tower = Cast<ASkylandersTower>(TowerActor);
-				if (Tower && Tower->Team == ETowerTeam::Enemy)
-				{
-					Tower->NotifyPlayerAggro(AttackingPlayer);
 				}
 			}
 		}
@@ -565,10 +567,10 @@ void ASkylandersMinion::Die()
 	SetActorEnableCollision(false);
 
 	FTimerHandle DestroyTimer;
-	GetWorld()->GetTimerManager().SetTimer(DestroyTimer, [this]()
+	GetWorld()->GetTimerManager().SetTimer(DestroyTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
 	{
 		Destroy();
-	}, 0.5f, false);
+	}), 0.5f, false);
 }
 
 void ASkylandersMinion::FaceTarget(AActor* Target)

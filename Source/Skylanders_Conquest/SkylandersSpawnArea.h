@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "SkylandersTower.h" // ETowerTeam
 #include "SkylandersSpawnArea.generated.h"
 
 class USphereComponent;
@@ -34,7 +35,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawn Area")
 	float FountainDPS;
 
+	// Which side owns this base — decides who it heals and who it burns
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawn Area")
+	ETowerTeam Team;
+
 	virtual void Tick(float DeltaTime) override;
+
+protected:
+	// Fountain damage is applied in discrete pulses so we don't spawn a
+	// damage number actor every frame per victim
+	float FountainPulseAccumulator;
+	static constexpr float FountainPulseInterval = 0.25f;
+
+public:
 
 protected:
 	virtual void BeginPlay() override;
