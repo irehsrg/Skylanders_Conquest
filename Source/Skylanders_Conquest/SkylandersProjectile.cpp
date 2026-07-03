@@ -52,6 +52,7 @@ ASkylandersProjectile::ASkylandersProjectile()
 	Damage = 20.0f;
 	Lifesteal = 0.0f;
 	bIsCrit = false;
+	bDamagesStructures = true;
 
 	InitialLifeSpan = Lifetime;
 }
@@ -64,6 +65,15 @@ void ASkylandersProjectile::BeginPlay()
 	{
 		CollisionComponent->OnComponentHit.AddDynamic(this, &ASkylandersProjectile::OnHit);
 		CollisionComponent->OnComponentBeginOverlap.AddDynamic(this, &ASkylandersProjectile::OnOverlap);
+	}
+
+	// Apply tuning knobs here — Blueprint Class Defaults are applied after the
+	// constructor, so constructor-time InitialLifeSpan/InitialSpeed would ignore them
+	SetLifeSpan(Lifetime);
+	if (ProjectileMovement && InitialSpeed > 0.0f)
+	{
+		ProjectileMovement->MaxSpeed = InitialSpeed;
+		ProjectileMovement->Velocity = GetActorForwardVector() * InitialSpeed;
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("Projectile spawned! Instigator: %s"), GetInstigator() ? *GetInstigator()->GetName() : TEXT("NONE"));
@@ -129,7 +139,7 @@ void ASkylandersProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActo
 	if (Tower)
 	{
 		if (Tower->Team == ETowerTeam::Friendly) return; // Fly through friendly towers
-		if (!Tower->bDestroyed)
+		if (!Tower->bDestroyed && bDamagesStructures)
 		{
 			APawn* Shooter = GetInstigator();
 			if (Shooter)
@@ -151,7 +161,7 @@ void ASkylandersProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActo
 	if (Titan)
 	{
 		if (Titan->Team == ETowerTeam::Friendly) return; // Fly through friendly titan
-		if (!Titan->bDead)
+		if (!Titan->bDead && bDamagesStructures)
 		{
 			APawn* Shooter = GetInstigator();
 			if (Shooter)

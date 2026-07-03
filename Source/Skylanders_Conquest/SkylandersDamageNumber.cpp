@@ -25,6 +25,7 @@ ASkylandersDamageNumber::ASkylandersDamageNumber()
 	FloatSpeed = 80.0f;
 	Lifetime = 1.0f;
 	ElapsedTime = 0.0f;
+	BaseWorldSize = 30.0f;
 	RandomOffset = FVector::ZeroVector;
 
 	InitialLifeSpan = 2.0f; // Safety cleanup
@@ -41,16 +42,36 @@ void ASkylandersDamageNumber::SetDamageNumber(float Damage, FColor Color, bool b
 
 	if (bLargeText)
 	{
-		TextComponent->SetWorldSize(50.0f); // Bigger for abilities/crits
+		BaseWorldSize = 50.0f; // Bigger for abilities/crits
 		Lifetime = 1.4f;
 	}
 	else
 	{
-		TextComponent->SetWorldSize(30.0f);
+		BaseWorldSize = 30.0f;
 		Lifetime = 1.0f;
 	}
+	TextComponent->SetWorldSize(BaseWorldSize);
 
 	// Random horizontal offset so numbers don't stack
+	RandomOffset = FVector(
+		FMath::RandRange(-30.0f, 30.0f),
+		FMath::RandRange(-30.0f, 30.0f),
+		0.0f
+	);
+
+	SetActorLocation(GetActorLocation() + RandomOffset);
+}
+
+void ASkylandersDamageNumber::SetTextLabel(const FString& Label, FColor Color)
+{
+	if (!TextComponent) return;
+
+	TextComponent->SetText(FText::FromString(Label));
+	TextComponent->SetTextRenderColor(Color);
+	BaseWorldSize = 30.0f;
+	TextComponent->SetWorldSize(BaseWorldSize);
+	Lifetime = 1.0f;
+
 	RandomOffset = FVector(
 		FMath::RandRange(-30.0f, 30.0f),
 		FMath::RandRange(-30.0f, 30.0f),
@@ -96,7 +117,7 @@ void ASkylandersDamageNumber::Tick(float DeltaTime)
 	{
 		// Scale down to simulate fade (TextRenderComponent doesn't support opacity)
 		float Scale = FMath::Clamp(Alpha, 0.1f, 1.0f);
-		TextComponent->SetWorldSize(TextComponent->WorldSize); // Keep size
+		TextComponent->SetWorldSize(BaseWorldSize * Scale);
 		TextComponent->SetVisibility(Alpha > 0.05f);
 	}
 

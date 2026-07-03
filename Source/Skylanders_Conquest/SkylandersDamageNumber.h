@@ -25,8 +25,12 @@ public:
 	float FloatSpeed;
 	float Lifetime;
 	float ElapsedTime;
+	float BaseWorldSize;
 	FVector RandomOffset;
 
 	// Initialize with damage value and color
 	void SetDamageNumber(float Damage, FColor Color, bool bLargeText = false);
+
+	// Initialize with arbitrary text (e.g. "IMMUNE")
+	void SetTextLabel(const FString& Label, FColor Color);
 };

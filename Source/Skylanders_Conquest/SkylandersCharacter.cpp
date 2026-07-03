@@ -206,6 +206,16 @@ ASkylandersCharacter::ASkylandersCharacter()
 		CooldownText[i] = nullptr;
 	}
 
+	// HUD widget cache
+	bHUDRefsCached = false;
+	CachedHealthText = nullptr;
+	CachedHealthBar = nullptr;
+	CachedManaText = nullptr;
+	CachedManaBar = nullptr;
+	CachedLevelText = nullptr;
+	CachedXPBar = nullptr;
+	CachedCoinText = nullptr;
+
 	// Ability 4 - Yamato Blast state
 	bChargingYamato = false;
 	YamatoChargeRemaining = 0.0f;
@@ -304,6 +314,9 @@ void ASkylandersCharacter::BeginPlay()
 	CurrentHealth = FMath::Min(CurrentHealth, MaxHealth);
 	CurrentMana = FMath::Min(CurrentMana, MaxMana);
 
+	// XP requirement must match the boosted starting level
+	XPToNextLevel = 100.0f + (PlayerLevel - 1) * 50.0f;
+
 	// 3 ability points to spend (one per level)
 	AbilityPoints = 3;
 
@@ -361,6 +374,11 @@ void ASkylandersCharacter::BeginPlay()
 	// Add Input Mapping Context
 	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
 	{
+		// The main menu leaves the viewport in UI-only input mode, which survives
+		// level travel — force game input at match start.
+		PlayerController->SetInputMode(FInputModeGameOnly());
+		PlayerController->bShowMouseCursor = false;
+
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
 		{
 			if (DefaultMappingContext)
@@ -613,6 +631,7 @@ void ASkylandersCharacter::Tick(float DeltaTime)
 					SkyProj->Damage = MGDmg;
 					SkyProj->Lifesteal = ItemBonusStats.Lifesteal;
 					SkyProj->bIsCrit = bCrit;
+					SkyProj->bDamagesStructures = false; // Ability shots never damage towers/titans
 				}
 			}
 		}
@@ -861,7 +880,15 @@ void ASkylandersCharacter::Tick(float DeltaTime)
 		SpeedMultiplier *= AttackMoveSpeedMultiplier;
 	}
 
-	GetCharacterMovement()->MaxWalkSpeed = BaseMaxWalkSpeed * SpeedMultiplier;
+	// Channeled abilities lock movement — don't let the per-frame speed recompute undo it
+	if (bMachineGunActive || bChargingYamato)
+	{
+		GetCharacterMovement()->MaxWalkSpeed = 0.0f;
+	}
+	else
+	{
+		GetCharacterMovement()->MaxWalkSpeed = BaseMaxWalkSpeed * SpeedMultiplier;
+	}
 
 	// Fountain healing - rapidly restore HP and mana while in spawn area
 	if (bIsInSpawnArea && CurrentHealth > 0.0f)
@@ -1002,22 +1029,23 @@ void ASkylandersCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 			EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Triggered, this, &ASkylandersCharacter::Fire);
 		}
 
-		// Abilities
+		// Abilities — Started (press edge) rather than Triggered: Triggered re-fires
+		// every frame while held, which would instantly self-cancel the machine gun toggle
 		if (Ability1Action)
 		{
-			EnhancedInputComponent->BindAction(Ability1Action, ETriggerEvent::Triggered, this, &ASkylandersCharacter::UseAbility1);
+			EnhancedInputComponent->BindAction(Ability1Action, ETriggerEvent::Started, this, &ASkylandersCharacter::UseAbility1);
 		}
 		if (Ability2Action)
 		{
-			EnhancedInputComponent->BindAction(Ability2Action, ETriggerEvent::Triggered, this, &ASkylandersCharacter::UseAbility2);
+			EnhancedInputComponent->BindAction(Ability2Action, ETriggerEvent::Started, this, &ASkylandersCharacter::UseAbility2);
 		}
 		if (Ability3Action)
 		{
-			EnhancedInputComponent->BindAction(Ability3Action, ETriggerEvent::Triggered, this, &ASkylandersCharacter::UseAbility3);
+			EnhancedInputComponent->BindAction(Ability3Action, ETriggerEvent::Started, this, &ASkylandersCharacter::UseAbility3);
 		}
 		if (Ability4Action)
 		{
-			EnhancedInputComponent->BindAction(Ability4Action, ETriggerEvent::Triggered, this, &ASkylandersCharacter::UseAbility4);
+			EnhancedInputComponent->BindAction(Ability4Action, ETriggerEvent::Started, this, &ASkylandersCharacter::UseAbility4);
 		}
 	}
 }
@@ -1092,7 +1120,7 @@ void ASkylandersCharacter::TakeDamage_Custom(float DamageAmount)
 		ASkylandersDamageNumber::StaticClass(), NumberLoc, FRotator::ZeroRotator, SpawnParams);
 	if (DmgNum)
 	{
-		DmgNum->SetDamageNumber(DamageAmount, FColor::Red, false);
+		DmgNum->SetDamageNumber(FinalDamage, FColor::Red, false);
 	}
 
 	UpdateHUD();
@@ -1122,7 +1150,7 @@ bool ASkylandersCharacter::UseMana(float ManaCost)
 {
 	if (CurrentMana >= ManaCost)
 	{
-		CurrentMana = FMath::Clamp(CurrentMana - ManaCost, 0.0f, MaxMana);
+		CurrentMana = FMath::Clamp(CurrentMana - ManaCost, 0.0f, MaxMana + ItemBonusStats.MaxMana);
 		UpdateHUD();
 		return true;
 	}
@@ -1181,10 +1209,7 @@ void ASkylandersCharacter::AddXP(float Amount)
 	while (CurrentXP >= XPToNextLevel && PlayerLevel < MaxLevel)
 	{
 		CurrentXP -= XPToNextLevel;
-		LevelUp();
-
-		// Scale XP requirement: each level needs more
-		XPToNextLevel = 100.0f + (PlayerLevel - 1) * 50.0f;
+		LevelUp(); // Updates XPToNextLevel for the new level
 	}
 
 	UpdateHUD();
@@ -1203,13 +1228,16 @@ void ASkylandersCharacter::LevelUp()
 	ManaRegenRate += ManaRegenPerLevel;
 	BasePower += 2.0f; // +2 power per level
 
-	// Heal the amount gained (don't full heal, just add the bonus)
-	CurrentHealth += HealthPerLevel;
-	CurrentMana += ManaPerLevel;
+	// Heal the amount gained (don't full heal, just add the bonus).
+	// Skip while dead so death-state checks (CurrentHealth <= 0) hold until respawn.
+	if (CurrentHealth > 0.0f)
+	{
+		CurrentHealth = FMath::Min(CurrentHealth + HealthPerLevel, MaxHealth + ItemBonusStats.MaxHealth);
+		CurrentMana = FMath::Min(CurrentMana + ManaPerLevel, MaxMana + ItemBonusStats.MaxMana);
+	}
 
-	// Clamp
-	CurrentHealth = FMath::Min(CurrentHealth, MaxHealth);
-	CurrentMana = FMath::Min(CurrentMana, MaxMana);
+	// Keep the XP requirement in sync with the new level
+	XPToNextLevel = 100.0f + (PlayerLevel - 1) * 50.0f;
 
 	// Grant 1 ability point per level
 	AbilityPoints++;
@@ -1264,6 +1292,10 @@ void ASkylandersCharacter::Die()
 	bChargingYamato = false;
 	bMachineGunActive = false;
 
+	// Close UI that would be stuck open while input is disabled
+	CloseShop();
+	HideScoreboard();
+
 	// Disable input and movement
 	DisableInput(Cast<APlayerController>(GetController()));
 	GetCharacterMovement()->DisableMovement();
@@ -1273,7 +1305,7 @@ void ASkylandersCharacter::Die()
 
 	// After a short delay, hide the character and spectate the friendly titan
 	FTimerHandle HideTimerHandle;
-	GetWorld()->GetTimerManager().SetTimer(HideTimerHandle, [this]()
+	GetWorld()->GetTimerManager().SetTimer(HideTimerHandle, FTimerDelegate::CreateWeakLambda(this, [this]()
 	{
 		// Hide character mesh, guns, and disable collision
 		SetActorHiddenInGame(true);
@@ -1295,7 +1327,7 @@ void ASkylandersCharacter::Die()
 				}
 			}
 		}
-	}, 0.75f, false); // Brief delay for death anim
+	}), 0.75f, false); // Brief delay for death anim
 
 	// Store respawn time for countdown display
 	DeathRespawnTimeTotal = RespawnTime;
@@ -1386,6 +1418,21 @@ static void SetWidgetFloatProperty(UUserWidget* Widget, const FName& PropName, f
 	}
 }
 
+// Helper to set text on either TextBlock or RichTextBlock
+static void SetWidgetText(UWidget* Widget, const FText& Text)
+{
+	if (!Widget) return;
+
+	if (UTextBlock* TB = Cast<UTextBlock>(Widget))
+	{
+		TB->SetText(Text);
+	}
+	else if (URichTextBlock* RTB = Cast<URichTextBlock>(Widget))
+	{
+		RTB->SetText(Text);
+	}
+}
+
 void ASkylandersCharacter::UpdateHUD()
 {
 	if (!MainHUDWidget)
@@ -1416,68 +1463,50 @@ void ASkylandersCharacter::UpdateHUD()
 	SetWidgetFloatProperty(MainHUDWidget, FName("CurrentMana"), RoundedMP);
 	SetWidgetFloatProperty(MainHUDWidget, FName("MaxMana"), RoundedMaxMP);
 
+	// Cache widget-tree lookups once — UpdateHUD runs every frame during regen
+	if (!bHUDRefsCached && MainHUDWidget->WidgetTree)
+	{
+		UWidgetTree* Tree = MainHUDWidget->WidgetTree;
+		CachedHealthText = Cast<URichTextBlock>(Tree->FindWidget(FName("HealthText")));
+		CachedHealthBar = Cast<UProgressBar>(Tree->FindWidget(FName("HealthBar")));
+		CachedManaText = Cast<URichTextBlock>(Tree->FindWidget(FName("ManaText")));
+		CachedManaBar = Cast<UProgressBar>(Tree->FindWidget(FName("ManaBar")));
+		CachedLevelText = Tree->FindWidget(FName("LevelText"));
+		CachedXPBar = Cast<UProgressBar>(Tree->FindWidget(FName("XPBar")));
+		CachedCoinText = Tree->FindWidget(FName("CointCountText"));
+		bHUDRefsCached = true;
+	}
+
 	// Also directly set the widget components as a fallback
-	URichTextBlock* HealthText = Cast<URichTextBlock>(MainHUDWidget->WidgetTree->FindWidget(FName("HealthText")));
-	if (HealthText)
+	if (CachedHealthText)
 	{
-		HealthText->SetText(FText::FromString(FString::Printf(TEXT("%.0f / %.0f"), CurrentHealth, EffectiveMaxHP)));
+		CachedHealthText->SetText(FText::FromString(FString::Printf(TEXT("%.0f / %.0f"), CurrentHealth, EffectiveMaxHP)));
+	}
+	if (CachedHealthBar)
+	{
+		CachedHealthBar->SetPercent(CurrentHealth / EffectiveMaxHP);
+	}
+	if (CachedManaText)
+	{
+		CachedManaText->SetText(FText::FromString(FString::Printf(TEXT("%.0f / %.0f"), CurrentMana, EffectiveMaxMP)));
+	}
+	if (CachedManaBar)
+	{
+		CachedManaBar->SetPercent(CurrentMana / EffectiveMaxMP);
 	}
 
-	UProgressBar* HealthBar = Cast<UProgressBar>(MainHUDWidget->WidgetTree->FindWidget(FName("HealthBar")));
-	if (HealthBar)
-	{
-		HealthBar->SetPercent(CurrentHealth / EffectiveMaxHP);
-	}
-
-	URichTextBlock* ManaText = Cast<URichTextBlock>(MainHUDWidget->WidgetTree->FindWidget(FName("ManaText")));
-	if (ManaText)
-	{
-		ManaText->SetText(FText::FromString(FString::Printf(TEXT("%.0f / %.0f"), CurrentMana, EffectiveMaxMP)));
-	}
-
-	UProgressBar* ManaBar = Cast<UProgressBar>(MainHUDWidget->WidgetTree->FindWidget(FName("ManaBar")));
-	if (ManaBar)
-	{
-		ManaBar->SetPercent(CurrentMana / EffectiveMaxMP);
-	}
-
-	FText LevelStr = FText::FromString(FString::Printf(TEXT("LVL %d"), PlayerLevel));
-	UTextBlock* LevelText = Cast<UTextBlock>(MainHUDWidget->WidgetTree->FindWidget(FName("LevelText")));
-	if (LevelText)
-	{
-		LevelText->SetText(LevelStr);
-	}
-	else
-	{
-		URichTextBlock* LevelRichText = Cast<URichTextBlock>(MainHUDWidget->WidgetTree->FindWidget(FName("LevelText")));
-		if (LevelRichText)
-		{
-			LevelRichText->SetText(LevelStr);
-		}
-	}
+	// Level (TextBlock or RichTextBlock)
+	SetWidgetText(CachedLevelText, FText::FromString(FString::Printf(TEXT("LVL %d"), PlayerLevel)));
 
 	// XP Bar
-	UProgressBar* XPBar = Cast<UProgressBar>(MainHUDWidget->WidgetTree->FindWidget(FName("XPBar")));
-	if (XPBar)
+	if (CachedXPBar)
 	{
 		float XPPercent = (XPToNextLevel > 0.0f) ? (CurrentXP / XPToNextLevel) : 0.0f;
-		XPBar->SetPercent(XPPercent);
+		CachedXPBar->SetPercent(XPPercent);
 	}
 
-	// Gold counter
-	URichTextBlock* CoinText = Cast<URichTextBlock>(MainHUDWidget->WidgetTree->FindWidget(FName("CointCountText")));
-	if (CoinText)
-	{
-		CoinText->SetText(FText::FromString(FString::Printf(TEXT("%d"), Coins)));
-	}
-	else
-	{
-		UTextBlock* CoinTextBlock = Cast<UTextBlock>(MainHUDWidget->WidgetTree->FindWidget(FName("CointCountText")));
-		if (CoinTextBlock)
-		{
-			CoinTextBlock->SetText(FText::FromString(FString::Printf(TEXT("%d"), Coins)));
-		}
-	}
+	// Gold counter (TextBlock or RichTextBlock)
+	SetWidgetText(CachedCoinText, FText::FromString(FString::Printf(TEXT("%d"), Coins)));
 
 	// Inventory display (6 slots from inventory widget)
 	if (InventoryHUDWidget)
@@ -1556,21 +1585,6 @@ void ASkylandersCharacter::UpdateCooldowns(float DeltaTime)
 	if (Ability4_RemainingCooldown > 0.0f)
 	{
 		Ability4_RemainingCooldown = FMath::Max(0.0f, Ability4_RemainingCooldown - DeltaTime);
-	}
-}
-
-// Helper to set text on either TextBlock or RichTextBlock
-static void SetWidgetText(UWidget* Widget, const FText& Text)
-{
-	if (!Widget) return;
-
-	if (UTextBlock* TB = Cast<UTextBlock>(Widget))
-	{
-		TB->SetText(Text);
-	}
-	else if (URichTextBlock* RTB = Cast<URichTextBlock>(Widget))
-	{
-		RTB->SetText(Text);
 	}
 }
 
@@ -1929,6 +1943,7 @@ void ASkylandersCharacter::UseAbility3()
 		bMachineGunActive = false;
 		MachineGunRemainingTime = 0.0f;
 		GetCharacterMovement()->MaxWalkSpeed = BaseMaxWalkSpeed;
+		PlayAnimOnSlot(MachineGunEndAnim, 1.0f);
 		UE_LOG(LogTemp, Log, TEXT("Golden Machine Gun cancelled!"));
 		return;
 	}
@@ -2114,14 +2129,13 @@ void ASkylandersCharacter::FireProjectile()
 	FVector ForwardDir = AimYaw.Vector();
 	FVector RightDir = FRotationMatrix(AimYaw).GetUnitAxis(EAxis::Y);
 
-	// Toggle gun for visual purposes
-	bFireFromLeftGun = !bFireFromLeftGun;
-
-	// Play attack animation on the correct arm slot only
+	// Play attack animation on the correct arm slot, then alternate guns
+	// (use-then-toggle so the first shot really comes from the left gun)
 	if (bFireFromLeftGun)
 		PlayAnimOnSlot(AttackLeftAnim, 1.5f, 0.05f, 0.1f, FName("LeftArmSlot"));
 	else
 		PlayAnimOnSlot(AttackRightAnim, 1.5f, 0.05f, 0.1f, FName("RightArmSlot"));
+	bFireFromLeftGun = !bFireFromLeftGun;
 
 	// Projectile always spawns from center and flies straight to crosshair (SMITE-style)
 	FVector MuzzleLoc = GetActorLocation()
@@ -2311,8 +2325,9 @@ bool ASkylandersCharacter::BuyItem(int32 ItemID)
 		return false;
 	}
 
-	// Purchase successful
-	Coins -= Item->Cost;
+	// Purchase successful — negative delta via AddCoins keeps the HUD coin
+	// accumulator event in sync (direct Coins writes desync the Blueprint side)
+	AddCoins(-Item->Cost);
 	Inventory[EmptySlot] = ItemID;
 
 	RecalculateItemBonuses();
@@ -2371,8 +2386,8 @@ bool ASkylandersCharacter::SellItem(int32 SlotIndex)
 	int32 SellPrice = Item->GetSellPrice();
 	FString ItemName = Item->ItemName;
 
-	// Sell it
-	Coins += SellPrice;
+	// Sell it (AddCoins keeps the HUD coin accumulator event in sync)
+	AddCoins(SellPrice);
 	Inventory[SlotIndex] = 0;
 
 	RecalculateItemBonuses();
@@ -2484,10 +2499,12 @@ bool ASkylandersCharacter::CanLevelAbility(int32 AbilityIndex) const
 	if (AbilityPoints <= 0) return false;
 	if (AbilityLevels[AbilityIndex] >= MaxAbilityRank) return false;
 
-	// Ultimate (index 3): only at levels 5, 9, 13, 17
+	// Ultimate (index 3): rank-ups unlock at levels 5, 9, 13, 17, 20
+	// (capped at MaxLevel so rank 5 is actually reachable)
 	if (AbilityIndex == 3)
 	{
-		if (PlayerLevel < 5 + AbilityLevels[3] * 4) return false;
+		int32 RequiredLevel = FMath::Min(5 + AbilityLevels[3] * 4, MaxLevel);
+		if (PlayerLevel < RequiredLevel) return false;
 	}
 
 	return true;

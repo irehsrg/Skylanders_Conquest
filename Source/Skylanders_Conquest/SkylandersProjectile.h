@@ -50,6 +50,11 @@ public:
 	// Whether this shot is a critical hit (extra damage + visual)
 	bool bIsCrit;
 
+	// Only auto-attack projectiles damage towers/titans; ability shots
+	// (e.g. Golden Machine Gun) clear this flag on spawn
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile")
+	bool bDamagesStructures;
+
 	// Hit callback (walls, towers, titans - WorldStatic/WorldDynamic)
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);

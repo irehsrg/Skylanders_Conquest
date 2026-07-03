@@ -61,6 +61,7 @@ public:
 	UStaticMeshComponent* RecallIndicator;
 
 	// Yamato charge-up sphere (spawned actor, destroyed on fire)
+	UPROPERTY()
 	AActor* YamatoChargeVFX;
 
 	// ========== STATS ==========
@@ -484,6 +485,17 @@ protected:
 	bool bCooldownWidgetsCached;
 	UWidget* CooldownOverlay[4];
 	UWidget* CooldownText[4];
+
+	// Cached HUD widget lookups (UpdateHUD runs every frame during regen;
+	// avoid re-searching the widget tree each call)
+	bool bHUDRefsCached;
+	class URichTextBlock* CachedHealthText;
+	class UProgressBar* CachedHealthBar;
+	class URichTextBlock* CachedManaText;
+	class UProgressBar* CachedManaBar;
+	UWidget* CachedLevelText;
+	class UProgressBar* CachedXPBar;
+	UWidget* CachedCoinText;
 
 	// Ability leveling key handlers
 	void Debug_LevelAbility1();
