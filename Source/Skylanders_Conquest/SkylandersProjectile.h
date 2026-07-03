@@ -55,6 +55,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile")
 	bool bDamagesStructures;
 
+	// Tint used by the C++ fallback visual (characters without a projectile
+	// Blueprint get a small colored sphere; set by the shooter on spawn)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile")
+	FLinearColor ProjectileColor;
+
 	// Hit callback (walls, towers, titans - WorldStatic/WorldDynamic)
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);

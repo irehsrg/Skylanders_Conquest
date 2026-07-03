@@ -10,6 +10,8 @@
 #include "SkylandersEnemyGod.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
@@ -53,6 +55,7 @@ ASkylandersProjectile::ASkylandersProjectile()
 	Lifesteal = 0.0f;
 	bIsCrit = false;
 	bDamagesStructures = true;
+	ProjectileColor = FLinearColor(1.0f, 0.85f, 0.1f, 1.0f); // Gold
 
 	InitialLifeSpan = Lifetime;
 }
@@ -65,6 +68,25 @@ void ASkylandersProjectile::BeginPlay()
 	{
 		CollisionComponent->OnComponentHit.AddDynamic(this, &ASkylandersProjectile::OnHit);
 		CollisionComponent->OnComponentBeginOverlap.AddDynamic(this, &ASkylandersProjectile::OnOverlap);
+	}
+
+	// Fallback visual: characters without a projectile Blueprint (Hex, Tree Rex)
+	// spawn this class directly, which has no mesh assigned — give it a small
+	// colored sphere so shots are visible
+	if (MeshComponent && !MeshComponent->GetStaticMesh())
+	{
+		if (UStaticMesh* SphereMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere")))
+		{
+			MeshComponent->SetStaticMesh(SphereMesh);
+			MeshComponent->SetWorldScale3D(FVector(0.4f)); // Sphere default radius 50 -> 20
+			MeshComponent->SetCastShadow(false);
+			if (UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial")))
+			{
+				UMaterialInstanceDynamic* DynMat = UMaterialInstanceDynamic::Create(BaseMat, this);
+				DynMat->SetVectorParameterValue(FName("Color"), ProjectileColor);
+				MeshComponent->SetMaterial(0, DynMat);
+			}
+		}
 	}
 
 	// Apply tuning knobs here — Blueprint Class Defaults are applied after the

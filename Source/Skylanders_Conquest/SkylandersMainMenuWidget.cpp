@@ -1,6 +1,7 @@
 // Skylanders Conquest - Front-End Main Menu Widget Implementation
 
 #include "SkylandersMainMenuWidget.h"
+#include "SkylandersGameInstance.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Components/WidgetSwitcher.h"
@@ -128,30 +129,69 @@ UVerticalBox* USkylandersMainMenuWidget::BuildMainScreen()
 	return Box;
 }
 
+UButton* USkylandersMainMenuWidget::AddCharacterButton(UVerticalBox* Box, const FString& Name, const FString& Role,
+	const FString& KitLine, FLinearColor AccentColor, FName WidgetName)
+{
+	UButton* Btn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), WidgetName);
+
+	FButtonStyle Style = Btn->GetStyle();
+	auto SetBrush = [](FSlateBrush& Brush, FLinearColor Color)
+	{
+		Brush.TintColor = FSlateColor(Color);
+		Brush.DrawAs = ESlateBrushDrawType::Box;
+	};
+	SetBrush(Style.Normal, MenuBtnNormal);
+	SetBrush(Style.Hovered, MenuBtnHover);
+	SetBrush(Style.Pressed, MenuBtnPress);
+	Btn->SetStyle(Style);
+
+	// Name (accent color), role, and kit line stacked inside the button
+	UVerticalBox* Inner = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(),
+		FName(*(WidgetName.ToString() + TEXT("_Box"))));
+
+	UTextBlock* NameText = MakeText(WidgetTree, FName(*(WidgetName.ToString() + TEXT("_Name"))), Name, 20, AccentColor);
+	Inner->AddChildToVerticalBox(NameText)->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
+
+	UTextBlock* RoleText = MakeText(WidgetTree, FName(*(WidgetName.ToString() + TEXT("_Role"))), Role, 13, MenuWhite);
+	Inner->AddChildToVerticalBox(RoleText);
+
+	UTextBlock* KitText = MakeText(WidgetTree, FName(*(WidgetName.ToString() + TEXT("_Kit"))), KitLine, 10,
+		FLinearColor(0.65f, 0.65f, 0.72f, 1.0f));
+	Inner->AddChildToVerticalBox(KitText)->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
+
+	Btn->AddChild(Inner);
+	Box->AddChildToVerticalBox(Btn)->SetPadding(FMargin(0.f, 5.f));
+	return Btn;
+}
+
 UVerticalBox* USkylandersMainMenuWidget::BuildCharacterScreen()
 {
 	UVerticalBox* Box = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("CharScreen"));
 
 	UTextBlock* Header = MakeText(WidgetTree, TEXT("CharHeader"), TEXT("SELECT YOUR SKYLANDER"), 24, MenuGold);
-	Box->AddChildToVerticalBox(Header)->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
+	Box->AddChildToVerticalBox(Header)->SetPadding(FMargin(0.f, 0.f, 0.f, 12.f));
 
-	// Trigger Happy (only unlocked character)
-	UButton* TH = MakeMenuButton(TEXT("TRIGGER HAPPY"), TEXT("CharTH"));
-	TH->OnClicked.AddDynamic(this, &USkylandersMainMenuWidget::OnSelectTriggerHappy);
-	Box->AddChildToVerticalBox(TH)->SetPadding(FMargin(0.f, 6.f));
+	UButton* THBtn = AddCharacterButton(Box,
+		TEXT("TRIGGER HAPPY"), TEXT("Gunslinger  -  Ranged Carry"),
+		TEXT("Gatling Gun / Pot o' Gold / Golden Machine Gun / Yamato Cannon"),
+		MenuGold, TEXT("CharTH"));
+	THBtn->OnClicked.AddDynamic(this, &USkylandersMainMenuWidget::OnSelectTriggerHappy);
 
-	// Locked placeholders for future roster
-	UButton* Locked1 = MakeMenuButton(TEXT("??? (LOCKED)"), TEXT("CharLock1"));
-	Locked1->SetIsEnabled(false);
-	Box->AddChildToVerticalBox(Locked1)->SetPadding(FMargin(0.f, 6.f));
+	UButton* HexBtn = AddCharacterButton(Box,
+		TEXT("HEX"), TEXT("Undead Sorceress  -  Mage"),
+		TEXT("Phantom Orb / Wall of Bones / Rain of Skulls / Skull Storm"),
+		FLinearColor(0.70f, 0.35f, 1.0f, 1.0f), TEXT("CharHex"));
+	HexBtn->OnClicked.AddDynamic(this, &USkylandersMainMenuWidget::OnSelectHex);
 
-	UButton* Locked2 = MakeMenuButton(TEXT("??? (LOCKED)"), TEXT("CharLock2"));
-	Locked2->SetIsEnabled(false);
-	Box->AddChildToVerticalBox(Locked2)->SetPadding(FMargin(0.f, 6.f));
+	UButton* TreeRexBtn = AddCharacterButton(Box,
+		TEXT("TREE REX"), TEXT("Giant Guardian  -  Tank / Support"),
+		TEXT("Shockwave Slam / Barkskin / Healing Grove / Titan's Wrath"),
+		FLinearColor(0.35f, 0.85f, 0.30f, 1.0f), TEXT("CharTreeRex"));
+	TreeRexBtn->OnClicked.AddDynamic(this, &USkylandersMainMenuWidget::OnSelectTreeRex);
 
 	UButton* Back = MakeMenuButton(TEXT("BACK"), TEXT("CharBack"));
 	Back->OnClicked.AddDynamic(this, &USkylandersMainMenuWidget::OnBackClicked);
-	Box->AddChildToVerticalBox(Back)->SetPadding(FMargin(0.f, 18.f, 0.f, 0.f));
+	Box->AddChildToVerticalBox(Back)->SetPadding(FMargin(0.f, 14.f, 0.f, 0.f));
 
 	return Box;
 }
@@ -203,9 +243,15 @@ void USkylandersMainMenuWidget::OnBackClicked()
 	if (ScreenSwitcher) ScreenSwitcher->SetActiveWidgetIndex(Screen_Main);
 }
 
-void USkylandersMainMenuWidget::OnSelectTriggerHappy()
+void USkylandersMainMenuWidget::StartGameAs(FName CharacterID)
 {
-	// Only one character for now; selecting just starts the match.
+	// Remember the pick across level travel
+	if (USkylandersGameInstance* GI = GetGameInstance<USkylandersGameInstance>())
+	{
+		GI->SelectedCharacterID = CharacterID;
+	}
+
+	// FInputModeUIOnly survives OpenLevel — restore game input before travel
 	if (APlayerController* PC = GetOwningPlayer())
 	{
 		PC->SetInputMode(FInputModeGameOnly());
@@ -213,6 +259,10 @@ void USkylandersMainMenuWidget::OnSelectTriggerHappy()
 	}
 	UGameplayStatics::OpenLevel(this, GameLevelName);
 }
+
+void USkylandersMainMenuWidget::OnSelectTriggerHappy() { StartGameAs(TEXT("TriggerHappy")); }
+void USkylandersMainMenuWidget::OnSelectHex()          { StartGameAs(TEXT("Hex")); }
+void USkylandersMainMenuWidget::OnSelectTreeRex()      { StartGameAs(TEXT("TreeRex")); }
 
 void USkylandersMainMenuWidget::OnQuitClicked()
 {

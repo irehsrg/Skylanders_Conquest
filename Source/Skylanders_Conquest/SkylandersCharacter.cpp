@@ -9,6 +9,8 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "InputMappingContext.h"
+#include "InputAction.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/RichTextBlock.h"
@@ -137,6 +139,21 @@ ASkylandersCharacter::ASkylandersCharacter()
 	// Yamato charge VFX (spawned at runtime, not a constructor default)
 	YamatoChargeVFX = nullptr;
 
+	// Character identity (subclasses override in their constructors)
+	CharacterName = TEXT("Trigger Happy");
+	CharacterRole = TEXT("Gunslinger");
+	AbilityNames[0] = TEXT("Gatling Gun");
+	AbilityNames[1] = TEXT("Pot o' Gold");
+	AbilityNames[2] = TEXT("Golden Machine Gun");
+	AbilityNames[3] = TEXT("Yamato Cannon");
+
+	// Starting stats (applied in BeginPlay; subclasses set their own)
+	StartingMaxHealth = 100.0f;
+	StartingMaxMana = 100.0f;
+	StartingManaRegen = 5.0f;
+	StartingBasePower = 20.0f;
+	PowerPerLevel = 2.0f;
+
 	// Initialize stats - CRITICAL: These MUST be non-zero to avoid divide by zero in HUD
 	MaxHealth = 100.0f;
 	CurrentHealth = 100.0f; // Changed from MaxHealth to ensure it's 100
@@ -145,6 +162,7 @@ ASkylandersCharacter::ASkylandersCharacter()
 	ManaRegenRate = 5.0f; // 5 mana per second
 	PlayerLevel = 1;
 	Coins = 0;
+	BuffProtections = 0.0f;
 
 	// XP
 	CurrentXP = 0.0f;
@@ -181,6 +199,8 @@ ASkylandersCharacter::ASkylandersCharacter()
 	ProjectileSpawnOffset = FVector(80.0f, 0.0f, -20.0f);
 	ProjectileSpeed = 3000.0f;
 	FireRate = 2.0f; // 2 shots per second (0.5 second cooldown between shots)
+	AutoAttackRange = 1050.0f; // Projectile speed (3000) * lifetime (0.35)
+	AutoAttackProjectileColor = FLinearColor(1.0f, 0.85f, 0.1f, 1.0f); // Gold
 	LastFireTime = -999.0f; // Allow immediate first shot
 	bFireFromLeftGun = true; // Start with left gun
 
@@ -291,12 +311,12 @@ void ASkylandersCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	// Force correct stats (Blueprint defaults may override C++ constructor with garbage)
-	MaxHealth = 100.0f;
-	CurrentHealth = 100.0f;
-	MaxMana = 100.0f;
-	CurrentMana = 100.0f;
-	ManaRegenRate = 5.0f;
-	BasePower = 20.0f;
+	MaxHealth = StartingMaxHealth;
+	CurrentHealth = StartingMaxHealth;
+	MaxMana = StartingMaxMana;
+	CurrentMana = StartingMaxMana;
+	ManaRegenRate = StartingManaRegen;
+	BasePower = StartingBasePower;
 	PlayerLevel = 1;
 
 	// Start at level 3: apply 2 level-ups worth of stats (level 1 -> 3)
@@ -306,7 +326,7 @@ void ASkylandersCharacter::BeginPlay()
 		MaxHealth += HealthPerLevel;
 		MaxMana += ManaPerLevel;
 		ManaRegenRate += ManaRegenPerLevel;
-		BasePower += 2.0f;
+		BasePower += PowerPerLevel;
 		CurrentHealth += HealthPerLevel;
 		CurrentMana += ManaPerLevel;
 	}
@@ -326,26 +346,8 @@ void ASkylandersCharacter::BeginPlay()
 		AbilityLevels[i] = 0;
 	}
 
-	// Load and assign gun meshes
-	static ConstructorHelpers::FObjectFinder<USkeletalMesh>* GunMeshFinder = nullptr;
-	USkeletalMesh* GunMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Characters/TriggerHappy/Meshes/Gun/TriggerHappyfbxTriggerHappy_Gun"));
-	if (GunMesh)
-	{
-		if (LeftGunMesh)
-		{
-			LeftGunMesh->SetSkeletalMesh(GunMesh);
-			UE_LOG(LogTemp, Log, TEXT("Left gun mesh attached!"));
-		}
-		if (RightGunMesh)
-		{
-			RightGunMesh->SetSkeletalMesh(GunMesh);
-			UE_LOG(LogTemp, Log, TEXT("Right gun mesh attached!"));
-		}
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Could not load gun mesh!"));
-	}
+	// Per-character meshes/materials (Trigger Happy guns by default; subclasses override)
+	LoadCharacterVisuals();
 
 	// Set up VFX indicator materials
 	UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
@@ -366,6 +368,26 @@ void ASkylandersCharacter::BeginPlay()
 			RecallIndicator->SetMaterial(0, RecallMat);
 		}
 	}
+
+	// Asset fallbacks: characters spawned as raw C++ classes (Hex, Tree Rex) have no
+	// Blueprint Class Defaults, so the input/HUD/projectile assets normally assigned in
+	// BP_SkylandersCharacter_CPP are null — load the shared assets directly.
+	if (!DefaultMappingContext)
+		DefaultMappingContext = LoadObject<UInputMappingContext>(nullptr, TEXT("/Game/Input/IMC_Default.IMC_Default"));
+	if (!MoveAction)
+		MoveAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/IA_Move.IA_Move"));
+	if (!LookAction)
+		LookAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/IA_Look.IA_Look"));
+	if (!JumpAction)
+		JumpAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/IA_Jump.IA_Jump"));
+	if (!FireAction)
+		FireAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/IA_Fire.IA_Fire"));
+	if (!MainHUDClass)
+		MainHUDClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/UserInterface/WBP_MainHUD.WBP_MainHUD_C"));
+	if (!ShopWidgetClass)
+		ShopWidgetClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/UserInterface/WBP_Shop.WBP_Shop_C"));
+	if (!ProjectileClass)
+		ProjectileClass = ASkylandersProjectile::StaticClass();
 
 	UE_LOG(LogTemp, Warning, TEXT("=== CHARACTER BEGIN PLAY ==="));
 	UE_LOG(LogTemp, Warning, TEXT("MaxHealth: %.1f, CurrentHealth: %.1f"), MaxHealth, CurrentHealth);
@@ -508,8 +530,6 @@ void ASkylandersCharacter::Tick(float DeltaTime)
 	UpdateCooldownUI();
 
 	// Ground aim indicator - flat cylinder positioned at crosshair ground point
-	// Auto attack range = projectile speed (3000) * lifetime (0.35) = 1050
-	float AutoAttackRange = 1050.0f;
 	float AoERadius = 250.0f;
 	if (CurrentHealth > 0.0f && GroundAimIndicator)
 	{
@@ -632,6 +652,7 @@ void ASkylandersCharacter::Tick(float DeltaTime)
 					SkyProj->Lifesteal = ItemBonusStats.Lifesteal;
 					SkyProj->bIsCrit = bCrit;
 					SkyProj->bDamagesStructures = false; // Ability shots never damage towers/titans
+					SkyProj->ProjectileColor = AutoAttackProjectileColor;
 				}
 			}
 		}
@@ -706,149 +727,27 @@ void ASkylandersCharacter::Tick(float DeltaTime)
 
 			FVector BlastCenter = GetActorLocation() + GetActorForwardVector() * (YamatoRange * 0.5f);
 
-			// Big visual explosion - spawned red sphere that auto-destroys
-			{
-				FActorSpawnParameters BlastVFXParams;
-				BlastVFXParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-				AActor* BlastVFX = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), BlastCenter, FRotator::ZeroRotator, BlastVFXParams);
-				if (BlastVFX)
-				{
-					UStaticMeshComponent* BlastMesh = NewObject<UStaticMeshComponent>(BlastVFX);
-					BlastVFX->SetRootComponent(BlastMesh);
-					BlastMesh->RegisterComponent();
-					UStaticMesh* SphereMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere"));
-					if (SphereMesh) BlastMesh->SetStaticMesh(SphereMesh);
-					// Sphere default radius = 50, scale to YamatoRange
-					float BlastScale = YamatoRange / 50.0f;
-					BlastMesh->SetWorldScale3D(FVector(BlastScale));
-					BlastMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-					BlastMesh->SetCastShadow(false);
-					UMaterialInterface* BlastBaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
-					if (BlastBaseMat)
-					{
-						UMaterialInstanceDynamic* BlastDynMat = UMaterialInstanceDynamic::Create(BlastBaseMat, BlastVFX);
-						BlastDynMat->SetVectorParameterValue(FName("Color"), FLinearColor(1.0f, 0.2f, 0.0f)); // Fiery red-orange
-						BlastMesh->SetMaterial(0, BlastDynMat);
-					}
-					BlastVFX->SetLifeSpan(1.0f); // Auto-destroy after 1 second
-				}
-			}
+			// Big visual explosion - red sphere that auto-destroys
+			// (sphere default radius = 50, scale to YamatoRange)
+			SpawnColoredMeshVFX(TEXT("/Engine/BasicShapes/Sphere"),
+				BlastCenter, FRotator::ZeroRotator,
+				FVector(YamatoRange / 50.0f),
+				FLinearColor(1.0f, 0.2f, 0.0f), 1.0f);
 
 			// Scale Yamato damage with power (20x power scaling for ultimate)
 			// Ultimate rank scaling: at rank 1 = 60%, rank 5 = 100%
 			float UltRankScale = 0.5f + 0.10f * AbilityLevels[3];
 			float ScaledYamatoDmg = GetEffectivePower() * 20.0f * UltRankScale;
-			UE_LOG(LogTemp, Warning, TEXT("YAMATO BLAST FIRES! Damage: %.0f, Range: %.0f"), ScaledYamatoDmg, YamatoRange);
 
-			// Damage all enemies in the close-range cone/sphere
-			TArray<AActor*> AllEnemies;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemy::StaticClass(), AllEnemies);
+			// Close-range frontal cone (~70 degrees), closer targets take more damage
+			int32 HitCount = DamageEnemiesInCone(GetActorLocation(), GetActorForwardVector(),
+				YamatoRange, 0.3f, ScaledYamatoDmg, 0.3f);
+			UE_LOG(LogTemp, Warning, TEXT("YAMATO BLAST hit %d targets! Damage: %.0f, Range: %.0f"), HitCount, ScaledYamatoDmg, YamatoRange);
 
-			FVector AimDir = GetActorForwardVector();
-
-			for (AActor* Actor : AllEnemies)
+			if (HitCount > 0)
 			{
-				FVector ToEnemy = Actor->GetActorLocation() - GetActorLocation();
-				float Distance = ToEnemy.Size();
-
-				if (Distance < YamatoRange)
-				{
-					// Must be in front (close range cone)
-					float DotForward = FVector::DotProduct(ToEnemy.GetSafeNormal(), AimDir);
-					if (DotForward > 0.3f) // Roughly 70 degree cone in front
-					{
-						ASkylandersEnemy* Enemy = Cast<ASkylandersEnemy>(Actor);
-						if (Enemy && Enemy->CurrentHealth > 0.0f)
-						{
-							// More damage the closer they are
-							float DistFactor = 1.0f - (Distance / YamatoRange) * 0.3f;
-							float FinalDmg = ScaledYamatoDmg * DistFactor;
-							Enemy->TakeDamage_Custom(FinalDmg, this);
-							UE_LOG(LogTemp, Log, TEXT("Yamato Blast hit '%s' for %.0f damage!"), *Enemy->EnemyName, FinalDmg);
-							AddCoins(10);
-						}
-					}
-				}
+				AddCoins(HitCount * 5);
 			}
-
-			// Also hit enemy minions in the cone
-			TArray<AActor*> AllMinions;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
-
-			for (AActor* Actor : AllMinions)
-			{
-				ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
-				if (Minion && Minion->Team == ETowerTeam::Enemy && !Minion->bDead)
-				{
-					FVector ToMinion = Actor->GetActorLocation() - GetActorLocation();
-					float Distance = ToMinion.Size();
-
-					if (Distance < YamatoRange)
-					{
-						float DotForward = FVector::DotProduct(ToMinion.GetSafeNormal(), AimDir);
-						if (DotForward > 0.3f)
-						{
-							float DistFactor = 1.0f - (Distance / YamatoRange) * 0.3f;
-							float FinalDmg = ScaledYamatoDmg * DistFactor;
-							Minion->TakeDamage_Custom(FinalDmg, this);
-							UE_LOG(LogTemp, Log, TEXT("Yamato Blast hit minion for %.0f damage!"), FinalDmg);
-						}
-					}
-				}
-			}
-
-			// Also hit buff camps in the cone
-			TArray<AActor*> AllBuffCamps;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersBuffCamp::StaticClass(), AllBuffCamps);
-
-			for (AActor* Actor : AllBuffCamps)
-			{
-				ASkylandersBuffCamp* BuffCamp = Cast<ASkylandersBuffCamp>(Actor);
-				if (BuffCamp && !BuffCamp->bDead)
-				{
-					FVector ToCamp = Actor->GetActorLocation() - GetActorLocation();
-					float Distance = ToCamp.Size();
-
-					if (Distance < YamatoRange)
-					{
-						float DotForward = FVector::DotProduct(ToCamp.GetSafeNormal(), AimDir);
-						if (DotForward > 0.3f)
-						{
-							float DistFactor = 1.0f - (Distance / YamatoRange) * 0.3f;
-							float FinalDmg = ScaledYamatoDmg * DistFactor;
-							BuffCamp->TakeDamage_Custom(FinalDmg, this);
-							UE_LOG(LogTemp, Log, TEXT("Yamato Blast hit buff camp '%s' for %.0f damage!"), *BuffCamp->CampName, FinalDmg);
-						}
-					}
-				}
-			}
-
-			// Also hit enemy gods in the cone
-			TArray<AActor*> AllEnemyGods;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllEnemyGods);
-
-			for (AActor* Actor : AllEnemyGods)
-			{
-				ASkylandersEnemyGod* EnemyGod = Cast<ASkylandersEnemyGod>(Actor);
-				if (EnemyGod && EnemyGod->CurrentState != EGodAIState::Dead)
-				{
-					FVector ToGod = Actor->GetActorLocation() - GetActorLocation();
-					float Distance = ToGod.Size();
-
-					if (Distance < YamatoRange)
-					{
-						float DotForward = FVector::DotProduct(ToGod.GetSafeNormal(), AimDir);
-						if (DotForward > 0.3f)
-						{
-							float DistFactor = 1.0f - (Distance / YamatoRange) * 0.3f;
-							float FinalDmg = ScaledYamatoDmg * DistFactor;
-							EnemyGod->TakeDamage_Custom(FinalDmg, this);
-							UE_LOG(LogTemp, Log, TEXT("Yamato Blast hit enemy god '%s' for %.0f damage!"), *EnemyGod->GodName, FinalDmg);
-						}
-					}
-				}
-			}
-
 		}
 	}
 
@@ -881,7 +780,7 @@ void ASkylandersCharacter::Tick(float DeltaTime)
 	}
 
 	// Channeled abilities lock movement — don't let the per-frame speed recompute undo it
-	if (bMachineGunActive || bChargingYamato)
+	if (IsChanneling())
 	{
 		GetCharacterMovement()->MaxWalkSpeed = 0.0f;
 	}
@@ -1226,7 +1125,7 @@ void ASkylandersCharacter::LevelUp()
 	MaxHealth += HealthPerLevel;
 	MaxMana += ManaPerLevel;
 	ManaRegenRate += ManaRegenPerLevel;
-	BasePower += 2.0f; // +2 power per level
+	BasePower += PowerPerLevel;
 
 	// Heal the amount gained (don't full heal, just add the bonus).
 	// Skip while dead so death-state checks (CurrentHealth <= 0) hold until respawn.
@@ -1680,7 +1579,7 @@ void ASkylandersCharacter::UseAbility1()
 	// Not learned yet
 	if (AbilityLevels[0] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Gatling Gun not learned! Press F1 to level it."));
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("%s not learned! Press F1 to level it."), *AbilityNames[0]));
 		return;
 	}
 
@@ -1719,143 +1618,16 @@ void ASkylandersCharacter::UseAbility1()
 		float LineDamage = GetEffectivePower() * 3.5f * RankScale;
 		FVector EndLoc = StartLoc + AimDir * LineRange;
 
-		// Gold beam visual - spawned stretched cube mesh
-		{
-			FVector BeamMidpoint = (StartLoc + EndLoc) * 0.5f;
-			FRotator BeamRotation = AimDir.Rotation();
-			FActorSpawnParameters BeamParams;
-			BeamParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			AActor* BeamVFX = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), BeamMidpoint, BeamRotation, BeamParams);
-			if (BeamVFX)
-			{
-				UStaticMeshComponent* BeamMesh = NewObject<UStaticMeshComponent>(BeamVFX);
-				BeamVFX->SetRootComponent(BeamMesh);
-				BeamMesh->RegisterComponent();
-				UStaticMesh* CubeMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube"));
-				if (CubeMesh) BeamMesh->SetStaticMesh(CubeMesh);
-				// Cube default is 100x100x100. Scale X = range/100, Y and Z thin
-				BeamMesh->SetWorldScale3D(FVector(LineRange / 100.0f, LineWidth / 100.0f, 0.15f));
-				BeamMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				BeamMesh->SetCastShadow(false);
-				UMaterialInterface* BeamBaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
-				if (BeamBaseMat)
-				{
-					UMaterialInstanceDynamic* BeamDynMat = UMaterialInstanceDynamic::Create(BeamBaseMat, BeamVFX);
-					BeamDynMat->SetVectorParameterValue(FName("Color"), FLinearColor(1.0f, 0.85f, 0.0f)); // Gold
-					BeamMesh->SetMaterial(0, BeamDynMat);
-				}
-				BeamVFX->SetLifeSpan(0.6f); // Auto-destroy after 0.6s
-			}
-		}
+		// Gold beam visual - stretched cube along the line
+		// (cube default is 100x100x100: scale X = range/100, Y and Z thin)
+		SpawnColoredMeshVFX(TEXT("/Engine/BasicShapes/Cube"),
+			(StartLoc + EndLoc) * 0.5f, AimDir.Rotation(),
+			FVector(LineRange / 100.0f, LineWidth / 100.0f, 0.15f),
+			FLinearColor(1.0f, 0.85f, 0.0f), 0.6f);
 
-		// Hit ALL enemies in line (piercing)
-		TArray<AActor*> AllEnemies;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemy::StaticClass(), AllEnemies);
-
-		int32 HitCount = 0;
-		for (AActor* Actor : AllEnemies)
-		{
-			FVector ToEnemy = Actor->GetActorLocation() - StartLoc;
-			float DotAlong = FVector::DotProduct(ToEnemy, AimDir);
-
-			if (DotAlong > 0.0f && DotAlong < LineRange)
-			{
-				FVector ClosestPoint = StartLoc + AimDir * DotAlong;
-				float PerpDist = FVector::Dist(Actor->GetActorLocation(), ClosestPoint);
-
-				if (PerpDist < LineWidth)
-				{
-					ASkylandersEnemy* Enemy = Cast<ASkylandersEnemy>(Actor);
-					if (Enemy && Enemy->CurrentHealth > 0.0f)
-					{
-						Enemy->TakeDamage_Custom(LineDamage, this);
-						HitCount++;
-						UE_LOG(LogTemp, Log, TEXT("Golden Super Charge pierced '%s' for %.0f damage!"), *Enemy->EnemyName, LineDamage);
-					}
-				}
-			}
-		}
-
-		// Also hit enemy minions in the line
-		TArray<AActor*> AllMinions;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
-
-		for (AActor* Actor : AllMinions)
-		{
-			ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
-			if (Minion && Minion->Team == ETowerTeam::Enemy && !Minion->bDead)
-			{
-				FVector ToMinion = Actor->GetActorLocation() - StartLoc;
-				float DotAlong = FVector::DotProduct(ToMinion, AimDir);
-
-				if (DotAlong > 0.0f && DotAlong < LineRange)
-				{
-					FVector ClosestPoint = StartLoc + AimDir * DotAlong;
-					float PerpDist = FVector::Dist(Actor->GetActorLocation(), ClosestPoint);
-
-					if (PerpDist < LineWidth)
-					{
-						Minion->TakeDamage_Custom(LineDamage, this);
-						HitCount++;
-						UE_LOG(LogTemp, Log, TEXT("Golden Super Charge pierced minion for %.0f damage!"), LineDamage);
-					}
-				}
-			}
-		}
-
-		// Also hit buff camps in the line
-		TArray<AActor*> AllBuffCamps;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersBuffCamp::StaticClass(), AllBuffCamps);
-
-		for (AActor* Actor : AllBuffCamps)
-		{
-			ASkylandersBuffCamp* BuffCamp = Cast<ASkylandersBuffCamp>(Actor);
-			if (BuffCamp && !BuffCamp->bDead)
-			{
-				FVector ToBuffCamp = Actor->GetActorLocation() - StartLoc;
-				float DotAlong = FVector::DotProduct(ToBuffCamp, AimDir);
-
-				if (DotAlong > 0.0f && DotAlong < LineRange)
-				{
-					FVector ClosestPoint = StartLoc + AimDir * DotAlong;
-					float PerpDist = FVector::Dist(Actor->GetActorLocation(), ClosestPoint);
-
-					if (PerpDist < LineWidth)
-					{
-						BuffCamp->TakeDamage_Custom(LineDamage, this);
-						HitCount++;
-						UE_LOG(LogTemp, Log, TEXT("Golden Super Charge pierced buff camp '%s' for %.0f damage!"), *BuffCamp->CampName, LineDamage);
-					}
-				}
-			}
-		}
-
-		// Also hit enemy gods in the line
-		TArray<AActor*> AllEnemyGods;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllEnemyGods);
-
-		for (AActor* Actor : AllEnemyGods)
-		{
-			ASkylandersEnemyGod* EnemyGod = Cast<ASkylandersEnemyGod>(Actor);
-			if (EnemyGod && EnemyGod->CurrentState != EGodAIState::Dead)
-			{
-				FVector ToGod = Actor->GetActorLocation() - StartLoc;
-				float DotAlong = FVector::DotProduct(ToGod, AimDir);
-
-				if (DotAlong > 0.0f && DotAlong < LineRange)
-				{
-					FVector ClosestPoint = StartLoc + AimDir * DotAlong;
-					float PerpDist = FVector::Dist(Actor->GetActorLocation(), ClosestPoint);
-
-					if (PerpDist < LineWidth)
-					{
-						EnemyGod->TakeDamage_Custom(LineDamage, this);
-						HitCount++;
-						UE_LOG(LogTemp, Log, TEXT("Golden Super Charge pierced enemy god '%s' for %.0f damage!"), *EnemyGod->GodName, LineDamage);
-					}
-				}
-			}
-		}
+		// Pierce everything along the line
+		int32 HitCount = DamageEnemiesInLine(StartLoc, AimDir, LineRange, LineWidth, LineDamage);
+		UE_LOG(LogTemp, Log, TEXT("Golden Super Charge pierced %d targets for %.0f damage each"), HitCount, LineDamage);
 
 		if (HitCount > 0)
 		{
@@ -1870,7 +1642,7 @@ void ASkylandersCharacter::UseAbility2()
 	// Not learned yet
 	if (AbilityLevels[1] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Pot o' Gold not learned! Press F2 to level it."));
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("%s not learned! Press F2 to level it."), *AbilityNames[1]));
 		return;
 	}
 
@@ -1928,7 +1700,7 @@ void ASkylandersCharacter::UseAbility3()
 	// Not learned yet
 	if (AbilityLevels[2] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Golden Machine Gun not learned! Press F3 to level it."));
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("%s not learned! Press F3 to level it."), *AbilityNames[2]));
 		return;
 	}
 
@@ -1983,7 +1755,7 @@ void ASkylandersCharacter::UseAbility4()
 	// Not learned yet
 	if (AbilityLevels[3] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Yamato Cannon not learned! Press F4 to level it (requires level 5)."));
+		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("%s not learned! Press F4 to level it (requires level 5)."), *AbilityNames[3]));
 		return;
 	}
 
@@ -2093,8 +1865,8 @@ void ASkylandersCharacter::FireProjectile()
 	// Cancel recall if channeling
 	if (bIsRecalling) CancelRecall();
 
-	// Can't manually fire during machine gun or yamato charge
-	if (bMachineGunActive || bChargingYamato) return;
+	// Can't manually fire while channeling
+	if (IsChanneling()) return;
 
 	// Check fire rate cooldown (base + item bonus attack speed)
 	float CurrentTime = GetWorld()->GetTimeSeconds();
@@ -2163,6 +1935,7 @@ void ASkylandersCharacter::FireProjectile()
 		SkyProj->Damage = FinalDmg;
 		SkyProj->Lifesteal = ItemBonusStats.Lifesteal;
 		SkyProj->bIsCrit = bCrit;
+		SkyProj->ProjectileColor = AutoAttackProjectileColor;
 	}
 }
 
@@ -2450,7 +2223,7 @@ float ASkylandersCharacter::GetEffectiveAttackSpeed() const
 
 float ASkylandersCharacter::GetEffectiveProtections() const
 {
-	return ItemBonusStats.Protections;
+	return ItemBonusStats.Protections + BuffProtections;
 }
 
 // ========== ABILITY LEVELING ==========
@@ -2480,8 +2253,7 @@ void ASkylandersCharacter::LevelUpAbility(int32 AbilityIndex)
 	AbilityLevels[AbilityIndex]++;
 	AbilityPoints--;
 
-	// Show on-screen feedback
-	FString AbilityNames[] = {TEXT("Gatling Gun"), TEXT("Pot o' Gold"), TEXT("Golden Machine Gun"), TEXT("Yamato Cannon")};
+	// Show on-screen feedback (AbilityNames member — set per character)
 	if (GEngine)
 	{
 		FString Msg = FString::Printf(TEXT("%s leveled to Rank %d! (%d points remaining)"),
@@ -2556,7 +2328,7 @@ void ASkylandersCharacter::StartRecall()
 	if (CurrentHealth <= 0.0f) return;
 
 	// Ignore if channeling abilities
-	if (bMachineGunActive || bChargingYamato) return;
+	if (IsChanneling()) return;
 
 	bIsRecalling = true;
 	RecallRemainingTime = RecallChannelTime;
@@ -2644,4 +2416,180 @@ void ASkylandersCharacter::TeleportToBase()
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Cyan, TEXT("Teleported to base!"));
 	}
+}
+
+// ========== PER-CHARACTER SETUP ==========
+
+void ASkylandersCharacter::LoadCharacterVisuals()
+{
+	// Trigger Happy: dual gun meshes attached to hands
+	USkeletalMesh* GunMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Characters/TriggerHappy/Meshes/Gun/TriggerHappyfbxTriggerHappy_Gun"));
+	if (GunMesh)
+	{
+		if (LeftGunMesh) LeftGunMesh->SetSkeletalMesh(GunMesh);
+		if (RightGunMesh) RightGunMesh->SetSkeletalMesh(GunMesh);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Could not load gun mesh!"));
+	}
+}
+
+bool ASkylandersCharacter::IsChanneling() const
+{
+	return bMachineGunActive || bChargingYamato;
+}
+
+// ========== SHARED KIT HELPERS ==========
+
+// Applies damage to any enemy-side target type
+static void ApplyDamageToTarget(AActor* Target, float Damage, AActor* Causer)
+{
+	if (ASkylandersEnemy* Enemy = Cast<ASkylandersEnemy>(Target))
+	{
+		Enemy->TakeDamage_Custom(Damage, Causer);
+	}
+	else if (ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Target))
+	{
+		Minion->TakeDamage_Custom(Damage, Causer);
+	}
+	else if (ASkylandersBuffCamp* Camp = Cast<ASkylandersBuffCamp>(Target))
+	{
+		Camp->TakeDamage_Custom(Damage, Causer);
+	}
+	else if (ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Target))
+	{
+		God->TakeDamage_Custom(Damage, Causer);
+	}
+}
+
+// Collects every living enemy-side target (jungle enemies, enemy minions, buff camps, enemy gods)
+static void CollectEnemyTargets(UWorld* World, TArray<AActor*>& OutTargets)
+{
+	TArray<AActor*> Found;
+
+	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersEnemy::StaticClass(), Found);
+	for (AActor* Actor : Found)
+	{
+		ASkylandersEnemy* Enemy = Cast<ASkylandersEnemy>(Actor);
+		if (Enemy && Enemy->CurrentHealth > 0.0f) OutTargets.Add(Actor);
+	}
+
+	Found.Reset();
+	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersMinion::StaticClass(), Found);
+	for (AActor* Actor : Found)
+	{
+		ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
+		if (Minion && Minion->Team == ETowerTeam::Enemy && !Minion->bDead) OutTargets.Add(Actor);
+	}
+
+	Found.Reset();
+	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersBuffCamp::StaticClass(), Found);
+	for (AActor* Actor : Found)
+	{
+		ASkylandersBuffCamp* Camp = Cast<ASkylandersBuffCamp>(Actor);
+		if (Camp && !Camp->bDead) OutTargets.Add(Actor);
+	}
+
+	Found.Reset();
+	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersEnemyGod::StaticClass(), Found);
+	for (AActor* Actor : Found)
+	{
+		ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Actor);
+		if (God && God->CurrentState != EGodAIState::Dead) OutTargets.Add(Actor);
+	}
+}
+
+int32 ASkylandersCharacter::DamageEnemiesInLine(const FVector& Start, const FVector& Dir, float Range, float Width, float Damage)
+{
+	TArray<AActor*> Targets;
+	CollectEnemyTargets(GetWorld(), Targets);
+
+	int32 HitCount = 0;
+	for (AActor* Target : Targets)
+	{
+		FVector ToTarget = Target->GetActorLocation() - Start;
+		float DotAlong = FVector::DotProduct(ToTarget, Dir);
+		if (DotAlong <= 0.0f || DotAlong >= Range) continue;
+
+		FVector ClosestPoint = Start + Dir * DotAlong;
+		if (FVector::Dist(Target->GetActorLocation(), ClosestPoint) < Width)
+		{
+			ApplyDamageToTarget(Target, Damage, this);
+			HitCount++;
+		}
+	}
+	return HitCount;
+}
+
+int32 ASkylandersCharacter::DamageEnemiesInCone(const FVector& Origin, const FVector& Dir, float Range, float MinDot, float Damage, float DistanceFalloff)
+{
+	TArray<AActor*> Targets;
+	CollectEnemyTargets(GetWorld(), Targets);
+
+	int32 HitCount = 0;
+	for (AActor* Target : Targets)
+	{
+		FVector ToTarget = Target->GetActorLocation() - Origin;
+		float Distance = ToTarget.Size();
+		if (Distance >= Range) continue;
+
+		if (FVector::DotProduct(ToTarget.GetSafeNormal(), Dir) > MinDot)
+		{
+			float DistFactor = 1.0f - (Distance / Range) * DistanceFalloff;
+			ApplyDamageToTarget(Target, Damage * DistFactor, this);
+			HitCount++;
+		}
+	}
+	return HitCount;
+}
+
+int32 ASkylandersCharacter::DamageEnemiesInSphere(const FVector& Center, float Radius, float Damage)
+{
+	TArray<AActor*> Targets;
+	CollectEnemyTargets(GetWorld(), Targets);
+
+	int32 HitCount = 0;
+	for (AActor* Target : Targets)
+	{
+		if (FVector::Dist(Target->GetActorLocation(), Center) < Radius)
+		{
+			ApplyDamageToTarget(Target, Damage, this);
+			HitCount++;
+		}
+	}
+	return HitCount;
+}
+
+AActor* ASkylandersCharacter::SpawnColoredMeshVFX(const TCHAR* MeshPath, const FVector& Location, const FRotator& Rotation, const FVector& Scale, const FLinearColor& Color, float Lifespan)
+{
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AActor* VFX = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), Location, Rotation, Params);
+	if (!VFX) return nullptr;
+
+	UStaticMeshComponent* MeshComp = NewObject<UStaticMeshComponent>(VFX);
+	VFX->SetRootComponent(MeshComp);
+	MeshComp->RegisterComponent();
+
+	if (UStaticMesh* VFXMesh = LoadObject<UStaticMesh>(nullptr, MeshPath))
+	{
+		MeshComp->SetStaticMesh(VFXMesh);
+	}
+	MeshComp->SetWorldScale3D(Scale);
+	MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MeshComp->SetCastShadow(false);
+
+	if (UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial")))
+	{
+		UMaterialInstanceDynamic* DynMat = UMaterialInstanceDynamic::Create(BaseMat, VFX);
+		DynMat->SetVectorParameterValue(FName("Color"), Color);
+		MeshComp->SetMaterial(0, DynMat);
+	}
+
+	if (Lifespan > 0.0f)
+	{
+		VFX->SetLifeSpan(Lifespan);
+	}
+	return VFX;
 }

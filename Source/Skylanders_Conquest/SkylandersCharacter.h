@@ -64,6 +64,16 @@ public:
 	UPROPERTY()
 	AActor* YamatoChargeVFX;
 
+	// ========== CHARACTER IDENTITY ==========
+
+	// Display name shown in kill feed / select screens
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character")
+	FString CharacterName;
+
+	// Role blurb ("Gunslinger", "Undead Sorceress", ...)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character")
+	FString CharacterRole;
+
 	// ========== STATS ==========
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
@@ -296,6 +306,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
 	float FireRate; // Shots per second (e.g., 2.0 = fire every 0.5 seconds)
 
+	// Auto-attack reach used for the ground aim indicator (and melee swings)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
+	float AutoAttackRange;
+
+	// Tint applied to auto-attack projectiles that use the C++ fallback mesh
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
+	FLinearColor AutoAttackProjectileColor;
+
+	// Temporary protections from ability buffs (e.g. Tree Rex Barkskin).
+	// Separate from ItemBonusStats because RecalculateItemBonuses() rebuilds
+	// that struct from the inventory and would wipe a buff stored there.
+	UPROPERTY(BlueprintReadOnly, Category = "Stats")
+	float BuffProtections;
+
 	// Movement penalties
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
 	float StrafeSpeedMultiplier; // Speed when strafing (0-1)
@@ -414,22 +438,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void UpdateHUD();
 
-	// Abilities
+	// Abilities (virtual — each character overrides with their own kit)
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
-	void UseAbility1();
+	virtual void UseAbility1();
 
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
-	void UseAbility2();
+	virtual void UseAbility2();
 
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
-	void UseAbility3();
+	virtual void UseAbility3();
 
 	UFUNCTION(BlueprintCallable, Category = "Abilities")
-	void UseAbility4();
+	virtual void UseAbility4();
 
-	// Shooting
+	// Auto attack (virtual — ranged characters spawn projectiles, melee overrides swing)
 	UFUNCTION(BlueprintCallable, Category = "Combat")
-	void FireProjectile();
+	virtual void FireProjectile();
 
 	// ========== SHOP & INVENTORY ==========
 
@@ -511,6 +535,44 @@ protected:
 
 	// Ground targeting - traces camera through crosshair to ground plane
 	FVector GetGroundAimPoint(float MaxRange = 1500.0f) const;
+
+	// ========== PER-CHARACTER SETUP (set in subclass constructors) ==========
+
+	// Starting stats applied in BeginPlay (before the level-3 boost)
+	float StartingMaxHealth;
+	float StartingMaxMana;
+	float StartingManaRegen;
+	float StartingBasePower;
+	float PowerPerLevel;
+
+	// Ability display names (messages, level-up feedback)
+	FString AbilityNames[4];
+
+	// Loads meshes/materials that can't be set in the constructor
+	// (default: Trigger Happy's gun meshes + indicator materials)
+	virtual void LoadCharacterVisuals();
+
+	// True while a channeled ability locks movement/attacks
+	// (default: Trigger Happy's machine gun / yamato charge)
+	virtual bool IsChanneling() const;
+
+	// ========== SHARED KIT HELPERS ==========
+	// Each hits jungle enemies, enemy minions, buff camps, and enemy gods.
+	// Returns the number of targets hit.
+
+	// Piercing line: everything within Width of the Start->Dir segment
+	int32 DamageEnemiesInLine(const FVector& Start, const FVector& Dir, float Range, float Width, float Damage);
+
+	// Frontal cone: within Range of Origin and in front of Dir (MinDot ~0.3 = wide, 0.7 = narrow).
+	// DistanceFalloff scales damage down to (1 - DistanceFalloff) at max range.
+	int32 DamageEnemiesInCone(const FVector& Origin, const FVector& Dir, float Range, float MinDot, float Damage, float DistanceFalloff = 0.0f);
+
+	// Sphere around a point
+	int32 DamageEnemiesInSphere(const FVector& Center, float Radius, float Damage);
+
+	// Spawns a colored basic-shape mesh actor that self-destroys.
+	// MeshPath e.g. "/Engine/BasicShapes/Sphere". Returns the actor (for manual scaling).
+	AActor* SpawnColoredMeshVFX(const TCHAR* MeshPath, const FVector& Location, const FRotator& Rotation, const FVector& Scale, const FLinearColor& Color, float Lifespan);
 
 	// Respawn timer
 	FTimerHandle RespawnTimerHandle;

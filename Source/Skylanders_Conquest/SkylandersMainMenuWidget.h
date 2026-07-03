@@ -39,6 +39,14 @@ private:
 	UVerticalBox* BuildSettingsScreen();
 	UButton* MakeMenuButton(const FString& Label, FName Name);
 
+	// Adds one selectable character row (name + role + kit blurb) to the box;
+	// caller binds OnClicked on the returned button
+	UButton* AddCharacterButton(UVerticalBox* Box, const FString& Name, const FString& Role,
+		const FString& KitLine, FLinearColor AccentColor, FName WidgetName);
+
+	// Stores the pick in the game instance and opens the match level
+	void StartGameAs(FName CharacterID);
+
 	// Button handlers
 	UFUNCTION() void OnPlayClicked();
 	UFUNCTION() void OnCharactersClicked();
@@ -46,4 +54,6 @@ private:
 	UFUNCTION() void OnQuitClicked();
 	UFUNCTION() void OnBackClicked();
 	UFUNCTION() void OnSelectTriggerHappy();
+	UFUNCTION() void OnSelectHex();
+	UFUNCTION() void OnSelectTreeRex();
 };
