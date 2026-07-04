@@ -83,6 +83,19 @@ void FSkylandersSimpleAnimProxy::UpdateAnimationNode(const FAnimationUpdateConte
 	RunTime += Dt;
 }
 
+// The ripped animations move the ROOT bone (baked-in root motion). Played raw,
+// the mesh literally walks away from its capsule — pin the root's translation
+// back to the reference pose so animation stays in place.
+static void LockRootBone(FPoseContext& Pose)
+{
+	if (Pose.Pose.GetNumBones() <= 0) return;
+	const FCompactPoseBoneIndex Root(0);
+	const FTransform& RefRoot = Pose.Pose.GetBoneContainer().GetRefPoseTransform(Root);
+	FTransform Current = Pose.Pose[Root];
+	Current.SetTranslation(RefRoot.GetTranslation());
+	Pose.Pose[Root] = Current;
+}
+
 // Samples one looping sequence at the given accumulated time
 static void SampleLooping(UAnimSequenceBase* Sequence, float Time, FPoseContext& Output)
 {
@@ -91,6 +104,7 @@ static void SampleLooping(UAnimSequenceBase* Sequence, float Time, FPoseContext&
 	FAnimationPoseData PoseData(Output);
 	FAnimExtractContext Extract(static_cast<double>(Wrapped), false);
 	Sequence->GetAnimationPose(PoseData, Extract);
+	LockRootBone(Output);
 }
 
 bool FSkylandersSimpleAnimProxy::Evaluate(FPoseContext& Output)
@@ -140,6 +154,7 @@ bool FSkylandersSimpleAnimProxy::Evaluate(FPoseContext& Output)
 		FAnimationPoseData OverrideData(OverridePose);
 		FAnimExtractContext Extract(static_cast<double>(Time), false);
 		OverrideSequence->GetAnimationPose(OverrideData, Extract);
+		LockRootBone(OverridePose);
 
 		if (OverrideWeight >= 1.0f - KINDA_SMALL_NUMBER)
 		{

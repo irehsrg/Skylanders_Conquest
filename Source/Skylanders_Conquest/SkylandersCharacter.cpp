@@ -307,6 +307,7 @@ ASkylandersCharacter::ASkylandersCharacter()
 	{
 		AbilityLevels[i] = 0;
 	}
+
 }
 
 void ASkylandersCharacter::BeginPlay()
@@ -379,19 +380,8 @@ void ASkylandersCharacter::BeginPlay()
 		}
 	}
 
-	// Asset fallbacks: characters spawned as raw C++ classes (Hex, Tree Rex) have no
-	// Blueprint Class Defaults, so the input/HUD/projectile assets normally assigned in
-	// BP_SkylandersCharacter_CPP are null — load the shared assets directly.
-	if (!DefaultMappingContext)
-		DefaultMappingContext = LoadObject<UInputMappingContext>(nullptr, TEXT("/Game/Input/IMC_Default.IMC_Default"));
-	if (!MoveAction)
-		MoveAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/IA_Move.IA_Move"));
-	if (!LookAction)
-		LookAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/IA_Look.IA_Look"));
-	if (!JumpAction)
-		JumpAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/IA_Jump.IA_Jump"));
-	if (!FireAction)
-		FireAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/IA_Fire.IA_Fire"));
+	// HUD/shop/projectile fallbacks for characters without Blueprint class
+	// defaults (widgets are only needed from BeginPlay onward)
 	if (!MainHUDClass)
 		MainHUDClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/UserInterface/WBP_MainHUD.WBP_MainHUD_C"));
 	if (!ShopWidgetClass)
@@ -873,6 +863,21 @@ void ASkylandersCharacter::Debug_AddGold()
 void ASkylandersCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+	// Shared input assets for characters without Blueprint class defaults
+	// (Hex, Tree Rex). Loaded here because this runs BEFORE BeginPlay on level
+	// travel, and the base CDO constructs too early in engine init to use
+	// ConstructorHelpers for these. Trigger Happy's Blueprint overrides them.
+	if (!DefaultMappingContext)
+		DefaultMappingContext = LoadObject<UInputMappingContext>(nullptr, TEXT("/Game/Input/IMC_Default.IMC_Default"));
+	if (!MoveAction)
+		MoveAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_Move.IA_Move"));
+	if (!LookAction)
+		LookAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_Look.IA_Look"));
+	if (!JumpAction)
+		JumpAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_Jump.IA_Jump"));
+	if (!FireAction)
+		FireAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_Fire.IA_Fire"));
 
 	// Debug keys (always work, no Input Action setup needed)
 	PlayerInputComponent->BindKey(EKeys::H, IE_Pressed, this, &ASkylandersCharacter::Debug_TakeDamage);
