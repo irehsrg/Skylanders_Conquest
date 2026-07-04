@@ -18,6 +18,7 @@ class UCameraComponent;
 class UAnimSequenceBase;
 class UStaticMeshComponent;
 class USoundBase;
+class UTexture2D;
 struct FInputActionValue;
 
 UCLASS()
@@ -265,6 +266,15 @@ public:
 
 	// ========== HUD ==========
 
+	// Per-character HUD art. Null entries keep whatever the HUD Blueprint has
+	// baked in (Trigger Happy's icons); Hex/Tree Rex set these in their
+	// constructors and the HUD swaps at match start.
+	UPROPERTY(EditAnywhere, Category = "UI")
+	UTexture2D* AbilityIconTextures[4];
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+	UTexture2D* PortraitTexture;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
 	TSubclassOf<UUserWidget> MainHUDClass;
 
@@ -437,6 +447,9 @@ public:
 	// HUD updates
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void UpdateHUD();
+
+	// Swaps the HUD's ability icons/portrait to this character's art (if set)
+	void ApplyCharacterHUDArt();
 
 	// Abilities (virtual — each character overrides with their own kit)
 	UFUNCTION(BlueprintCallable, Category = "Abilities")

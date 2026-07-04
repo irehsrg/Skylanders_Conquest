@@ -40,6 +40,7 @@
 #include "DrawDebugHelpers.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/Texture2D.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Animation/AnimInstance.h"
 #include "Components/Image.h"
@@ -294,6 +295,13 @@ ASkylandersCharacter::ASkylandersCharacter()
 	DeathAnim = nullptr;
 	DebugShopCursor = 1;
 
+	// Per-character HUD art (subclasses load their own; null = keep HUD defaults)
+	for (int32 i = 0; i < 4; i++)
+	{
+		AbilityIconTextures[i] = nullptr;
+	}
+	PortraitTexture = nullptr;
+
 	// Audio (assign in Blueprint Class Defaults)
 	AttackSound = nullptr;
 	AbilitySound = nullptr;
@@ -451,8 +459,9 @@ void ASkylandersCharacter::BeginPlay()
 					UE_LOG(LogTemp, Log, TEXT("Scoreboard created (Tab to show)"));
 				}
 
-				// Initial HUD update
+				// Initial HUD update + per-character icon/portrait swap
 				UpdateHUD();
+				ApplyCharacterHUDArt();
 
 				// Load and display crosshair widget
 				UClass* CrosshairClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/UserInterface/CrosshairWidget.CrosshairWidget_C"));
@@ -1460,6 +1469,32 @@ void ASkylandersCharacter::UpdateHUD()
 				Slot->SetText(FText::FromString(TEXT("---")));
 				Slot->SetColorAndOpacity(FSlateColor(FLinearColor(0.3f, 0.3f, 0.3f)));
 			}
+		}
+	}
+}
+
+void ASkylandersCharacter::ApplyCharacterHUDArt()
+{
+	if (!MainHUDWidget || !MainHUDWidget->WidgetTree) return;
+
+	const FName IconNames[4] = {
+		FName("AbilityIcon1"), FName("AbilityIcon2"),
+		FName("AbilityIcon3"), FName("AbilityIcon4")
+	};
+	for (int32 i = 0; i < 4; i++)
+	{
+		if (!AbilityIconTextures[i]) continue;
+		if (UImage* Icon = Cast<UImage>(MainHUDWidget->WidgetTree->FindWidget(IconNames[i])))
+		{
+			Icon->SetBrushFromTexture(AbilityIconTextures[i], false);
+		}
+	}
+
+	if (PortraitTexture)
+	{
+		if (UImage* Portrait = Cast<UImage>(MainHUDWidget->WidgetTree->FindWidget(FName("portrait"))))
+		{
+			Portrait->SetBrushFromTexture(PortraitTexture, false);
 		}
 	}
 }

@@ -10,6 +10,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Engine/Texture2D.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
@@ -100,6 +101,18 @@ ASkylandersTreeRexCharacter::ASkylandersTreeRexCharacter()
 	if (Stampede.Succeeded()) YamatoAnim = Stampede.Object;   // Titan's Wrath (ultimate)
 	if (HitReact.Succeeded()) HitReactAnim = HitReact.Object;
 	if (DeathSeq.Succeeded()) DeathAnim = DeathSeq.Object;
+
+	// HUD art (wiki power icons + portrait)
+	static ConstructorHelpers::FObjectFinder<UTexture2D> Icon1(TEXT("/Game/Characters/TreeRex/UI/TreeRex_Icon1"));
+	static ConstructorHelpers::FObjectFinder<UTexture2D> Icon2(TEXT("/Game/Characters/TreeRex/UI/TreeRex_Icon2"));
+	static ConstructorHelpers::FObjectFinder<UTexture2D> Icon3(TEXT("/Game/Characters/TreeRex/UI/TreeRex_Icon3"));
+	static ConstructorHelpers::FObjectFinder<UTexture2D> Icon4(TEXT("/Game/Characters/TreeRex/UI/TreeRex_Icon4"));
+	static ConstructorHelpers::FObjectFinder<UTexture2D> Portrait(TEXT("/Game/Characters/TreeRex/UI/TreeRex_Portrait"));
+	if (Icon1.Succeeded()) AbilityIconTextures[0] = Icon1.Object;
+	if (Icon2.Succeeded()) AbilityIconTextures[1] = Icon2.Object;
+	if (Icon3.Succeeded()) AbilityIconTextures[2] = Icon3.Object;
+	if (Icon4.Succeeded()) AbilityIconTextures[3] = Icon4.Object;
+	if (Portrait.Succeeded()) PortraitTexture = Portrait.Object;
 }
 
 void ASkylandersTreeRexCharacter::LoadCharacterVisuals()
