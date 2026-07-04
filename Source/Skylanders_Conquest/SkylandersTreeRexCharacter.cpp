@@ -3,6 +3,7 @@
 #include "SkylandersTreeRexCharacter.h"
 #include "SkylandersTower.h"
 #include "SkylandersTitan.h"
+#include "SkylandersSimpleAnimInstance.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -53,61 +54,57 @@ ASkylandersTreeRexCharacter::ASkylandersTreeRexCharacter()
 	HealingGroveTicksRemaining = 0;
 	HealingGroveHealPerTick = 0.0f;
 
-	// Big body: scaled-up mannequin capsule
-	GetCapsuleComponent()->SetCapsuleSize(55.0f, 118.0f);
-	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -118.0f));
-	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
-	GetMesh()->SetRelativeScale3D(FVector(1.35f));
+	// Tree Rex's real body: the source model is ~470 units tall with the pivot
+	// at its center — run it at half scale for a ~235-unit giant.
+	GetCapsuleComponent()->SetCapsuleSize(60.0f, 118.0f);
+	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+	GetMesh()->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f)); // Interchange meshes face +X already
+	GetMesh()->SetRelativeScale3D(FVector(0.5f));
 
 	// Camera pulled back a little further for the bigger frame
 	if (CameraBoom)
 	{
-		CameraBoom->TargetArmLength = 520.0f;
-		CameraBoom->SocketOffset = FVector(0.0f, 0.0f, 130.0f);
+		CameraBoom->TargetArmLength = 560.0f;
+		CameraBoom->SocketOffset = FVector(0.0f, 0.0f, 140.0f);
 	}
 
-	// Placeholder body: Manny mannequin + unarmed AnimBP
-	static ConstructorHelpers::FObjectFinder<USkeletalMesh> BodyMesh(TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple"));
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> BodyMesh(TEXT("/Game/Characters/TreeRex/Models/TreeRex"));
 	if (BodyMesh.Succeeded())
 	{
 		GetMesh()->SetSkeletalMesh(BodyMesh.Object);
 	}
-	static ConstructorHelpers::FClassFinder<UAnimInstance> AnimBP(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/ABP_Unarmed"));
-	if (AnimBP.Succeeded())
-	{
-		GetMesh()->SetAnimInstanceClass(AnimBP.Class);
-	}
+	// Code-driven anim instance (no AnimBP authored for Tree Rex yet)
+	GetMesh()->SetAnimInstanceClass(USkylandersSimpleAnimInstance::StaticClass());
 
-	// Punches and reactions from the mannequin animation set
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> SwingA(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_Attack_01"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> SwingB(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_Attack_02"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> BigSwing(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_ChargedAttack"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> HitReact(TEXT("/Game/Characters/Mannequins/Anims/Rifle/HitReact/MM_HitReact_Front_Med_01"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> DeathA(TEXT("/Game/Characters/Mannequins/Anims/Death/MM_Death_Back_01"));
-	if (SwingA.Succeeded()) AttackLeftAnim = SwingA.Object;
-	if (SwingB.Succeeded()) AttackRightAnim = SwingB.Object;
-	if (SwingA.Succeeded()) Ability1Anim = SwingA.Object;
-	if (SwingB.Succeeded()) Ability2Anim = SwingB.Object;
-	if (BigSwing.Succeeded()) YamatoAnim = BigSwing.Object; // reused for the ult swing
+	// Native Tree Rex animations from the ripped set.
+	// The rip has no plain idle/run: magicmoment_failloop is a standing loop that
+	// reads as a heavy idle, and sequoiastampede_loop is his charge run.
+	// (drive_idle/drive_run are kart-driving poses — verified wrong in PIE.)
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> IdleSeq(TEXT("/Game/Characters/TreeRex/Animations/magicmoment_failloop"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> RunSeq(TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_loop"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> PunchA(TEXT("/Game/Characters/TreeRex/Animations/photosynthesiscannon_basic"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> PunchB(TEXT("/Game/Characters/TreeRex/Animations/photosynthesiscannon_triple"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> SlamOut(TEXT("/Game/Characters/TreeRex/Animations/shockwave_out"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> Brace(TEXT("/Game/Characters/TreeRex/Animations/shockwave_in"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> GroveCast(TEXT("/Game/Characters/TreeRex/Animations/magicmoment_intro"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> Stampede(TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_out"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> HitReact(TEXT("/Game/Characters/TreeRex/Animations/takehit_groundfront"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> DeathSeq(TEXT("/Game/Characters/TreeRex/Animations/knockaway_back"));
+	if (IdleSeq.Succeeded()) IdleLocomotionAnim = IdleSeq.Object;
+	if (RunSeq.Succeeded()) RunLocomotionAnim = RunSeq.Object;
+	if (PunchA.Succeeded()) AttackLeftAnim = PunchA.Object;
+	if (PunchB.Succeeded()) AttackRightAnim = PunchB.Object;
+	if (SlamOut.Succeeded()) Ability1Anim = SlamOut.Object;   // Shockwave Slam
+	if (Brace.Succeeded()) Ability2Anim = Brace.Object;       // Barkskin
+	if (GroveCast.Succeeded()) HealingGroveAnim = GroveCast.Object; // Healing Grove
+	if (Stampede.Succeeded()) YamatoAnim = Stampede.Object;   // Titan's Wrath (ultimate)
 	if (HitReact.Succeeded()) HitReactAnim = HitReact.Object;
-	if (DeathA.Succeeded()) DeathAnim = DeathA.Object;
+	if (DeathSeq.Succeeded()) DeathAnim = DeathSeq.Object;
 }
 
 void ASkylandersTreeRexCharacter::LoadCharacterVisuals()
 {
-	// No gun meshes — tint the mannequin bark green.
-	if (USkeletalMeshComponent* Body = GetMesh())
-	{
-		for (int32 i = 0; i < Body->GetNumMaterials(); i++)
-		{
-			if (UMaterialInstanceDynamic* MID = Body->CreateDynamicMaterialInstance(i))
-			{
-				MID->SetVectorParameterValue(FName("Tint"), BarkGreen);
-				MID->SetVectorParameterValue(FName("Color"), BarkGreen);
-				MID->SetVectorParameterValue(FName("BodyColor"), BarkGreen);
-			}
-		}
-	}
+	// Real mesh + materials come from the imported assets — nothing extra to load.
 }
 
 // Melee swing helper: cone damage + enemy structures in reach
@@ -289,6 +286,7 @@ void ASkylandersTreeRexCharacter::UseAbility3()
 		Ability3_RemainingCooldown = Ability3_Cooldown * CooldownScale;
 
 		if (AbilitySound) UGameplayStatics::PlaySoundAtLocation(this, AbilitySound, GetActorLocation());
+		PlayAnimOnSlot(HealingGroveAnim, 1.0f);
 
 		// Heal (14% + 2% per rank) of effective max HP over 4 seconds, in 8 ticks
 		float EffectiveMaxHP = MaxHealth + ItemBonusStats.MaxHealth;

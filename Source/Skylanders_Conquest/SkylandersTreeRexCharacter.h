@@ -32,6 +32,10 @@ public:
 protected:
 	virtual void LoadCharacterVisuals() override;
 
+	// Cast animation for Healing Grove (ability 3)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation")
+	UAnimSequenceBase* HealingGroveAnim = nullptr;
+
 	// Melee swing that also checks enemy towers/titans (auto attacks damage structures)
 	void MeleeCleave(float Damage, float Range, float MinDot);
 

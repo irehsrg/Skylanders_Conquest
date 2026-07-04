@@ -2,6 +2,7 @@
 
 #include "SkylandersHexCharacter.h"
 #include "SkylandersAoEExplosion.h"
+#include "SkylandersSimpleAnimInstance.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -47,54 +48,47 @@ ASkylandersHexCharacter::ASkylandersHexCharacter()
 	Ability4_Cooldown = 75.0f;
 	Ability4_ManaCost = 100.0f;
 
-	// Mannequin-sized body (Trigger Happy's base capsule is tuned for a tiny character)
-	GetCapsuleComponent()->SetCapsuleSize(35.0f, 90.0f);
-	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -90.0f));
-	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
+	// Hex's real body: ~94 units tall, pivot at the model's center (she hovers).
+	// Interchange-imported meshes already face +X — no yaw correction needed.
+	GetCapsuleComponent()->SetCapsuleSize(34.0f, 52.0f);
+	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+	GetMesh()->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
 
-	// Placeholder body: Quinn mannequin + unarmed AnimBP
-	static ConstructorHelpers::FObjectFinder<USkeletalMesh> BodyMesh(TEXT("/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple"));
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> BodyMesh(TEXT("/Game/Characters/Hex/Models/Hex"));
 	if (BodyMesh.Succeeded())
 	{
 		GetMesh()->SetSkeletalMesh(BodyMesh.Object);
 	}
-	static ConstructorHelpers::FClassFinder<UAnimInstance> AnimBP(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/ABP_Unarmed"));
-	if (AnimBP.Succeeded())
-	{
-		GetMesh()->SetAnimInstanceClass(AnimBP.Class);
-	}
+	// Code-driven anim instance (no AnimBP authored for Hex yet)
+	GetMesh()->SetAnimInstanceClass(USkylandersSimpleAnimInstance::StaticClass());
 
-	// Cast gestures + reactions from the mannequin animation set
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> CastA(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_Attack_01"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> CastB(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_Attack_02"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> BigCast(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_ChargedAttack"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> HitReact(TEXT("/Game/Characters/Mannequins/Anims/Rifle/HitReact/MM_HitReact_Front_Lgt_01"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> DeathA(TEXT("/Game/Characters/Mannequins/Anims/Death/MM_Death_Front_01"));
-	if (CastA.Succeeded()) AttackLeftAnim = CastA.Object;
-	if (CastB.Succeeded()) AttackRightAnim = CastB.Object;
-	if (CastA.Succeeded()) Ability1Anim = CastA.Object;
-	if (CastB.Succeeded()) Ability2Anim = CastB.Object;
-	if (BigCast.Succeeded()) YamatoAnim = BigCast.Object; // reused for ability visuals
+	// Native Hex animations from the ripped set
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> IdleSeq(TEXT("/Game/Characters/Hex/Animations/drive_idle"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> RunSeq(TEXT("/Game/Characters/Hex/Animations/drive_run"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> OrbL(TEXT("/Game/Characters/Hex/Animations/conjurephantomorb_left_partial"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> OrbR(TEXT("/Game/Characters/Hex/Animations/conjurephantomorb_right_partial"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> BigOrb(TEXT("/Game/Characters/Hex/Animations/twicetheorbage_partial"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> WallIn(TEXT("/Game/Characters/Hex/Animations/wallofbones_in"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> SkullsIn(TEXT("/Game/Characters/Hex/Animations/rainofskulls_in_partial"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> SkullsLoop(TEXT("/Game/Characters/Hex/Animations/rainofskulls_loop_partial"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> HitReact(TEXT("/Game/Characters/Hex/Animations/takehit_groundfront"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> DeathSeq(TEXT("/Game/Characters/Hex/Animations/knockaway_back"));
+	if (IdleSeq.Succeeded()) IdleLocomotionAnim = IdleSeq.Object;
+	if (RunSeq.Succeeded()) RunLocomotionAnim = RunSeq.Object;
+	if (OrbL.Succeeded()) AttackLeftAnim = OrbL.Object;
+	if (OrbR.Succeeded()) AttackRightAnim = OrbR.Object;
+	if (BigOrb.Succeeded()) Ability1Anim = BigOrb.Object;        // Phantom Orb
+	if (WallIn.Succeeded()) Ability2Anim = WallIn.Object;        // Wall of Bones
+	if (SkullsIn.Succeeded()) RainOfSkullsAnim = SkullsIn.Object; // Rain of Skulls
+	if (SkullsLoop.Succeeded()) YamatoAnim = SkullsLoop.Object;  // Skull Storm (ultimate)
 	if (HitReact.Succeeded()) HitReactAnim = HitReact.Object;
-	if (DeathA.Succeeded()) DeathAnim = DeathA.Object;
+	if (DeathSeq.Succeeded()) DeathAnim = DeathSeq.Object;
 }
 
 void ASkylandersHexCharacter::LoadCharacterVisuals()
 {
-	// No gun meshes — instead tint the mannequin purple so Hex reads as Hex.
-	// Try the common tint parameter names; missing params are silently ignored.
-	if (USkeletalMeshComponent* Body = GetMesh())
-	{
-		for (int32 i = 0; i < Body->GetNumMaterials(); i++)
-		{
-			if (UMaterialInstanceDynamic* MID = Body->CreateDynamicMaterialInstance(i))
-			{
-				MID->SetVectorParameterValue(FName("Tint"), HexPurple);
-				MID->SetVectorParameterValue(FName("Color"), HexPurple);
-				MID->SetVectorParameterValue(FName("BodyColor"), HexPurple);
-			}
-		}
-	}
+	// Real mesh + materials come from the imported assets — nothing extra to tint.
+	// (No gun meshes: Hex casts from her hands.)
 }
 
 // Ability 1 - Phantom Orb: piercing line skillshot
@@ -205,7 +199,7 @@ void ASkylandersHexCharacter::UseAbility3()
 		Ability3_RemainingCooldown = Ability3_Cooldown * CooldownScale;
 
 		if (AbilitySound) UGameplayStatics::PlaySoundAtLocation(this, AbilitySound, GetActorLocation());
-		PlayAnimOnSlot(Ability2Anim, 1.0f);
+		PlayAnimOnSlot(RainOfSkullsAnim, 1.0f);
 
 		FVector SpawnLoc = GetGroundAimPoint(1050.0f - 250.0f);
 		SpawnLoc.Z = GetActorLocation().Z;

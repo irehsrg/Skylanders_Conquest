@@ -30,4 +30,8 @@ public:
 
 protected:
 	virtual void LoadCharacterVisuals() override;
+
+	// Cast animation for Rain of Skulls (ability 3)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation")
+	UAnimSequenceBase* RainOfSkullsAnim = nullptr;
 };

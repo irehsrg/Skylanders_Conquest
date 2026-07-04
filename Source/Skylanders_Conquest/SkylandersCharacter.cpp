@@ -31,6 +31,7 @@
 #include "SkylandersEnemyGod.h"
 #include "SkylandersTitan.h"
 #include "SkylandersItemCatalog.h"
+#include "SkylandersSimpleAnimInstance.h"
 #include "SkylandersInventoryWidget.h"
 #include "SkylandersItemHUDWidget.h"
 #include "SkylandersMinimapWidget.h"
@@ -279,6 +280,8 @@ ASkylandersCharacter::ASkylandersCharacter()
 	HealthRegenRate = 0.0f;
 
 	// Animation references (set in Blueprint Class Defaults after importing)
+	IdleLocomotionAnim = nullptr;
+	RunLocomotionAnim = nullptr;
 	AttackLeftAnim = nullptr;
 	AttackRightAnim = nullptr;
 	Ability1Anim = nullptr;
@@ -348,6 +351,13 @@ void ASkylandersCharacter::BeginPlay()
 
 	// Per-character meshes/materials (Trigger Happy guns by default; subclasses override)
 	LoadCharacterVisuals();
+
+	// Push locomotion loops into the code-driven anim instance (Hex, Tree Rex)
+	if (USkylandersSimpleAnimInstance* Simple = Cast<USkylandersSimpleAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		Simple->IdleAnim = IdleLocomotionAnim;
+		Simple->RunAnim = RunLocomotionAnim;
+	}
 
 	// Set up VFX indicator materials
 	UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
@@ -607,6 +617,16 @@ void ASkylandersCharacter::Tick(float DeltaTime)
 
 		// Force stationary
 		GetCharacterMovement()->Velocity = FVector::ZeroVector;
+
+		// Keep the firing loop animation running once the start anim finishes
+		if (MachineGunLoopAnim)
+		{
+			UAnimInstance* AnimInst = GetMesh()->GetAnimInstance();
+			if (AnimInst && !AnimInst->Montage_IsPlaying(nullptr))
+			{
+				PlayAnimOnSlot(MachineGunLoopAnim, 1.0f);
+			}
+		}
 
 		// Auto-fire during machine gun
 		float CurrentTime = GetWorld()->GetTimeSeconds();
@@ -1265,6 +1285,12 @@ void ASkylandersCharacter::Respawn()
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
 
+	// Release the frozen death pose (code-driven anim instances hold the last frame)
+	if (USkylandersSimpleAnimInstance* Simple = Cast<USkylandersSimpleAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		Simple->StopFullBodyAnim();
+	}
+
 	// Restore camera to self
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (PC)
@@ -1852,10 +1878,18 @@ void ASkylandersCharacter::PlayAnimOnSlot(UAnimSequenceBase* Anim, float PlayRat
 {
 	if (!Anim) return;
 	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
-	if (AnimInstance)
+	if (!AnimInstance) return;
+
+	// Characters without an authored AnimBP (Hex, Tree Rex) run the code-driven
+	// instance — montage slots don't exist there, use its full-body override.
+	// Death poses freeze on the final frame instead of returning to locomotion.
+	if (USkylandersSimpleAnimInstance* Simple = Cast<USkylandersSimpleAnimInstance>(AnimInstance))
 	{
-		AnimInstance->PlaySlotAnimationAsDynamicMontage(Anim, SlotName, BlendIn, BlendOut, PlayRate);
+		Simple->PlayFullBodyAnim(Anim, PlayRate, Anim == DeathAnim);
+		return;
 	}
+
+	AnimInstance->PlaySlotAnimationAsDynamicMontage(Anim, SlotName, BlendIn, BlendOut, PlayRate);
 }
 
 // ========== PROJECTILE FIRING ==========

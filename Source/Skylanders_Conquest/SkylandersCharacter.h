@@ -625,6 +625,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation")
 	UAnimSequenceBase* YamatoAnim; // Ability 4
 
+	// Locomotion loops for characters using the code-driven anim instance
+	// (Hex, Tree Rex). Ignored by characters with an authored AnimBP.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation")
+	UAnimSequenceBase* IdleLocomotionAnim;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation")
+	UAnimSequenceBase* RunLocomotionAnim;
+
 	// Hit reaction
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation")
 	UAnimSequenceBase* HitReactAnim;
