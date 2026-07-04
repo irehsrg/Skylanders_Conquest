@@ -17,6 +17,12 @@ class SKYLANDERS_CONQUEST_API ASkylandersMenuPlayerController : public APlayerCo
 {
 	GENERATED_BODY()
 
+public:
+	// Automation hook: opens the character select as if PLAY was clicked
+	// (synthetic UI clicks can't reach UMG buttons in PIE)
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void OpenCharacterSelectScreen();
+
 protected:
 	virtual void BeginPlay() override;
 

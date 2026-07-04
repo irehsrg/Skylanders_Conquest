@@ -25,3 +25,13 @@ void ASkylandersMenuPlayerController::BeginPlay()
 	SetInputMode(InputMode);
 	bShowMouseCursor = true;
 }
+
+void ASkylandersMenuPlayerController::OpenCharacterSelectScreen()
+{
+	if (!MenuWidget) return;
+	// Same path as clicking PLAY (handler is private; invoke via reflection)
+	if (UFunction* Fn = MenuWidget->FindFunction(FName("OnPlayClicked")))
+	{
+		MenuWidget->ProcessEvent(Fn, nullptr);
+	}
+}

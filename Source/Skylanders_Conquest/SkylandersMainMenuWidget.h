@@ -10,10 +10,12 @@ class UButton;
 class UTextBlock;
 class UWidgetSwitcher;
 class UVerticalBox;
+class USkylandersCharacterSelectWidget;
 
 /**
- * Fully code-built front-end menu. Screens (Main / Character Select / Settings)
- * are swapped via a WidgetSwitcher. PLAY opens the game level.
+ * Fully code-built front-end menu. PLAY and CHARACTERS open the full-screen
+ * character select (grid + live 3D preview + abilities); Settings lives in
+ * the widget switcher.
  */
 UCLASS()
 class SKYLANDERS_CONQUEST_API USkylandersMainMenuWidget : public UUserWidget
@@ -23,29 +25,24 @@ class SKYLANDERS_CONQUEST_API USkylandersMainMenuWidget : public UUserWidget
 public:
 	virtual void NativeOnInitialized() override;
 
-	/** Level (map) the PLAY button loads. Defaults to "Joust". */
+	/** Level (map) locking in a character loads. Defaults to "Joust". */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
 	FName GameLevelName = TEXT("Joust");
 
 private:
 	// ----- Screen indices in the switcher -----
-	enum EMenuScreen : int32 { Screen_Main = 0, Screen_Characters = 1, Screen_Settings = 2 };
+	enum EMenuScreen : int32 { Screen_Main = 0, Screen_Settings = 1 };
 
 	UPROPERTY() UWidgetSwitcher* ScreenSwitcher = nullptr;
+	UPROPERTY() USkylandersCharacterSelectWidget* CharacterSelect = nullptr;
 
 	// Build helpers
 	UVerticalBox* BuildMainScreen();
-	UVerticalBox* BuildCharacterScreen();
 	UVerticalBox* BuildSettingsScreen();
 	UButton* MakeMenuButton(const FString& Label, FName Name);
 
-	// Adds one selectable character row (name + role + kit blurb) to the box;
-	// caller binds OnClicked on the returned button
-	UButton* AddCharacterButton(UVerticalBox* Box, const FString& Name, const FString& Role,
-		const FString& KitLine, FLinearColor AccentColor, FName WidgetName);
-
-	// Stores the pick in the game instance and opens the match level
-	void StartGameAs(FName CharacterID);
+	// Opens the full-screen character select overlay
+	void OpenCharacterSelect();
 
 	// Button handlers
 	UFUNCTION() void OnPlayClicked();
@@ -53,7 +50,4 @@ private:
 	UFUNCTION() void OnSettingsClicked();
 	UFUNCTION() void OnQuitClicked();
 	UFUNCTION() void OnBackClicked();
-	UFUNCTION() void OnSelectTriggerHappy();
-	UFUNCTION() void OnSelectHex();
-	UFUNCTION() void OnSelectTreeRex();
 };
