@@ -13,10 +13,15 @@ ASkylandersGameMode::ASkylandersGameMode()
 UClass* ASkylandersGameMode::GetDefaultPawnClassForController_Implementation(AController* InController)
 {
 	// Character picked on the main menu (persists across level travel)
-	if (USkylandersGameInstance* GI = GetGameInstance<USkylandersGameInstance>())
+	USkylandersGameInstance* GI = GetGameInstance<USkylandersGameInstance>();
+	UE_LOG(LogTemp, Warning, TEXT("GetDefaultPawnClassForController: GI=%s Selected=%s"),
+		GI ? *GI->GetClass()->GetName() : TEXT("NULL"),
+		GI ? *GI->SelectedCharacterID.ToString() : TEXT("-"));
+	if (GI)
 	{
 		if (TSubclassOf<ASkylandersCharacter> Selected = GI->ResolveSelectedCharacterClass())
 		{
+			UE_LOG(LogTemp, Warning, TEXT("  -> spawning %s"), *Selected->GetName());
 			return Selected;
 		}
 	}
