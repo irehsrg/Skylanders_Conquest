@@ -66,6 +66,7 @@ ASkylandersHexCharacter::ASkylandersHexCharacter()
 	// Native Hex animations from the ripped set
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> IdleSeq(TEXT("/Game/Characters/Hex/Animations/drive_idle"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> RunSeq(TEXT("/Game/Characters/Hex/Animations/drive_run"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> JumpSeq(TEXT("/Game/Characters/Hex/Animations/jumppad_launch"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> OrbL(TEXT("/Game/Characters/Hex/Animations/conjurephantomorb_left_partial"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> OrbR(TEXT("/Game/Characters/Hex/Animations/conjurephantomorb_right_partial"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> BigOrb(TEXT("/Game/Characters/Hex/Animations/twicetheorbage_partial"));
@@ -76,6 +77,7 @@ ASkylandersHexCharacter::ASkylandersHexCharacter()
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> DeathSeq(TEXT("/Game/Characters/Hex/Animations/knockaway_back"));
 	if (IdleSeq.Succeeded()) IdleLocomotionAnim = IdleSeq.Object;
 	if (RunSeq.Succeeded()) RunLocomotionAnim = RunSeq.Object;
+	if (JumpSeq.Succeeded()) JumpAnim = JumpSeq.Object;
 	if (OrbL.Succeeded()) AttackLeftAnim = OrbL.Object;
 	if (OrbR.Succeeded()) AttackRightAnim = OrbR.Object;
 	if (BigOrb.Succeeded()) Ability1Anim = BigOrb.Object;        // Phantom Orb

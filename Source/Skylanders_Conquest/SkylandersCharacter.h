@@ -35,6 +35,7 @@ protected:
 public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	virtual void OnJumped_Implementation() override;
 
 	// ========== COMPONENTS ==========
 
@@ -645,6 +646,10 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation")
 	UAnimSequenceBase* RunLocomotionAnim;
+
+	// Played once when the character jumps
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation")
+	UAnimSequenceBase* JumpAnim;
 
 	// Hit reaction
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation")

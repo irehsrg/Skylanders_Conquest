@@ -84,15 +84,20 @@ void FSkylandersSimpleAnimProxy::UpdateAnimationNode(const FAnimationUpdateConte
 }
 
 // The ripped animations move the ROOT bone (baked-in root motion). Played raw,
-// the mesh literally walks away from its capsule — pin the root's translation
-// back to the reference pose so animation stays in place.
+// the mesh literally walks away from its capsule — pin the root's horizontal
+// translation back to the reference pose so animation stays in place. The
+// animated Z is kept so poses keep their ground contact (locking Z left
+// characters hovering above the floor).
 static void LockRootBone(FPoseContext& Pose)
 {
 	if (Pose.Pose.GetNumBones() <= 0) return;
 	const FCompactPoseBoneIndex Root(0);
 	const FTransform& RefRoot = Pose.Pose.GetBoneContainer().GetRefPoseTransform(Root);
 	FTransform Current = Pose.Pose[Root];
-	Current.SetTranslation(RefRoot.GetTranslation());
+	FVector Translation = Current.GetTranslation();
+	Translation.X = RefRoot.GetTranslation().X;
+	Translation.Y = RefRoot.GetTranslation().Y;
+	Current.SetTranslation(Translation);
 	Pose.Pose[Root] = Current;
 }
 

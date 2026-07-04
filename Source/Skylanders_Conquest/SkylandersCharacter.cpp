@@ -283,6 +283,7 @@ ASkylandersCharacter::ASkylandersCharacter()
 	// Animation references (set in Blueprint Class Defaults after importing)
 	IdleLocomotionAnim = nullptr;
 	RunLocomotionAnim = nullptr;
+	JumpAnim = nullptr;
 	AttackLeftAnim = nullptr;
 	AttackRightAnim = nullptr;
 	Ability1Anim = nullptr;
@@ -372,11 +373,11 @@ void ASkylandersCharacter::BeginPlay()
 	UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
 	if (BaseMat)
 	{
-		// Gold translucent material for ground aim indicator
+		// Gold translucent material for the (future) ability targeting indicator
 		if (GroundAimIndicator)
 		{
 			UMaterialInstanceDynamic* AimMat = UMaterialInstanceDynamic::Create(BaseMat, this);
-			AimMat->SetVectorParameterValue(FName("Color"), FLinearColor(1.0f, 0.85f, 0.0f, 0.4f));
+			AimMat->SetVectorParameterValue(FName("Color"), FLinearColor(1.0f, 0.85f, 0.0f, 0.12f));
 			GroundAimIndicator->SetMaterial(0, AimMat);
 		}
 		// Cyan translucent material for recall indicator
@@ -538,19 +539,9 @@ void ASkylandersCharacter::Tick(float DeltaTime)
 	UpdateCooldowns(DeltaTime);
 	UpdateCooldownUI();
 
-	// Ground aim indicator - flat cylinder positioned at crosshair ground point
-	float AoERadius = 250.0f;
-	if (CurrentHealth > 0.0f && GroundAimIndicator)
-	{
-		FVector GroundPoint = GetGroundAimPoint(AutoAttackRange - AoERadius);
-		GroundPoint.Z = GetActorLocation().Z + 2.0f; // Slightly above ground
-		GroundAimIndicator->SetWorldLocation(GroundPoint);
-		GroundAimIndicator->SetVisibility(true);
-	}
-	else if (GroundAimIndicator)
-	{
-		GroundAimIndicator->SetVisibility(false);
-	}
+	// Ground aim indicator stays hidden during normal play — it covered too much
+	// of the screen. (Kept as a component for future press-and-hold ability
+	// targeting; abilities currently cast instantly at the crosshair point.)
 
 	// Recall channeling
 	if (bIsRecalling)
@@ -1022,6 +1013,12 @@ void ASkylandersCharacter::Look(const FInputActionValue& Value)
 void ASkylandersCharacter::Fire(const FInputActionValue& Value)
 {
 	FireProjectile();
+}
+
+void ASkylandersCharacter::OnJumped_Implementation()
+{
+	Super::OnJumped_Implementation();
+	PlayAnimOnSlot(JumpAnim, 1.0f);
 }
 
 // ========== DAMAGE AND HEALING ==========

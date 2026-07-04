@@ -77,22 +77,22 @@ ASkylandersTreeRexCharacter::ASkylandersTreeRexCharacter()
 	// Code-driven anim instance (no AnimBP authored for Tree Rex yet)
 	GetMesh()->SetAnimInstanceClass(USkylandersSimpleAnimInstance::StaticClass());
 
-	// Native Tree Rex animations from the ripped set.
-	// The rip has no plain idle/run: magicmoment_failloop is a standing loop that
-	// reads as a heavy idle, and sequoiastampede_loop is his charge run.
-	// (drive_idle/drive_run are kart-driving poses — verified wrong in PIE.)
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> IdleSeq(TEXT("/Game/Characters/TreeRex/Animations/magicmoment_failloop"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> RunSeq(TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_loop"));
+	// Native Tree Rex animations, hand-triaged in the editor (the rip's names
+	// are unreliable — several "drive"/pose files were kart poses or broken).
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> IdleSeq(TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_outwall"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> RunSeq(TEXT("/Game/Characters/TreeRex/Animations/photosynthesiscannon_hold"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> JumpSeq(TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_out"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> PunchA(TEXT("/Game/Characters/TreeRex/Animations/photosynthesiscannon_basic"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> PunchB(TEXT("/Game/Characters/TreeRex/Animations/photosynthesiscannon_triple"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> SlamOut(TEXT("/Game/Characters/TreeRex/Animations/shockwave_out"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> Brace(TEXT("/Game/Characters/TreeRex/Animations/shockwave_in"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> GroveCast(TEXT("/Game/Characters/TreeRex/Animations/magicmoment_intro"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> Stampede(TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_out"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> Stampede(TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_out2"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> HitReact(TEXT("/Game/Characters/TreeRex/Animations/takehit_groundfront"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> DeathSeq(TEXT("/Game/Characters/TreeRex/Animations/knockaway_back"));
 	if (IdleSeq.Succeeded()) IdleLocomotionAnim = IdleSeq.Object;
 	if (RunSeq.Succeeded()) RunLocomotionAnim = RunSeq.Object;
+	if (JumpSeq.Succeeded()) JumpAnim = JumpSeq.Object;
 	if (PunchA.Succeeded()) AttackLeftAnim = PunchA.Object;
 	if (PunchB.Succeeded()) AttackRightAnim = PunchB.Object;
 	if (SlamOut.Succeeded()) Ability1Anim = SlamOut.Object;   // Shockwave Slam
