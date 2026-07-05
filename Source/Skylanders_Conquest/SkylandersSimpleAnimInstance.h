@@ -38,6 +38,16 @@ struct FSkylandersSimpleAnimProxy : public FAnimInstanceProxy
 	// Advanced on the worker thread
 	float IdleTime = 0.0f;
 	float RunTime = 0.0f;
+
+	// Per-sequence first-frame translations of the root AND pelvis bones, used
+	// to pin away baked root motion (these rips bake travel into either bone)
+	struct FFirstFramePin
+	{
+		FVector Root = FVector::ZeroVector;
+		FVector Pelvis = FVector::ZeroVector;
+		bool bHasPelvis = false;
+	};
+	TMap<const UAnimSequenceBase*, FFirstFramePin> RootFirstFrameCache;
 };
 
 UCLASS()

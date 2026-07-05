@@ -55,12 +55,16 @@ ASkylandersTreeRexCharacter::ASkylandersTreeRexCharacter()
 	HealingGroveTicksRemaining = 0;
 	HealingGroveHealPerTick = 0.0f;
 
-	// Tree Rex's real body: the source model is ~470 units tall with the pivot
-	// at its center — run it at half scale for a ~235-unit giant.
-	GetCapsuleComponent()->SetCapsuleSize(60.0f, 118.0f);
-	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+	// Tree Rex's body: the source MODEL is ~470 units tall (pivot centered), but
+	// the ripped ANIMATIONS are authored at game scale with the ground at the
+	// skeleton origin — animated poses stand only ~130-160 units. So: full mesh
+	// scale (animation dictates the visual size), capsule fitted to the ANIMATED
+	// height, and the mesh dropped so the anim ground plane hits the capsule
+	// bottom. Still roughly double Trigger Happy — reads as the giant he is.
+	GetCapsuleComponent()->SetCapsuleSize(60.0f, 80.0f);
+	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -80.0f));
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f)); // Interchange meshes face +X already
-	GetMesh()->SetRelativeScale3D(FVector(0.5f));
+	GetMesh()->SetRelativeScale3D(FVector(1.0f));
 
 	// Camera pulled back a little further for the bigger frame
 	if (CameraBoom)
@@ -82,19 +86,18 @@ ASkylandersTreeRexCharacter::ASkylandersTreeRexCharacter()
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> IdleSeq(TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_outwall"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> RunSeq(TEXT("/Game/Characters/TreeRex/Animations/photosynthesiscannon_hold"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> JumpSeq(TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_out"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> PunchA(TEXT("/Game/Characters/TreeRex/Animations/photosynthesiscannon_basic"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> PunchB(TEXT("/Game/Characters/TreeRex/Animations/photosynthesiscannon_triple"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> SlamOut(TEXT("/Game/Characters/TreeRex/Animations/shockwave_out"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> PunchA(TEXT("/Game/Characters/TreeRex/Animations/emotion_surprise_partial"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> SlamOut(TEXT("/Game/Characters/TreeRex/Animations/photosynthesiscannon_in"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> Brace(TEXT("/Game/Characters/TreeRex/Animations/shockwave_in"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> GroveCast(TEXT("/Game/Characters/TreeRex/Animations/magicmoment_intro"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> Stampede(TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_out2"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> Stampede(TEXT("/Game/Characters/TreeRex/Animations/emotion_idle_partial"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> HitReact(TEXT("/Game/Characters/TreeRex/Animations/takehit_groundfront"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> DeathSeq(TEXT("/Game/Characters/TreeRex/Animations/knockaway_back"));
 	if (IdleSeq.Succeeded()) IdleLocomotionAnim = IdleSeq.Object;
 	if (RunSeq.Succeeded()) RunLocomotionAnim = RunSeq.Object;
 	if (JumpSeq.Succeeded()) JumpAnim = JumpSeq.Object;
 	if (PunchA.Succeeded()) AttackLeftAnim = PunchA.Object;
-	if (PunchB.Succeeded()) AttackRightAnim = PunchB.Object;
+	if (PunchA.Succeeded()) AttackRightAnim = PunchA.Object; // Same swing both hands (user-triaged pick)
 	if (SlamOut.Succeeded()) Ability1Anim = SlamOut.Object;   // Shockwave Slam
 	if (Brace.Succeeded()) Ability2Anim = Brace.Object;       // Barkskin
 	if (GroveCast.Succeeded()) HealingGroveAnim = GroveCast.Object; // Healing Grove

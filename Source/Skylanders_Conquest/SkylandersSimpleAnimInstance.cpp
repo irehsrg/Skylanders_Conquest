@@ -83,33 +83,74 @@ void FSkylandersSimpleAnimProxy::UpdateAnimationNode(const FAnimationUpdateConte
 	RunTime += Dt;
 }
 
-// The ripped animations move the ROOT bone (baked-in root motion). Played raw,
-// the mesh literally walks away from its capsule — pin the root's horizontal
-// translation back to the reference pose so animation stays in place. The
-// animated Z is kept so poses keep their ground contact (locking Z left
-// characters hovering above the floor).
-static void LockRootBone(FPoseContext& Pose)
+// The ripped animations bake world travel into the skeleton — sometimes on the
+// ROOT bone, sometimes on the PELVIS one level below (Tree Rex's stampede anims
+// fly the pelvis hundreds of units). Played raw the mesh drifts away from its
+// capsule. Pin both bones' translations to the ANIMATION'S OWN FIRST FRAME:
+// baked travel is removed while each pose keeps its authored ground height.
+// (Pinning to the reference pose instead lifted characters into the air —
+// these meshes pivot at their center, so the ref-pose root floats high.)
+using FFirstFramePin = FSkylandersSimpleAnimProxy::FFirstFramePin;
+
+static const FFirstFramePin& GetFirstFramePin(UAnimSequenceBase* Sequence, FPoseContext& Scratch,
+	TMap<const UAnimSequenceBase*, FFirstFramePin>& Cache)
+{
+	if (const FFirstFramePin* Found = Cache.Find(Sequence))
+	{
+		return *Found;
+	}
+	FPoseContext FirstFrame(Scratch);
+	FAnimationPoseData PoseData(FirstFrame);
+	FAnimExtractContext Extract(0.0, false);
+	Sequence->GetAnimationPose(PoseData, Extract);
+
+	FFirstFramePin Pin;
+	if (FirstFrame.Pose.GetNumBones() > 0)
+	{
+		Pin.Root = FirstFrame.Pose[FCompactPoseBoneIndex(0)].GetTranslation();
+	}
+	if (FirstFrame.Pose.GetNumBones() > 1)
+	{
+		Pin.Pelvis = FirstFrame.Pose[FCompactPoseBoneIndex(1)].GetTranslation();
+		Pin.bHasPelvis = true;
+	}
+	return Cache.Add(Sequence, Pin);
+}
+
+static void LockRootBone(UAnimSequenceBase* Sequence, FPoseContext& Pose,
+	TMap<const UAnimSequenceBase*, FFirstFramePin>& Cache)
 {
 	if (Pose.Pose.GetNumBones() <= 0) return;
+	const FFirstFramePin& Pin = GetFirstFramePin(Sequence, Pose, Cache);
+
+	// Root: centered on the capsule horizontally, first-frame height (charge
+	// anims can even START displaced, so the anim's X/Y can't be trusted)
 	const FCompactPoseBoneIndex Root(0);
-	const FTransform& RefRoot = Pose.Pose.GetBoneContainer().GetRefPoseTransform(Root);
-	FTransform Current = Pose.Pose[Root];
-	FVector Translation = Current.GetTranslation();
-	Translation.X = RefRoot.GetTranslation().X;
-	Translation.Y = RefRoot.GetTranslation().Y;
-	Current.SetTranslation(Translation);
-	Pose.Pose[Root] = Current;
+	FTransform RootXf = Pose.Pose[Root];
+	RootXf.SetTranslation(FVector(0.0f, 0.0f, Pin.Root.Z));
+	Pose.Pose[Root] = RootXf;
+
+	// Pelvis: hold the first-frame offset so travel baked one level down
+	// can't carry the body away either
+	if (Pin.bHasPelvis && Pose.Pose.GetNumBones() > 1)
+	{
+		const FCompactPoseBoneIndex Pelvis(1);
+		FTransform PelvisXf = Pose.Pose[Pelvis];
+		PelvisXf.SetTranslation(Pin.Pelvis);
+		Pose.Pose[Pelvis] = PelvisXf;
+	}
 }
 
 // Samples one looping sequence at the given accumulated time
-static void SampleLooping(UAnimSequenceBase* Sequence, float Time, FPoseContext& Output)
+static void SampleLooping(UAnimSequenceBase* Sequence, float Time, FPoseContext& Output,
+	TMap<const UAnimSequenceBase*, FFirstFramePin>& Cache)
 {
 	const float Length = Sequence->GetPlayLength();
 	const float Wrapped = (Length > 0.0f) ? FMath::Fmod(Time, Length) : 0.0f;
 	FAnimationPoseData PoseData(Output);
 	FAnimExtractContext Extract(static_cast<double>(Wrapped), false);
 	Sequence->GetAnimationPose(PoseData, Extract);
-	LockRootBone(Output);
+	LockRootBone(Sequence, Output, Cache);
 }
 
 bool FSkylandersSimpleAnimProxy::Evaluate(FPoseContext& Output)
@@ -129,8 +170,8 @@ bool FSkylandersSimpleAnimProxy::Evaluate(FPoseContext& Output)
 	{
 		FPoseContext IdlePose(Output);
 		FPoseContext RunPose(Output);
-		SampleLooping(IdleSequence, IdleTime, IdlePose);
-		SampleLooping(RunSequence, RunTime, RunPose);
+		SampleLooping(IdleSequence, IdleTime, IdlePose, RootFirstFrameCache);
+		SampleLooping(RunSequence, RunTime, RunPose, RootFirstFrameCache);
 
 		const FAnimationPoseData IdleData(IdlePose);
 		const FAnimationPoseData RunData(RunPose);
@@ -139,11 +180,11 @@ bool FSkylandersSimpleAnimProxy::Evaluate(FPoseContext& Output)
 	}
 	else if (bHasRun && LocomotionAlpha >= 1.0f - KINDA_SMALL_NUMBER)
 	{
-		SampleLooping(RunSequence, RunTime, Locomotion);
+		SampleLooping(RunSequence, RunTime, Locomotion, RootFirstFrameCache);
 	}
 	else if (bHasIdle)
 	{
-		SampleLooping(IdleSequence, IdleTime, Locomotion);
+		SampleLooping(IdleSequence, IdleTime, Locomotion, RootFirstFrameCache);
 	}
 	else
 	{
@@ -159,7 +200,7 @@ bool FSkylandersSimpleAnimProxy::Evaluate(FPoseContext& Output)
 		FAnimationPoseData OverrideData(OverridePose);
 		FAnimExtractContext Extract(static_cast<double>(Time), false);
 		OverrideSequence->GetAnimationPose(OverrideData, Extract);
-		LockRootBone(OverridePose);
+		LockRootBone(OverrideSequence, OverridePose, RootFirstFrameCache);
 
 		if (OverrideWeight >= 1.0f - KINDA_SMALL_NUMBER)
 		{

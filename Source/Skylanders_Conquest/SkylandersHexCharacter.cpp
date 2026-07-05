@@ -51,8 +51,10 @@ ASkylandersHexCharacter::ASkylandersHexCharacter()
 
 	// Hex's real body: ~94 units tall, pivot at the model's center (she hovers).
 	// Interchange-imported meshes already face +X — no yaw correction needed.
+	// The ripped animations put the ground at the skeleton origin, so the mesh
+	// sits capsule-half-height down (see Tree Rex for the full story).
 	GetCapsuleComponent()->SetCapsuleSize(34.0f, 52.0f);
-	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -52.0f));
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
 
 	static ConstructorHelpers::FObjectFinder<USkeletalMesh> BodyMesh(TEXT("/Game/Characters/Hex/Models/Hex"));

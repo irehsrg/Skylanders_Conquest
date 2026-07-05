@@ -83,11 +83,11 @@ const TArray<FSkylanderSelectEntry>& FSkylanderSelectEntry::GetRoster()
 		TR.Abilities[2] = TEXT("Healing Grove|Regenerate up to 24% max HP over 4 seconds.");
 		TR.Abilities[3] = TEXT("Titan's Wrath  [ULT]|Colossal cone smash; heals 6% HP per target hit. (1200% power)");
 		TR.MeshPath = TEXT("/Game/Characters/TreeRex/Models/TreeRex");
-		TR.IdleAnimPath = TEXT("/Game/Characters/TreeRex/Animations/magicmoment_failloop");
-		TR.MeshScale = 0.5f;
-		TR.MeshZOffset = 117.0f;    // Pivot at center of the (half-scaled) giant
-		TR.CaptureDistance = 500.0f;
-		TR.AimHeight = 117.0f;
+		TR.IdleAnimPath = TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_outwall");
+		TR.MeshScale = 1.0f;        // Animations are authored at game scale (ground at origin)
+		TR.MeshZOffset = 0.0f;
+		TR.CaptureDistance = 420.0f;
+		TR.AimHeight = 80.0f;
 		Roster.Add(TR);
 	}
 	return Roster;
