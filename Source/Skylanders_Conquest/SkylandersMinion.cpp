@@ -73,6 +73,7 @@ ASkylandersMinion::ASkylandersMinion()
 	Team = ETowerTeam::Friendly;
 	MinionType = EMinionType::Melee;
 	LaneTargetPoint = FVector::ZeroVector;
+	CurrentWaypointIndex = 0;
 
 	bDead = false;
 	AttackTimer = 0.0f;
@@ -262,8 +263,8 @@ void ASkylandersMinion::UpdateAI(float DeltaTime)
 		}
 		else
 		{
-			// Target is a structure far away - march toward lane target
-			FVector DesiredDir = (LaneTargetPoint - GetActorLocation()).GetSafeNormal2D();
+			// Target is a structure far away - march along the lane waypoints
+			FVector DesiredDir = (GetLaneGoal() - GetActorLocation()).GetSafeNormal2D();
 			FVector MoveDir = DesiredDir;
 
 			if (bAvoidingObstacle)
@@ -277,11 +278,12 @@ void ASkylandersMinion::UpdateAI(float DeltaTime)
 	}
 	else
 	{
-		// No target - march toward lane target point
-		float DistToLaneTarget = FVector::Dist2D(GetActorLocation(), LaneTargetPoint);
+		// No target - march along the lane waypoints toward the enemy base
+		FVector LaneGoal = GetLaneGoal();
+		float DistToLaneTarget = FVector::Dist2D(GetActorLocation(), LaneGoal);
 		if (DistToLaneTarget > 50.0f)
 		{
-			FVector DesiredDir = (LaneTargetPoint - GetActorLocation()).GetSafeNormal2D();
+			FVector DesiredDir = (LaneGoal - GetActorLocation()).GetSafeNormal2D();
 			FVector MoveDir = DesiredDir;
 
 			if (bAvoidingObstacle)
@@ -293,6 +295,24 @@ void ASkylandersMinion::UpdateAI(float DeltaTime)
 			AddMovementInput(MoveDir, 1.0f);
 		}
 	}
+}
+
+FVector ASkylandersMinion::GetLaneGoal()
+{
+	// No path set — legacy straight march at the base
+	if (LaneWaypoints.Num() == 0)
+	{
+		return LaneTargetPoint;
+	}
+
+	// Advance past any waypoints we've already reached (2D, ignore height).
+	// Never advance past the last one (the enemy base) so minions settle there.
+	while (CurrentWaypointIndex < LaneWaypoints.Num() - 1 &&
+		FVector::Dist2D(GetActorLocation(), LaneWaypoints[CurrentWaypointIndex]) < 300.0f)
+	{
+		CurrentWaypointIndex++;
+	}
+	return LaneWaypoints[CurrentWaypointIndex];
 }
 
 void ASkylandersMinion::FindTarget()

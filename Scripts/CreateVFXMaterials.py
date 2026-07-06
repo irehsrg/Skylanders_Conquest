@@ -36,6 +36,20 @@ mel.recompile_material(mat)
 unreal.EditorAssetLibrary.save_asset(path)
 print("Created M_Highlight")
 
+# ---- M_MapFloor (unlit, flat color) ----
+# Greybox map floors/walls use this so their exact color shows regardless of
+# lighting (the lit BasicShapeMaterial washed every tint to the same gray-green).
+mat, path = fresh("M_MapFloor")
+mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
+colp = mel.create_material_expression(mat, unreal.MaterialExpressionVectorParameter, -350, 0)
+colp.set_editor_property("parameter_name", "Color")
+colp.set_editor_property("default_value", unreal.LinearColor(0.1, 0.3, 0.1, 1.0))
+mel.connect_material_property(colp, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+mel.recompile_material(mat)
+unreal.EditorAssetLibrary.save_asset(path)
+print("Created M_MapFloor")
+
 # ---- M_AimTargeter (translucent, parameterized) ----
 mat, path = fresh("M_AimTargeter")
 mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)

@@ -80,6 +80,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
 	FVector LaneTargetPoint;
 
+	// Ordered lane path toward the enemy base (last point = the base). When set,
+	// the minion follows these bends instead of walking straight at the target,
+	// so it stays on a curved lane. Empty = legacy straight-line behaviour.
+	UPROPERTY()
+	TArray<FVector> LaneWaypoints;
+
+	int32 CurrentWaypointIndex;
+
+	// The point to march toward right now (advances through LaneWaypoints as the
+	// minion reaches each one; falls back to LaneTargetPoint if no waypoints).
+	FVector GetLaneGoal();
+
 	bool bDead;
 	float AttackTimer;
 

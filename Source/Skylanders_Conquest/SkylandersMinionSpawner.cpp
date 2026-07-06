@@ -106,6 +106,7 @@ void ASkylandersMinionSpawner::SpawnNextMinion()
 		Minion->Team = Team;
 		Minion->MinionType = Type;
 		Minion->LaneTargetPoint = LaneTargetPoint;
+		Minion->LaneWaypoints = LaneWaypoints;
 
 		// BeginPlay applies the per-type base stats (melee defaults / ranged overrides)
 		Minion->FinishSpawning(SpawnTransform);

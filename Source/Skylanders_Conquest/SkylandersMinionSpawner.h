@@ -30,6 +30,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config")
 	FVector LaneTargetPoint;
 
+	// Ordered lane path (this side's spawn -> enemy base) handed to each spawned
+	// minion so they follow the curved lane. Last point should be the base.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config")
+	TArray<FVector> LaneWaypoints;
+
 	// Wave timing
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config")
 	float WaveInterval; // Seconds between waves

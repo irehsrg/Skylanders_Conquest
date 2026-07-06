@@ -27,6 +27,11 @@ protected:
 	AActor* SpawnWall(FVector Location, FVector Scale, FRotator Rotation = FRotator::ZeroRotator);
 	AActor* SpawnGround(FVector Location, FVector Scale, FLinearColor Color);
 
+	// Joust-shape helpers (greybox geometry)
+	AActor* SpawnFloorDisc(FVector Center, float Radius, float Z, FLinearColor Color);
+	AActor* SpawnFloorSeg(FVector From, FVector To, float Width, float Z, FLinearColor Color);
+	AActor* SpawnWallSeg(FVector From, FVector To, float Height, float Thickness, FLinearColor Color);
+
 	// ========== STRUCTURES ==========
 
 	// Blue (Player) side
