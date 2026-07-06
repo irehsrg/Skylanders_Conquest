@@ -146,7 +146,24 @@ void ASkylandersBuffCamp::Tick(float DeltaTime)
 		// Draw leash range ring above the ground (DepthPriority=1 = always on top)
 		FVector RingCenter = HomeLocation;
 		RingCenter.Z = 50.0f;
-		FColor RingColor = (BuffType == EBuffType::Damage) ? FColor::Orange : FColor::Green;
+		// Ring color per camp: mana=cyan, red/damage buff=rose-red (distinct from
+		// the enemy tower red), harpies=gold, Bull Demon King=black.
+		FColor RingColor;
+		if (CampName.Equals(TEXT("Bull Demon King")))
+		{
+			RingColor = FColor::Black;
+		}
+		else
+		{
+			switch (BuffType)
+			{
+			case EBuffType::Mana:   RingColor = FColor::Cyan; break;
+			case EBuffType::Damage: RingColor = FColor(235, 80, 110); break; // rose red
+			case EBuffType::None:   RingColor = FColor(255, 190, 30); break; // gold (harpies)
+			case EBuffType::Speed:  RingColor = FColor::Green; break;
+			default:                RingColor = FColor::White; break;
+			}
+		}
 		int32 Segments = 64;
 		float AngleStep = 2.0f * PI / Segments;
 		for (int32 i = 0; i < Segments; i++)

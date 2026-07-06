@@ -189,7 +189,7 @@ void ASkylandersTower::Tick(float DeltaTime)
 	// Draw range ring above the ground (DepthPriority=1 = always on top)
 	FVector RingCenter = GetActorLocation();
 	RingCenter.Z = 50.0f;
-	FColor RingColor = (Team == ETowerTeam::Friendly) ? FColor::Cyan : FColor::Red;
+	FColor RingColor = (Team == ETowerTeam::Friendly) ? FColor(20, 40, 160) : FColor::Red; // friendly dark blue, enemy red
 	int32 Segments = 64;
 	float AngleStep = 2.0f * PI / Segments;
 	for (int32 i = 0; i < Segments; i++)
@@ -346,7 +346,7 @@ void ASkylandersTower::AttackTarget()
 	FVector TowerTop = GetActorLocation() + FVector(0.0f, 0.0f, 400.0f);
 	FVector TargetLoc = CurrentTarget->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
 
-	FColor BeamColor = (Team == ETowerTeam::Friendly) ? FColor::Cyan : FColor::Red;
+	FColor BeamColor = (Team == ETowerTeam::Friendly) ? FColor(20, 40, 160) : FColor::Red;
 	DrawDebugLine(GetWorld(), TowerTop, TargetLoc, BeamColor, false, 0.15f, 0, 3.0f);
 
 	// Deal damage - handle all target types
