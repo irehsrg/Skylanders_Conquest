@@ -29,6 +29,7 @@
 #include "SkylandersMinion.h"
 #include "SkylandersBuffCamp.h"
 #include "SkylandersEnemyGod.h"
+#include "SkylandersSpawnArea.h"
 #include "SkylandersTitan.h"
 #include "SkylandersItemCatalog.h"
 #include "SkylandersSimpleAnimInstance.h"
@@ -1405,10 +1406,24 @@ void ASkylandersCharacter::Respawn()
 
 AActor* ASkylandersCharacter::GetPlayerStart()
 {
-	// Find the first Player Start in the level
+	// Prefer the friendly spawn area (the fountain the map builder places at the
+	// base). PlayerStart actors are Static and can't be repositioned at runtime,
+	// so after a procedural map rebuild the .umap PlayerStart gets stranded
+	// mid-map — use it only as a fallback.
+	TArray<AActor*> Areas;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersSpawnArea::StaticClass(), Areas);
+	for (AActor* A : Areas)
+	{
+		ASkylandersSpawnArea* Area = Cast<ASkylandersSpawnArea>(A);
+		if (Area && Area->Team == ETowerTeam::Friendly)
+		{
+			return Area;
+		}
+	}
+
+	// Fallback: first Player Start in the level
 	TArray<AActor*> FoundActors;
 	UGameplayStatics::GetAllActorsOfClass(GetWorld(), APlayerStart::StaticClass(), FoundActors);
-
 	if (FoundActors.Num() > 0)
 	{
 		return FoundActors[0];

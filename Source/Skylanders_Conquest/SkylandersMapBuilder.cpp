@@ -12,6 +12,9 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
 #include "Engine/StaticMesh.h"
+#include "Kismet/GameplayStatics.h"
+#include "GameFramework/PlayerStart.h"
+#include "GameFramework/Pawn.h"
 
 ASkylandersMapBuilder::ASkylandersMapBuilder()
 {
@@ -290,6 +293,16 @@ void ASkylandersMapBuilder::BuildMap()
 	// ========================================================================
 	World->SpawnActor<ASkylandersEnemyGod>(
 		ASkylandersEnemyGod::StaticClass(), FVector(6800, -500, 100), FRotator::ZeroRotator, SP);
+
+	// ========================================================================
+	// INITIAL SPAWN: the GameMode drops the pawn at the .umap PlayerStart, which
+	// is stranded mid-map (it's Static, can't be moved). Relocate the pawn into
+	// the friendly fountain instead. Recall/Respawn are handled separately by
+	// GetPlayerStart() now preferring the friendly spawn area.
+	if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(World, 0))
+	{
+		PlayerPawn->SetActorLocation(FVector(-11300.0f, 0.0f, 200.0f));
+	}
 
 	UE_LOG(LogTemp, Log, TEXT("=== Joust V2 Map Complete ==="));
 }
