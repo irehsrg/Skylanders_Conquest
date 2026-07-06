@@ -109,8 +109,7 @@ void ASkylandersMapBuilder::BuildMap()
 	for (const FVector& P : LanePath) WalkCircles.Add(FVector(P.X, P.Y, 950)); // round the lane bends
 	WalkCircles.Add(FVector(-5800, 2800, 1400)); // blue mana jungle room
 	WalkCircles.Add(FVector(5800, -2800, 1400)); // red mana jungle room
-	WalkCircles.Add(FVector(-2700, -3000, 1400));// blue damage jungle room
-	WalkCircles.Add(FVector(2700, 3000, 1400));  // red damage jungle room
+	WalkCircles.Add(FVector(0, 1600, 1250));     // contested red/damage buff room (center)
 	WalkCircles.Add(FVector(0, 3700, 1600));     // Bull Demon pit (north)
 	WalkCircles.Add(FVector(0, -3700, 1400));    // Harpies (south)
 	WalkCircles.Add(FVector(-3800, 300, 700));   // blue tower nook
@@ -127,8 +126,7 @@ void ASkylandersMapBuilder::BuildMap()
 	AddCorr(FVector2D(10000, 0), FVector2D(8300, 0), 1000.0f);     // red base -> lane
 	AddCorr(FVector2D(-5800, 2800), FVector2D(-6100, 1000), 560.0f); // mana -> lane
 	AddCorr(FVector2D(5800, -2800), FVector2D(6100, -1000), 560.0f);
-	AddCorr(FVector2D(-2700, -3000), FVector2D(-3400, -650), 560.0f); // damage -> lane
-	AddCorr(FVector2D(2700, 3000), FVector2D(3400, 650), 560.0f);
+	AddCorr(FVector2D(0, 1600), FVector2D(0, 0), 620.0f);         // contested buff -> mid lane
 	AddCorr(FVector2D(0, 3700), FVector2D(0, 0), 560.0f);          // Bull -> mid
 	AddCorr(FVector2D(0, -3700), FVector2D(0, 0), 560.0f);         // Harpies -> mid
 
@@ -283,8 +281,8 @@ void ASkylandersMapBuilder::BuildMap()
 
 	BlueBlueBuff = SpawnCamp(FVector(-5800, 2800, 75), TEXT("Blue Buff"), EBuffType::Mana, 1.0f, 0.0f, 0.0f, 0);
 	RedBlueBuff = SpawnCamp(FVector(5800, -2800, 75), TEXT("Blue Buff"), EBuffType::Mana, 1.0f, 0.0f, 0.0f, 0);
-	DamageCamp = SpawnCamp(FVector(-2700, -3000, 75), TEXT("Damage Buff"), EBuffType::Damage, 1.25f, 0.0f, 0.0f, 0);
-	SpawnCamp(FVector(2700, 3000, 75), TEXT("Damage Buff"), EBuffType::Damage, 1.25f, 0.0f, 0.0f, 0);
+	// Single contested red/damage buff in the middle — both teams fight over it
+	DamageCamp = SpawnCamp(FVector(0, 1600, 75), TEXT("Damage Buff"), EBuffType::Damage, 1.25f, 0.0f, 0.0f, 0);
 	BullDemonKing = SpawnCamp(FVector(0, 3700, 75), TEXT("Bull Demon King"), EBuffType::Damage, 1.50f, 2500.0f, 200.0f, 150);
 	MidCamp = SpawnCamp(FVector(0, -3700, 75), TEXT("Mid Harpies"), EBuffType::None, 1.0f, 300.0f, 80.0f, 40);
 
