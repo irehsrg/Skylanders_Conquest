@@ -41,6 +41,21 @@ void ASkylandersMapBuilder::BeginPlay()
 	BuildMap();
 }
 
+// Defined later in this file; forward-declared so BuildMap can fill terrain.
+static AActor* SpawnColoredPrimitive(UWorld* World, const TCHAR* MeshPath,
+	const FVector& Loc, const FRotator& Rot, const FVector& Scale, const FLinearColor& Color,
+	const TCHAR* Label);
+
+// 2D distance from point P to segment A-B (for lane-corridor walkability tests)
+static float DistPointToSeg2D(const FVector2D& P, const FVector2D& A, const FVector2D& B)
+{
+	FVector2D AB = B - A;
+	float Len2 = AB.SizeSquared();
+	if (Len2 < 1.0f) return FVector2D::Distance(P, A);
+	float T = FMath::Clamp(FVector2D::DotProduct(P - A, AB) / Len2, 0.0f, 1.0f);
+	return FVector2D::Distance(P, A + AB * T);
+}
+
 void ASkylandersMapBuilder::BuildMap()
 {
 	UWorld* World = GetWorld();
@@ -54,7 +69,6 @@ void ASkylandersMapBuilder::BuildMap()
 	// Palette (unlit flat colors). ONE solid ground colour — the old multi-color
 	// lane/jungle/base pieces overlapped coplanar and z-fought (clipping/flicker).
 	const FLinearColor Ground(0.16f, 0.36f, 0.16f);     // single solid grass
-	const FLinearColor WallCol(0.06f, 0.07f, 0.10f);    // terrain walls (dark)
 
 	// ========================================================================
 	// LANE CENTERLINE (blue -X -> red +X), a point-symmetric serpentine, scaled
@@ -77,13 +91,74 @@ void ASkylandersMapBuilder::BuildMap()
 	// ========================================================================
 	SpawnFloorSeg(FVector(-13500, 0, 0), FVector(13500, 0, 0), 10500.0f, 0.0f, Ground);
 
-	// Perimeter wall ring so the map is fully enclosed (bigger + taller now)
-	const float WH = 600.0f, WT = 200.0f;
-	const float PX = 12600.0f, PY = 4700.0f;
-	SpawnWallSeg(FVector(-PX, -PY, 0), FVector(PX, -PY, 0), WH, WT, WallCol);
-	SpawnWallSeg(FVector(-PX, PY, 0), FVector(PX, PY, 0), WH, WT, WallCol);
-	SpawnWallSeg(FVector(-PX, -PY, 0), FVector(-PX, PY, 0), WH, WT, WallCol);
-	SpawnWallSeg(FVector(PX, -PY, 0), FVector(PX, PY, 0), WH, WT, WallCol);
+	// ========================================================================
+	// CARVE THE JOUST SHAPE: the walkable area is a set of rounded chambers
+	// (bases + jungle pockets) linked by corridors (the serpentine lane +
+	// connectors). Everything OUTSIDE that shape gets filled with raised dark
+	// terrain, so the green silhouette reads like the real map (green=walkable,
+	// dark=out of bounds) instead of a rectangle. Grid fill = no z-fighting.
+	// ========================================================================
+
+	// Walkable rounded areas: (X, Y, Radius)
+	TArray<FVector> WalkCircles;
+	WalkCircles.Add(FVector(-10000, 0, 3000));   // blue base chamber
+	WalkCircles.Add(FVector(10000, 0, 3000));    // red base chamber
+	for (const FVector& P : LanePath) WalkCircles.Add(FVector(P.X, P.Y, 950)); // round the lane bends
+	WalkCircles.Add(FVector(-5800, 2800, 1400)); // blue mana jungle room
+	WalkCircles.Add(FVector(5800, -2800, 1400)); // red mana jungle room
+	WalkCircles.Add(FVector(-2700, -3000, 1400));// blue damage jungle room
+	WalkCircles.Add(FVector(2700, 3000, 1400));  // red damage jungle room
+	WalkCircles.Add(FVector(0, 3700, 1600));     // Bull Demon pit (north)
+	WalkCircles.Add(FVector(0, -3700, 1400));    // Harpies (south)
+	WalkCircles.Add(FVector(-3800, 300, 700));   // blue tower nook
+	WalkCircles.Add(FVector(3800, -300, 700));   // red tower nook
+	WalkCircles.Add(FVector(6800, -500, 800));   // enemy god nook (red jungle)
+
+	// Walkable corridors: A -> B with half-width (packed as X,Y,X,Y,HW)
+	TArray<float> Corrs;
+	auto AddCorr = [&](FVector2D A, FVector2D B, float HW)
+	{ Corrs.Add(A.X); Corrs.Add(A.Y); Corrs.Add(B.X); Corrs.Add(B.Y); Corrs.Add(HW); };
+	for (int32 i = 0; i < LanePath.Num() - 1; i++)
+		AddCorr(FVector2D(LanePath[i].X, LanePath[i].Y), FVector2D(LanePath[i + 1].X, LanePath[i + 1].Y), 820.0f);
+	AddCorr(FVector2D(-10000, 0), FVector2D(-8300, 0), 1000.0f);   // blue base -> lane
+	AddCorr(FVector2D(10000, 0), FVector2D(8300, 0), 1000.0f);     // red base -> lane
+	AddCorr(FVector2D(-5800, 2800), FVector2D(-6100, 1000), 560.0f); // mana -> lane
+	AddCorr(FVector2D(5800, -2800), FVector2D(6100, -1000), 560.0f);
+	AddCorr(FVector2D(-2700, -3000), FVector2D(-3400, -650), 560.0f); // damage -> lane
+	AddCorr(FVector2D(2700, 3000), FVector2D(3400, 650), 560.0f);
+	AddCorr(FVector2D(0, 3700), FVector2D(0, 0), 560.0f);          // Bull -> mid
+	AddCorr(FVector2D(0, -3700), FVector2D(0, 0), 560.0f);         // Harpies -> mid
+
+	// Fill the out-of-bounds with raised dark terrain
+	const FLinearColor Terrain(0.05f, 0.06f, 0.05f);
+	const float PX = 12600.0f, PY = 4700.0f, Cell = 460.0f;
+	for (float gx = -PX; gx <= PX; gx += Cell)
+	{
+		for (float gy = -PY; gy <= PY; gy += Cell)
+		{
+			FVector2D Pt(gx, gy);
+			bool bWalk = false;
+			for (const FVector& C : WalkCircles)
+			{
+				if (FVector2D::Distance(Pt, FVector2D(C.X, C.Y)) < C.Z) { bWalk = true; break; }
+			}
+			if (!bWalk)
+			{
+				for (int32 i = 0; i + 4 < Corrs.Num(); i += 5)
+				{
+					if (DistPointToSeg2D(Pt, FVector2D(Corrs[i], Corrs[i + 1]), FVector2D(Corrs[i + 2], Corrs[i + 3])) < Corrs[i + 4])
+					{ bWalk = true; break; }
+				}
+			}
+			if (!bWalk)
+			{
+				// raised dark block (base at Z=0, top ~Z=230), slightly oversized so neighbours abut
+				SpawnColoredPrimitive(World, TEXT("/Engine/BasicShapes/Cube"),
+					FVector(gx, gy, 115.0f), FRotator::ZeroRotator,
+					FVector(Cell / 100.0f * 1.04f, Cell / 100.0f * 1.04f, 2.3f), Terrain, TEXT("MapTerrain"));
+			}
+		}
+	}
 
 	// ========================================================================
 	// STRUCTURES — deferred so Team/bIsPhoenix are set before BeginPlay
