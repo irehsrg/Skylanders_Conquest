@@ -51,68 +51,39 @@ void ASkylandersMapBuilder::BuildMap()
 
 	UE_LOG(LogTemp, Log, TEXT("=== Building Joust V2 Map ==="));
 
-	// Palette (unlit flat colors — pick for readability/contrast)
-	const FLinearColor Void(0.015f, 0.02f, 0.015f);     // out-of-bounds catch floor (near black)
-	const FLinearColor Lane(0.26f, 0.50f, 0.20f);       // lane grass (bright)
-	const FLinearColor Jungle(0.08f, 0.20f, 0.09f);     // jungle grass (dark)
-	const FLinearColor BlueTint(0.10f, 0.20f, 0.55f);   // blue base (strong blue)
-	const FLinearColor RedTint(0.55f, 0.14f, 0.12f);    // red base (strong red)
-	const FLinearColor WallCol(0.05f, 0.06f, 0.08f);    // terrain walls (dark)
+	// Palette (unlit flat colors). ONE solid ground colour — the old multi-color
+	// lane/jungle/base pieces overlapped coplanar and z-fought (clipping/flicker).
+	const FLinearColor Ground(0.16f, 0.36f, 0.16f);     // single solid grass
+	const FLinearColor WallCol(0.06f, 0.07f, 0.10f);    // terrain walls (dark)
 
 	// ========================================================================
-	// LANE CENTERLINE (blue -X  ->  red +X), a point-symmetric serpentine.
-	// Reused for the lane floor AND the minion waypoint paths.
+	// LANE CENTERLINE (blue -X -> red +X), a point-symmetric serpentine, scaled
+	// up ~1.8x vs the first pass so lane traversal matches SMITE Joust (~18s).
+	// Used only for the minion waypoint paths now (the ground is one flat color).
 	// ========================================================================
 	TArray<FVector> LanePath;
-	LanePath.Add(FVector(-4600, 0, 0));      // blue base mouth
-	LanePath.Add(FVector(-3400, 520, 0));
-	LanePath.Add(FVector(-1900, -320, 0));
+	LanePath.Add(FVector(-8300, 0, 0));      // blue base mouth
+	LanePath.Add(FVector(-6100, 1000, 0));
+	LanePath.Add(FVector(-3400, -650, 0));
 	LanePath.Add(FVector(0, 0, 0));          // mid
-	LanePath.Add(FVector(1900, 320, 0));
-	LanePath.Add(FVector(3400, -520, 0));
-	LanePath.Add(FVector(4600, 0, 0));       // red base mouth
+	LanePath.Add(FVector(3400, 650, 0));
+	LanePath.Add(FVector(6100, -1000, 0));
+	LanePath.Add(FVector(8300, 0, 0));       // red base mouth
 
 	// ========================================================================
-	// FLOORS (top surface at Z=0 so structures placed near Z=0 sit correctly)
+	// FLOOR — ONE big solid plane (top at Z=0). No overlapping pieces, so no
+	// z-fighting. Walls define the bounds; the map shape reads from structure
+	// and camp placement + the serpentine minion lane.
 	// ========================================================================
+	SpawnFloorSeg(FVector(-13500, 0, 0), FVector(13500, 0, 0), 10500.0f, 0.0f, Ground);
 
-	// Big dark catch-floor JUST BELOW the colored floors (top at Z=-5) so nothing
-	// falls into the void. Routed through SpawnFloorSeg (which sets its transform
-	// correctly) — the old SpawnGround left it centered at the origin, its top at
-	// Z=50, sitting on top of and hiding every colored floor piece.
-	SpawnFloorSeg(FVector(-7500, 0, 0), FVector(7500, 0, 0), 8000.0f, -5.0f, Void);
-
-	// Base chambers (bulbous ends)
-	SpawnFloorDisc(FVector(-4900, 0, 0), 1500.0f, 0.0f, BlueTint);
-	SpawnFloorDisc(FVector(4900, 0, 0), 1500.0f, 0.0f, RedTint);
-
-	// Lane corridor: wide grass ribbon following the serpentine
-	for (int32 i = 0; i < LanePath.Num() - 1; i++)
-	{
-		SpawnFloorSeg(LanePath[i], LanePath[i + 1], 1150.0f, 0.0f, Lane);
-		SpawnFloorDisc(LanePath[i + 1], 600.0f, 0.0f, Lane); // round the bends
-	}
-
-	// Jungle pockets (grass discs) + short connectors back to the lane
-	auto Pocket = [&](FVector At, FVector LaneJoin)
-	{
-		SpawnFloorSeg(LaneJoin, At, 650.0f, 0.0f, Jungle);
-		SpawnFloorDisc(At, 900.0f, 0.0f, Jungle);
-	};
-	Pocket(FVector(-3200, 1550, 0), FVector(-3400, 520, 0));   // blue mana jungle
-	Pocket(FVector(3200, -1550, 0), FVector(3400, -520, 0));   // red mana jungle
-	Pocket(FVector(-1500, -1650, 0), FVector(-1900, -320, 0)); // blue damage jungle
-	Pocket(FVector(1500, 1650, 0), FVector(1900, 320, 0));     // red damage jungle
-	Pocket(FVector(0, 2050, 0), FVector(0, 0, 0));             // north mid pocket
-	Pocket(FVector(0, -2050, 0), FVector(0, 0, 0));            // south mid pocket
-
-	// Perimeter wall ring so the map is fully enclosed (rough bounds; the
-	// organic silhouette is the grass shape sitting inside it)
-	const float WH = 400.0f, WT = 120.0f;
-	SpawnWallSeg(FVector(-6300, -3100, 0), FVector(6300, -3100, 0), WH, WT, WallCol);
-	SpawnWallSeg(FVector(-6300, 3100, 0), FVector(6300, 3100, 0), WH, WT, WallCol);
-	SpawnWallSeg(FVector(-6300, -3100, 0), FVector(-6300, 3100, 0), WH, WT, WallCol);
-	SpawnWallSeg(FVector(6300, -3100, 0), FVector(6300, 3100, 0), WH, WT, WallCol);
+	// Perimeter wall ring so the map is fully enclosed (bigger + taller now)
+	const float WH = 600.0f, WT = 200.0f;
+	const float PX = 12600.0f, PY = 4700.0f;
+	SpawnWallSeg(FVector(-PX, -PY, 0), FVector(PX, -PY, 0), WH, WT, WallCol);
+	SpawnWallSeg(FVector(-PX, PY, 0), FVector(PX, PY, 0), WH, WT, WallCol);
+	SpawnWallSeg(FVector(-PX, -PY, 0), FVector(-PX, PY, 0), WH, WT, WallCol);
+	SpawnWallSeg(FVector(PX, -PY, 0), FVector(PX, PY, 0), WH, WT, WallCol);
 
 	// ========================================================================
 	// STRUCTURES — deferred so Team/bIsPhoenix are set before BeginPlay
@@ -168,37 +139,38 @@ void ASkylandersMapBuilder::BuildMap()
 		return A;
 	};
 
-	// Blue (negative X): Spawn > Titan > Phoenix > Tower(on lane)
-	BlueSpawnArea = SpawnAreaFor(FVector(-5600, 0, 0), ETowerTeam::Friendly);
-	BlueTitan = SpawnTitanFor(FVector(-5100, 0, 150), ETowerTeam::Friendly, TEXT("Blue Titan"));
-	BluePhoenix = SpawnStructureTower(FVector(-4300, 0, 15), ETowerTeam::Friendly, TEXT("Blue Phoenix"), true, 100.0f, 1000.0f);
-	BlueTower = SpawnStructureTower(FVector(-2800, 200, 15), ETowerTeam::Friendly, TEXT("Blue Tower"), false, 50.0f, 0.0f);
+	// Blue (negative X): Spawn > Titan > Phoenix > Tower(on lane). Generous
+	// spacing so the meshes don't overlap; spawn pulled well back from the Titan.
+	BlueSpawnArea = SpawnAreaFor(FVector(-11500, 0, 0), ETowerTeam::Friendly);
+	BlueTitan = SpawnTitanFor(FVector(-9500, 0, 150), ETowerTeam::Friendly, TEXT("Blue Titan"));
+	BluePhoenix = SpawnStructureTower(FVector(-7000, 0, 15), ETowerTeam::Friendly, TEXT("Blue Phoenix"), true, 100.0f, 1000.0f);
+	BlueTower = SpawnStructureTower(FVector(-3800, 300, 15), ETowerTeam::Friendly, TEXT("Blue Tower"), false, 50.0f, 0.0f);
 
 	// Red (positive X): mirror
-	RedSpawnArea = SpawnAreaFor(FVector(5600, 0, 0), ETowerTeam::Enemy);
-	RedTitan = SpawnTitanFor(FVector(5100, 0, 150), ETowerTeam::Enemy, TEXT("Red Titan"));
-	RedPhoenix = SpawnStructureTower(FVector(4300, 0, 15), ETowerTeam::Enemy, TEXT("Red Phoenix"), true, 100.0f, 1000.0f);
-	RedTower = SpawnStructureTower(FVector(2800, -200, 15), ETowerTeam::Enemy, TEXT("Red Tower"), false, 50.0f, 0.0f);
+	RedSpawnArea = SpawnAreaFor(FVector(11500, 0, 0), ETowerTeam::Enemy);
+	RedTitan = SpawnTitanFor(FVector(9500, 0, 150), ETowerTeam::Enemy, TEXT("Red Titan"));
+	RedPhoenix = SpawnStructureTower(FVector(7000, 0, 15), ETowerTeam::Enemy, TEXT("Red Phoenix"), true, 100.0f, 1000.0f);
+	RedTower = SpawnStructureTower(FVector(3800, -300, 15), ETowerTeam::Enemy, TEXT("Red Tower"), false, 50.0f, 0.0f);
 
 	// Minion spawners + lane waypoint paths (spawn -> enemy base)
 	BlueSpawner = World->SpawnActor<ASkylandersMinionSpawner>(
-		ASkylandersMinionSpawner::StaticClass(), FVector(-4300, 0, 0), FRotator::ZeroRotator, SP);
+		ASkylandersMinionSpawner::StaticClass(), FVector(-8300, 0, 0), FRotator::ZeroRotator, SP);
 	if (BlueSpawner)
 	{
 		BlueSpawner->Team = ETowerTeam::Friendly;
-		BlueSpawner->LaneTargetPoint = FVector(5100, 0, 0);
+		BlueSpawner->LaneTargetPoint = FVector(9500, 0, 0);
 		for (int32 i = 1; i < LanePath.Num(); i++) BlueSpawner->LaneWaypoints.Add(LanePath[i]);
-		BlueSpawner->LaneWaypoints.Add(FVector(5100, 0, 0));
+		BlueSpawner->LaneWaypoints.Add(FVector(9500, 0, 0));
 	}
 
 	RedSpawner = World->SpawnActor<ASkylandersMinionSpawner>(
-		ASkylandersMinionSpawner::StaticClass(), FVector(4300, 0, 0), FRotator::ZeroRotator, SP);
+		ASkylandersMinionSpawner::StaticClass(), FVector(8300, 0, 0), FRotator::ZeroRotator, SP);
 	if (RedSpawner)
 	{
 		RedSpawner->Team = ETowerTeam::Enemy;
-		RedSpawner->LaneTargetPoint = FVector(-5100, 0, 0);
+		RedSpawner->LaneTargetPoint = FVector(-9500, 0, 0);
 		for (int32 i = LanePath.Num() - 2; i >= 0; i--) RedSpawner->LaneWaypoints.Add(LanePath[i]);
-		RedSpawner->LaneWaypoints.Add(FVector(-5100, 0, 0));
+		RedSpawner->LaneWaypoints.Add(FVector(-9500, 0, 0));
 	}
 
 	// Protection chains: Tower -> Phoenix -> Titan
@@ -231,18 +203,18 @@ void ASkylandersMapBuilder::BuildMap()
 		return C;
 	};
 
-	BlueBlueBuff = SpawnCamp(FVector(-3200, 1550, 75), TEXT("Blue Buff"), EBuffType::Mana, 1.0f, 0.0f, 0.0f, 0);
-	RedBlueBuff = SpawnCamp(FVector(3200, -1550, 75), TEXT("Blue Buff"), EBuffType::Mana, 1.0f, 0.0f, 0.0f, 0);
-	DamageCamp = SpawnCamp(FVector(-1500, -1650, 75), TEXT("Damage Buff"), EBuffType::Damage, 1.25f, 0.0f, 0.0f, 0);
-	SpawnCamp(FVector(1500, 1650, 75), TEXT("Damage Buff"), EBuffType::Damage, 1.25f, 0.0f, 0.0f, 0);
-	BullDemonKing = SpawnCamp(FVector(0, 2050, 75), TEXT("Bull Demon King"), EBuffType::Damage, 1.50f, 2500.0f, 200.0f, 150);
-	MidCamp = SpawnCamp(FVector(0, -2050, 75), TEXT("Mid Harpies"), EBuffType::None, 1.0f, 300.0f, 80.0f, 40);
+	BlueBlueBuff = SpawnCamp(FVector(-5800, 2800, 75), TEXT("Blue Buff"), EBuffType::Mana, 1.0f, 0.0f, 0.0f, 0);
+	RedBlueBuff = SpawnCamp(FVector(5800, -2800, 75), TEXT("Blue Buff"), EBuffType::Mana, 1.0f, 0.0f, 0.0f, 0);
+	DamageCamp = SpawnCamp(FVector(-2700, -3000, 75), TEXT("Damage Buff"), EBuffType::Damage, 1.25f, 0.0f, 0.0f, 0);
+	SpawnCamp(FVector(2700, 3000, 75), TEXT("Damage Buff"), EBuffType::Damage, 1.25f, 0.0f, 0.0f, 0);
+	BullDemonKing = SpawnCamp(FVector(0, 3700, 75), TEXT("Bull Demon King"), EBuffType::Damage, 1.50f, 2500.0f, 200.0f, 150);
+	MidCamp = SpawnCamp(FVector(0, -3700, 75), TEXT("Mid Harpies"), EBuffType::None, 1.0f, 300.0f, 80.0f, 40);
 
 	// ========================================================================
 	// ENEMY GOD (parks in the red jungle)
 	// ========================================================================
 	World->SpawnActor<ASkylandersEnemyGod>(
-		ASkylandersEnemyGod::StaticClass(), FVector(3800, -300, 100), FRotator::ZeroRotator, SP);
+		ASkylandersEnemyGod::StaticClass(), FVector(6800, -500, 100), FRotator::ZeroRotator, SP);
 
 	UE_LOG(LogTemp, Log, TEXT("=== Joust V2 Map Complete ==="));
 }
