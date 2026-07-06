@@ -78,13 +78,15 @@ void ASkylandersMapBuilder::BuildMap()
 	// up ~1.8x vs the first pass so lane traversal matches SMITE Joust (~18s).
 	// Used only for the minion waypoint paths now (the ground is one flat color).
 	// ========================================================================
+	// Mirror-symmetric across X=0: the red half is the exact reflection of the
+	// blue half (same lateral Y, flipped X), so both teams' sides are identical.
 	TArray<FVector> LanePath;
 	LanePath.Add(FVector(-8300, 0, 0));      // blue base mouth
 	LanePath.Add(FVector(-6100, 1000, 0));
 	LanePath.Add(FVector(-3400, -650, 0));
 	LanePath.Add(FVector(0, 0, 0));          // mid
-	LanePath.Add(FVector(3400, 650, 0));
-	LanePath.Add(FVector(6100, -1000, 0));
+	LanePath.Add(FVector(3400, -650, 0));    // mirror of (-3400,-650)
+	LanePath.Add(FVector(6100, 1000, 0));    // mirror of (-6100,1000)
 	LanePath.Add(FVector(8300, 0, 0));       // red base mouth
 
 	// ========================================================================
@@ -108,13 +110,13 @@ void ASkylandersMapBuilder::BuildMap()
 	WalkCircles.Add(FVector(10000, 0, 3000));    // red base chamber
 	for (const FVector& P : LanePath) WalkCircles.Add(FVector(P.X, P.Y, 950)); // round the lane bends
 	WalkCircles.Add(FVector(-5800, 2800, 1400)); // blue mana jungle room
-	WalkCircles.Add(FVector(5800, -2800, 1400)); // red mana jungle room
-	WalkCircles.Add(FVector(0, 1600, 1250));     // contested red/damage buff room (center)
-	WalkCircles.Add(FVector(0, 3700, 1600));     // Bull Demon pit (north)
-	WalkCircles.Add(FVector(0, -3700, 1400));    // Harpies (south)
+	WalkCircles.Add(FVector(5800, 2800, 1400));  // red mana jungle room (mirror)
+	WalkCircles.Add(FVector(0, -1600, 1250));    // contested red/damage buff room (center)
+	WalkCircles.Add(FVector(0, 3400, 1600));     // Bull Demon pit
+	WalkCircles.Add(FVector(0, -3400, 1400));    // Harpies
 	WalkCircles.Add(FVector(-3800, 300, 700));   // blue tower nook
-	WalkCircles.Add(FVector(3800, -300, 700));   // red tower nook
-	WalkCircles.Add(FVector(6800, -500, 800));   // enemy god nook (red jungle)
+	WalkCircles.Add(FVector(3800, 300, 700));    // red tower nook (mirror)
+	WalkCircles.Add(FVector(7500, 0, 900));      // enemy god (red base approach)
 
 	// Walkable corridors: A -> B with half-width (packed as X,Y,X,Y,HW)
 	TArray<float> Corrs;
@@ -124,11 +126,11 @@ void ASkylandersMapBuilder::BuildMap()
 		AddCorr(FVector2D(LanePath[i].X, LanePath[i].Y), FVector2D(LanePath[i + 1].X, LanePath[i + 1].Y), 820.0f);
 	AddCorr(FVector2D(-10000, 0), FVector2D(-8300, 0), 1000.0f);   // blue base -> lane
 	AddCorr(FVector2D(10000, 0), FVector2D(8300, 0), 1000.0f);     // red base -> lane
-	AddCorr(FVector2D(-5800, 2800), FVector2D(-6100, 1000), 560.0f); // mana -> lane
-	AddCorr(FVector2D(5800, -2800), FVector2D(6100, -1000), 560.0f);
-	AddCorr(FVector2D(0, 1600), FVector2D(0, 0), 620.0f);         // contested buff -> mid lane
-	AddCorr(FVector2D(0, 3700), FVector2D(0, 0), 560.0f);          // Bull -> mid
-	AddCorr(FVector2D(0, -3700), FVector2D(0, 0), 560.0f);         // Harpies -> mid
+	AddCorr(FVector2D(-5800, 2800), FVector2D(-6100, 1000), 560.0f); // blue mana -> lane
+	AddCorr(FVector2D(5800, 2800), FVector2D(6100, 1000), 560.0f);   // red mana -> lane (mirror)
+	AddCorr(FVector2D(0, -1600), FVector2D(0, 0), 620.0f);        // contested buff -> mid lane
+	AddCorr(FVector2D(0, 3400), FVector2D(0, 0), 560.0f);         // Bull -> mid
+	AddCorr(FVector2D(0, -3400), FVector2D(0, 0), 560.0f);        // Harpies -> mid
 
 	// Fill the out-of-bounds with raised dark terrain
 	const FLinearColor Terrain(0.05f, 0.06f, 0.05f);
@@ -226,7 +228,7 @@ void ASkylandersMapBuilder::BuildMap()
 	RedSpawnArea = SpawnAreaFor(FVector(11500, 0, 0), ETowerTeam::Enemy);
 	RedTitan = SpawnTitanFor(FVector(9500, 0, 150), ETowerTeam::Enemy, TEXT("Red Titan"));
 	RedPhoenix = SpawnStructureTower(FVector(7000, 0, 15), ETowerTeam::Enemy, TEXT("Red Phoenix"), true, 100.0f, 1000.0f);
-	RedTower = SpawnStructureTower(FVector(3800, -300, 15), ETowerTeam::Enemy, TEXT("Red Tower"), false, 50.0f, 0.0f);
+	RedTower = SpawnStructureTower(FVector(3800, 300, 15), ETowerTeam::Enemy, TEXT("Red Tower"), false, 50.0f, 0.0f); // mirror of blue tower
 
 	// Minion spawners + lane waypoint paths (spawn -> enemy base)
 	BlueSpawner = World->SpawnActor<ASkylandersMinionSpawner>(
@@ -279,18 +281,19 @@ void ASkylandersMapBuilder::BuildMap()
 		return C;
 	};
 
+	// Team mana buffs mirror across X=0 (both in the north jungle, one per side)
 	BlueBlueBuff = SpawnCamp(FVector(-5800, 2800, 75), TEXT("Blue Buff"), EBuffType::Mana, 1.0f, 0.0f, 0.0f, 0);
-	RedBlueBuff = SpawnCamp(FVector(5800, -2800, 75), TEXT("Blue Buff"), EBuffType::Mana, 1.0f, 0.0f, 0.0f, 0);
-	// Single contested red/damage buff in the middle — both teams fight over it
-	DamageCamp = SpawnCamp(FVector(0, 1600, 75), TEXT("Damage Buff"), EBuffType::Damage, 1.25f, 0.0f, 0.0f, 0);
-	BullDemonKing = SpawnCamp(FVector(0, 3700, 75), TEXT("Bull Demon King"), EBuffType::Damage, 1.50f, 2500.0f, 200.0f, 150);
-	MidCamp = SpawnCamp(FVector(0, -3700, 75), TEXT("Mid Harpies"), EBuffType::None, 1.0f, 300.0f, 80.0f, 40);
+	RedBlueBuff = SpawnCamp(FVector(5800, 2800, 75), TEXT("Blue Buff"), EBuffType::Mana, 1.0f, 0.0f, 0.0f, 0);
+	// Neutral objectives on the center line (x=0) — equidistant / contested
+	DamageCamp = SpawnCamp(FVector(0, -1600, 75), TEXT("Damage Buff"), EBuffType::Damage, 1.25f, 0.0f, 0.0f, 0);
+	BullDemonKing = SpawnCamp(FVector(0, 3400, 75), TEXT("Bull Demon King"), EBuffType::Damage, 1.50f, 2500.0f, 200.0f, 150);
+	MidCamp = SpawnCamp(FVector(0, -3400, 75), TEXT("Mid Harpies"), EBuffType::None, 1.0f, 300.0f, 80.0f, 40);
 
 	// ========================================================================
 	// ENEMY GOD (parks in the red jungle)
 	// ========================================================================
 	World->SpawnActor<ASkylandersEnemyGod>(
-		ASkylandersEnemyGod::StaticClass(), FVector(6800, -500, 100), FRotator::ZeroRotator, SP);
+		ASkylandersEnemyGod::StaticClass(), FVector(7500, 0, 100), FRotator::ZeroRotator, SP);
 
 	// ========================================================================
 	// INITIAL SPAWN: the GameMode drops the pawn at the .umap PlayerStart, which
