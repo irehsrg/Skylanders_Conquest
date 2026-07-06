@@ -26,12 +26,19 @@ ASkylandersEnemy::ASkylandersEnemy()
 	GetCapsuleComponent()->InitCapsuleSize(35.f, 60.0f);
 	GetCapsuleComponent()->SetCollisionProfileName(TEXT("BlockAllDynamic"));
 	GetCapsuleComponent()->SetNotifyRigidBodyCollision(true);
+	// Overlap the player (don't block) so walking into a camp creature can't
+	// climb/lift the player off the ground; projectiles still hit it.
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 
 	// Movement - enable for AI chasing
 	GetCharacterMovement()->GravityScale = 1.0f;
 	GetCharacterMovement()->MaxWalkSpeed = 300.0f;
 	GetCharacterMovement()->bOrientRotationToMovement = false; // We handle rotation manually
 	GetCharacterMovement()->BrakingDecelerationWalking = 1000.0f;
+	// RVO avoidance: units steer around each other on the ground plane instead
+	// of shoving (keeps crowds flat, no vertical pile-ups).
+	GetCharacterMovement()->bUseRVOAvoidance = true;
+	GetCharacterMovement()->AvoidanceConsiderationRadius = 200.0f;
 
 	// Create a visible body (cylinder placeholder)
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));

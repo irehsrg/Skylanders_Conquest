@@ -24,6 +24,10 @@ ASkylandersBuffCamp::ASkylandersBuffCamp()
 	RootComponent = BodyMesh;
 	BodyMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
 	BodyMesh->SetNotifyRigidBodyCollision(true);
+	// The camp is a big blocking SPHERE — walking into it used to ride the
+	// player up its curve and lift them off the ground. Let the player pass
+	// through it (overlap) instead; projectiles still block/hit it for damage.
+	BodyMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere"));
 	if (SphereMesh.Succeeded())

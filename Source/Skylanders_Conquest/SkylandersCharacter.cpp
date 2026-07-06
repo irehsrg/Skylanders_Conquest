@@ -77,6 +77,12 @@ ASkylandersCharacter::ASkylandersCharacter()
 	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
 	GetCharacterMovement()->GravityScale = 1.5f; // Slightly more floaty than before
 
+	// SMITE-flat feel: the player lives on the ground plane. A low step height
+	// means walking into a unit, camp, or structure can never let the capsule
+	// ride up and over it — no accidental verticality. Units overlap the player
+	// (set on each unit), so nothing can shove the player skyward either.
+	GetCharacterMovement()->MaxStepHeight = 15.0f;
+
 	// Create camera boom (spring arm) - SMITE-style camera
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);

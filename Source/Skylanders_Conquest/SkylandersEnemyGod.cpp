@@ -35,6 +35,8 @@ ASkylandersEnemyGod::ASkylandersEnemyGod()
 	// Capsule
 	GetCapsuleComponent()->InitCapsuleSize(30.0f, 50.0f);
 	GetCapsuleComponent()->SetCollisionProfileName(TEXT("Pawn"));
+	// Overlap the player so body contact can never lift them off the ground.
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 
 	// Movement
 	GetCharacterMovement()->MaxWalkSpeed = 450.0f;
@@ -42,6 +44,9 @@ ASkylandersEnemyGod::ASkylandersEnemyGod()
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
 	GetCharacterMovement()->GravityScale = 1.0f;
 	GetCharacterMovement()->BrakingDecelerationWalking = 1000.0f;
+	// RVO avoidance for planar separation from other units
+	GetCharacterMovement()->bUseRVOAvoidance = true;
+	GetCharacterMovement()->AvoidanceConsiderationRadius = 200.0f;
 
 	// Body mesh - larger cylinder, dark red
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));

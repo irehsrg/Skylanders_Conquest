@@ -33,6 +33,10 @@ ASkylandersMinion::ASkylandersMinion()
 	GetCharacterMovement()->MaxWalkSpeed = 350.0f;
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
+	// RVO avoidance: minions steer around each other and the player on the
+	// ground plane instead of piling up (flat crowd behaviour).
+	GetCharacterMovement()->bUseRVOAvoidance = true;
+	GetCharacterMovement()->AvoidanceConsiderationRadius = 150.0f;
 
 	// Body mesh - small cylinder for melee, will be configured in BeginPlay
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
