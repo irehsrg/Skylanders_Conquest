@@ -19,6 +19,7 @@ class UAnimSequenceBase;
 class UStaticMeshComponent;
 class USoundBase;
 class UTexture2D;
+class UMaterialInterface;
 struct FInputActionValue;
 
 UCLASS()
@@ -57,6 +58,11 @@ public:
 	// Ground aim circle (flat cylinder, repositioned each tick)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VFX")
 	UStaticMeshComponent* GroundAimIndicator;
+
+	// Thin line on the ground from the character out to the aim circle
+	// (SMITE-style slider — only visible while aiming a ground ability)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VFX")
+	UStaticMeshComponent* GroundAimLine;
 
 	// Recall channeling circle
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "VFX")
@@ -325,6 +331,27 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
 	FLinearColor AutoAttackProjectileColor;
 
+	// Uniform scale of the fallback auto-attack projectile sphere
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
+	float AutoAttackProjectileScale;
+
+	// ========== CLEAVE (multi-target autos) ==========
+	// SMITE-style: some gods' autos splash. 0 = never cleave, 1 = every auto,
+	// N = every Nth auto in the chain (e.g. 3 = every third swing).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
+	int32 CleaveEveryNthHit;
+
+	// Splash radius applied on a cleaving auto
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
+	float CleaveRadius;
+
+	// Fraction of auto damage dealt to secondary cleave targets
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
+	float CleaveDamageFraction;
+
+	// Rolling count of autos fired (drives the every-Nth cleave cadence)
+	int32 AutoAttackCounter;
+
 	// Temporary protections from ability buffs (e.g. Tree Rex Barkskin).
 	// Separate from ItemBonusStats because RecalculateItemBonuses() rebuilds
 	// that struct from the inventory and would wipe a buff stored there.
@@ -549,6 +576,57 @@ protected:
 
 	// Ground targeting - traces camera through crosshair to ground plane
 	FVector GetGroundAimPoint(float MaxRange = 1500.0f) const;
+
+	// ========== ABILITY AIMING (SMITE-style hold-to-aim) ==========
+
+	// Which abilities cast at a ground point (show the line+circle targeter and
+	// fire on key release) vs. cast instantly on press. Set per character.
+	bool bAbilityUsesGroundAim[4];
+
+	// Per-ability targeter circle radius (matches the ability's AoE)
+	float AbilityAimRadius[4];
+
+	// Per-ability targeter max cast range
+	float AbilityAimRange[4];
+
+	// Index of the ability currently being aimed (-1 = none)
+	int32 AimingAbilityIndex;
+
+	// Press/release routing for abilities 1-4 (keys 1-4). A ground-aimed
+	// ability shows the targeter on press and casts on release; others cast
+	// instantly on press.
+	void OnAbilityPressed(int32 Index);
+	void OnAbilityReleased(int32 Index);
+	void AbilityPressed1(); void AbilityReleased1();
+	void AbilityPressed2(); void AbilityReleased2();
+	void AbilityPressed3(); void AbilityReleased3();
+	void AbilityPressed4(); void AbilityReleased4();
+
+	// Dispatch to the correct UseAbilityN()
+	void CastAbilityByIndex(int32 Index);
+
+	// True while a ground ability is being aimed (blocks the instant re-cast)
+	bool IsAimingAbility() const { return AimingAbilityIndex >= 0; }
+
+	// Updates the ground line + circle to the current aim point
+	void UpdateAimTargeter();
+
+	// ========== AIM HIGHLIGHT (SMITE-style target outline) ==========
+
+	// The enemy the auto attack would currently hit (highlighted each tick)
+	UPROPERTY()
+	AActor* CurrentAimTarget;
+
+	// Overlay material applied to the highlighted enemy's mesh
+	UPROPERTY()
+	UMaterialInterface* HighlightMaterial;
+
+	// Finds the best auto-attack target along the current aim, applies/clears
+	// the highlight overlay as it changes
+	void UpdateAimHighlight();
+
+	// Returns the enemy an auto attack would hit right now (nullptr if none)
+	AActor* FindAutoAttackTarget() const;
 
 	// ========== PER-CHARACTER SETUP (set in subclass constructors) ==========
 

@@ -39,9 +39,11 @@
 #include "Sound/SoundBase.h"
 #include "DrawDebugHelpers.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/MeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 #include "Animation/AnimInstance.h"
 #include "Components/Image.h"
 #include "Components/CanvasPanel.h"
@@ -123,6 +125,20 @@ ASkylandersCharacter::ASkylandersCharacter()
 	GroundAimIndicator->SetWorldScale3D(FVector(5.0f, 5.0f, 0.02f));
 	GroundAimIndicator->SetVisibility(false); // Hidden until needed
 
+	// Ground aim LINE - thin flat cube from the character to the aim circle
+	// (SMITE slider). World-space so it can stretch/orient independently.
+	GroundAimLine = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GroundAimLine"));
+	GroundAimLine->SetupAttachment(RootComponent);
+	GroundAimLine->SetAbsolute(true, true, true);
+	GroundAimLine->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GroundAimLine->SetCastShadow(false);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> AimLineMesh(TEXT("/Engine/BasicShapes/Cube"));
+	if (AimLineMesh.Succeeded())
+	{
+		GroundAimLine->SetStaticMesh(AimLineMesh.Object);
+	}
+	GroundAimLine->SetVisibility(false);
+
 	// Recall indicator - flat cyan cylinder around player
 	RecallIndicator = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RecallIndicator"));
 	RecallIndicator->SetupAttachment(RootComponent);
@@ -203,8 +219,31 @@ ASkylandersCharacter::ASkylandersCharacter()
 	FireRate = 2.0f; // 2 shots per second (0.5 second cooldown between shots)
 	AutoAttackRange = 1050.0f; // Projectile speed (3000) * lifetime (0.35)
 	AutoAttackProjectileColor = FLinearColor(1.0f, 0.85f, 0.1f, 1.0f); // Gold
+	AutoAttackProjectileScale = 0.4f;
 	LastFireTime = -999.0f; // Allow immediate first shot
 	bFireFromLeftGun = true; // Start with left gun
+
+	// Cleave (off by default; characters opt in)
+	CleaveEveryNthHit = 0;
+	CleaveRadius = 0.0f;
+	CleaveDamageFraction = 0.5f;
+	AutoAttackCounter = 0;
+
+	// Ability aiming (all instant-cast by default; characters opt specific
+	// abilities into ground targeting)
+	AimingAbilityIndex = -1;
+	for (int32 i = 0; i < 4; i++)
+	{
+		bAbilityUsesGroundAim[i] = false;
+		AbilityAimRadius[i] = 250.0f;
+		AbilityAimRange[i] = 1050.0f;
+	}
+	CurrentAimTarget = nullptr;
+	HighlightMaterial = nullptr;
+
+	// Trigger Happy's Pot o' Gold (ability 2 / index 1) is ground-placed.
+	// Subclasses adjust these flags in their own constructors.
+	bAbilityUsesGroundAim[1] = true;
 
 	// Movement penalties (SMITE-style)
 	StrafeSpeedMultiplier = 0.8f; // 80% speed when strafing
@@ -373,13 +412,6 @@ void ASkylandersCharacter::BeginPlay()
 	UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
 	if (BaseMat)
 	{
-		// Gold translucent material for the (future) ability targeting indicator
-		if (GroundAimIndicator)
-		{
-			UMaterialInstanceDynamic* AimMat = UMaterialInstanceDynamic::Create(BaseMat, this);
-			AimMat->SetVectorParameterValue(FName("Color"), FLinearColor(1.0f, 0.85f, 0.0f, 0.12f));
-			GroundAimIndicator->SetMaterial(0, AimMat);
-		}
 		// Cyan translucent material for recall indicator
 		if (RecallIndicator)
 		{
@@ -387,6 +419,43 @@ void ASkylandersCharacter::BeginPlay()
 			RecallMat->SetVectorParameterValue(FName("Color"), FLinearColor(0.0f, 0.8f, 1.0f, 0.5f));
 			RecallIndicator->SetMaterial(0, RecallMat);
 		}
+	}
+
+	// Targeter circle + line use a genuinely translucent material so they read as
+	// a see-through slider that never blocks the view (the BasicShapeMaterial is
+	// opaque — its alpha does nothing, which is why the old circle "covered" the
+	// ground). Falls back to a tinted BasicShape MID if the asset is missing.
+	UMaterialInterface* TargeterMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/VFX/M_AimTargeter.M_AimTargeter"));
+	if (GroundAimIndicator)
+	{
+		UMaterialInstanceDynamic* Mid = TargeterMat
+			? UMaterialInstanceDynamic::Create(TargeterMat, this)
+			: (BaseMat ? UMaterialInstanceDynamic::Create(BaseMat, this) : nullptr);
+		if (Mid)
+		{
+			Mid->SetVectorParameterValue(FName("Color"), FLinearColor(1.0f, 0.85f, 0.0f, 1.0f));
+			Mid->SetScalarParameterValue(FName("Opacity"), 0.30f);
+			GroundAimIndicator->SetMaterial(0, Mid);
+		}
+	}
+	if (GroundAimLine)
+	{
+		UMaterialInstanceDynamic* Mid = TargeterMat
+			? UMaterialInstanceDynamic::Create(TargeterMat, this)
+			: (BaseMat ? UMaterialInstanceDynamic::Create(BaseMat, this) : nullptr);
+		if (Mid)
+		{
+			Mid->SetVectorParameterValue(FName("Color"), FLinearColor(1.0f, 0.95f, 0.6f, 1.0f));
+			Mid->SetScalarParameterValue(FName("Opacity"), 0.45f);
+			GroundAimLine->SetMaterial(0, Mid);
+		}
+	}
+
+	// Highlight overlay for aimed enemies (a translucent emissive material,
+	// authored as /Game/VFX/M_Highlight; falls back to null if absent)
+	if (!HighlightMaterial)
+	{
+		HighlightMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/VFX/M_Highlight.M_Highlight"));
 	}
 
 	// HUD/shop/projectile fallbacks for characters without Blueprint class
@@ -539,9 +608,12 @@ void ASkylandersCharacter::Tick(float DeltaTime)
 	UpdateCooldowns(DeltaTime);
 	UpdateCooldownUI();
 
-	// Ground aim indicator stays hidden during normal play — it covered too much
-	// of the screen. (Kept as a component for future press-and-hold ability
-	// targeting; abilities currently cast instantly at the crosshair point.)
+	// SMITE-style aiming: the line+circle targeter only appears while a ground
+	// ability is being aimed (press-and-hold); it's hidden the rest of the time.
+	UpdateAimTargeter();
+
+	// Highlight the enemy the auto attack would currently hit
+	UpdateAimHighlight();
 
 	// Recall channeling
 	if (bIsRecalling)
@@ -910,11 +982,16 @@ void ASkylandersCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 	PlayerInputComponent->BindKey(EKeys::F6, IE_Pressed, this, &ASkylandersCharacter::Debug_ShopBuy6);
 	PlayerInputComponent->BindKey(EKeys::F7, IE_Pressed, this, &ASkylandersCharacter::Debug_ShopSell);
 
-	// Ability keys (1-4, always work)
-	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &ASkylandersCharacter::UseAbility1);
-	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ASkylandersCharacter::UseAbility2);
-	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ASkylandersCharacter::UseAbility3);
-	PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &ASkylandersCharacter::UseAbility4);
+	// Ability keys (1-4). Press starts the cast (or begins aiming for a ground
+	// ability); release fires an aimed ability at the targeter.
+	PlayerInputComponent->BindKey(EKeys::One, IE_Pressed, this, &ASkylandersCharacter::AbilityPressed1);
+	PlayerInputComponent->BindKey(EKeys::One, IE_Released, this, &ASkylandersCharacter::AbilityReleased1);
+	PlayerInputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ASkylandersCharacter::AbilityPressed2);
+	PlayerInputComponent->BindKey(EKeys::Two, IE_Released, this, &ASkylandersCharacter::AbilityReleased2);
+	PlayerInputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ASkylandersCharacter::AbilityPressed3);
+	PlayerInputComponent->BindKey(EKeys::Three, IE_Released, this, &ASkylandersCharacter::AbilityReleased3);
+	PlayerInputComponent->BindKey(EKeys::Four, IE_Pressed, this, &ASkylandersCharacter::AbilityPressed4);
+	PlayerInputComponent->BindKey(EKeys::Four, IE_Released, this, &ASkylandersCharacter::AbilityReleased4);
 
 	if (UEnhancedInputComponent* EnhancedInputComponent = CastChecked<UEnhancedInputComponent>(PlayerInputComponent))
 	{
@@ -953,23 +1030,27 @@ void ASkylandersCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 			EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Triggered, this, &ASkylandersCharacter::Fire);
 		}
 
-		// Abilities — Started (press edge) rather than Triggered: Triggered re-fires
-		// every frame while held, which would instantly self-cancel the machine gun toggle
+		// Abilities — Started (press edge) begins the cast/aim, Completed (release)
+		// fires an aimed ground ability. Mirrors the 1-4 key bindings above.
 		if (Ability1Action)
 		{
-			EnhancedInputComponent->BindAction(Ability1Action, ETriggerEvent::Started, this, &ASkylandersCharacter::UseAbility1);
+			EnhancedInputComponent->BindAction(Ability1Action, ETriggerEvent::Started, this, &ASkylandersCharacter::AbilityPressed1);
+			EnhancedInputComponent->BindAction(Ability1Action, ETriggerEvent::Completed, this, &ASkylandersCharacter::AbilityReleased1);
 		}
 		if (Ability2Action)
 		{
-			EnhancedInputComponent->BindAction(Ability2Action, ETriggerEvent::Started, this, &ASkylandersCharacter::UseAbility2);
+			EnhancedInputComponent->BindAction(Ability2Action, ETriggerEvent::Started, this, &ASkylandersCharacter::AbilityPressed2);
+			EnhancedInputComponent->BindAction(Ability2Action, ETriggerEvent::Completed, this, &ASkylandersCharacter::AbilityReleased2);
 		}
 		if (Ability3Action)
 		{
-			EnhancedInputComponent->BindAction(Ability3Action, ETriggerEvent::Started, this, &ASkylandersCharacter::UseAbility3);
+			EnhancedInputComponent->BindAction(Ability3Action, ETriggerEvent::Started, this, &ASkylandersCharacter::AbilityPressed3);
+			EnhancedInputComponent->BindAction(Ability3Action, ETriggerEvent::Completed, this, &ASkylandersCharacter::AbilityReleased3);
 		}
 		if (Ability4Action)
 		{
-			EnhancedInputComponent->BindAction(Ability4Action, ETriggerEvent::Started, this, &ASkylandersCharacter::UseAbility4);
+			EnhancedInputComponent->BindAction(Ability4Action, ETriggerEvent::Started, this, &ASkylandersCharacter::AbilityPressed4);
+			EnhancedInputComponent->BindAction(Ability4Action, ETriggerEvent::Completed, this, &ASkylandersCharacter::AbilityReleased4);
 		}
 	}
 }
@@ -2007,6 +2088,15 @@ void ASkylandersCharacter::FireProjectile()
 		SkyProj->Lifesteal = ItemBonusStats.Lifesteal;
 		SkyProj->bIsCrit = bCrit;
 		SkyProj->ProjectileColor = AutoAttackProjectileColor;
+		SkyProj->VisualScale = AutoAttackProjectileScale;
+
+		// Cleave cadence: every Nth auto in the chain splashes nearby enemies
+		AutoAttackCounter++;
+		if (CleaveEveryNthHit > 0 && (AutoAttackCounter % CleaveEveryNthHit) == 0)
+		{
+			SkyProj->CleaveRadius = CleaveRadius;
+			SkyProj->CleaveDamageFraction = CleaveDamageFraction;
+		}
 	}
 }
 
@@ -2663,4 +2753,187 @@ AActor* ASkylandersCharacter::SpawnColoredMeshVFX(const TCHAR* MeshPath, const F
 		VFX->SetLifeSpan(Lifespan);
 	}
 	return VFX;
+}
+
+// ========== ABILITY AIMING (SMITE-style hold-to-aim) ==========
+
+void ASkylandersCharacter::CastAbilityByIndex(int32 Index)
+{
+	switch (Index)
+	{
+	case 0: UseAbility1(); break;
+	case 1: UseAbility2(); break;
+	case 2: UseAbility3(); break;
+	case 3: UseAbility4(); break;
+	default: break;
+	}
+}
+
+// Remaining cooldown for ability i (0-3)
+static float GetAbilityCooldownByIndex(const ASkylandersCharacter* C, int32 i)
+{
+	switch (i)
+	{
+	case 0: return C->Ability1_RemainingCooldown;
+	case 1: return C->Ability2_RemainingCooldown;
+	case 2: return C->Ability3_RemainingCooldown;
+	case 3: return C->Ability4_RemainingCooldown;
+	default: return 0.0f;
+	}
+}
+
+void ASkylandersCharacter::OnAbilityPressed(int32 Index)
+{
+	if (Index < 0 || Index > 3) return;
+
+	// Non-ground abilities cast instantly on press (unchanged behavior)
+	if (!bAbilityUsesGroundAim[Index])
+	{
+		CastAbilityByIndex(Index);
+		return;
+	}
+
+	// Ground ability: only enter aim mode if it's actually castable, otherwise
+	// fire the cast so the "not learned / on cooldown" feedback still shows.
+	const bool bLearned = AbilityLevels[Index] > 0;
+	const bool bReady = GetAbilityCooldownByIndex(this, Index) <= 0.0f;
+	if (bLearned && bReady && !IsChanneling())
+	{
+		AimingAbilityIndex = Index;
+	}
+	else
+	{
+		CastAbilityByIndex(Index);
+	}
+}
+
+void ASkylandersCharacter::OnAbilityReleased(int32 Index)
+{
+	if (Index < 0 || Index > 3) return;
+
+	// Fire the aimed ability at the current targeter position on release
+	if (AimingAbilityIndex == Index)
+	{
+		AimingAbilityIndex = -1;
+		CastAbilityByIndex(Index);
+	}
+}
+
+void ASkylandersCharacter::AbilityPressed1() { OnAbilityPressed(0); }
+void ASkylandersCharacter::AbilityReleased1() { OnAbilityReleased(0); }
+void ASkylandersCharacter::AbilityPressed2() { OnAbilityPressed(1); }
+void ASkylandersCharacter::AbilityReleased2() { OnAbilityReleased(1); }
+void ASkylandersCharacter::AbilityPressed3() { OnAbilityPressed(2); }
+void ASkylandersCharacter::AbilityReleased3() { OnAbilityReleased(2); }
+void ASkylandersCharacter::AbilityPressed4() { OnAbilityPressed(3); }
+void ASkylandersCharacter::AbilityReleased4() { OnAbilityReleased(3); }
+
+void ASkylandersCharacter::UpdateAimTargeter()
+{
+	// Not aiming — keep the slider hidden
+	if (AimingAbilityIndex < 0)
+	{
+		if (GroundAimIndicator && GroundAimIndicator->IsVisible())
+			GroundAimIndicator->SetVisibility(false);
+		if (GroundAimLine && GroundAimLine->IsVisible())
+			GroundAimLine->SetVisibility(false);
+		return;
+	}
+
+	const int32 i = AimingAbilityIndex;
+	const float Radius = AbilityAimRadius[i];
+	const float Range = AbilityAimRange[i];
+
+	// Aim point on the ground (same trace the ability uses at cast time)
+	FVector AimPoint = GetGroundAimPoint(FMath::Max(Range - Radius, 100.0f));
+	const float GroundZ = GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 3.0f;
+	AimPoint.Z = GroundZ;
+
+	// Circle at the aim point (cylinder default radius 50 -> scale = R/50)
+	if (GroundAimIndicator)
+	{
+		GroundAimIndicator->SetWorldLocation(AimPoint);
+		GroundAimIndicator->SetWorldScale3D(FVector(Radius / 50.0f, Radius / 50.0f, 0.02f));
+		GroundAimIndicator->SetVisibility(true);
+	}
+
+	// Line from the character to the circle (cube default 100 -> scale X = len/100)
+	if (GroundAimLine)
+	{
+		FVector Start = GetActorLocation();
+		Start.Z = GroundZ;
+		FVector ToAim = AimPoint - Start;
+		ToAim.Z = 0.0f;
+		const float Length = ToAim.Size();
+		if (Length > 10.0f)
+		{
+			FVector Mid = (Start + AimPoint) * 0.5f;
+			FRotator LineRot = ToAim.Rotation(); // yaw toward the aim point
+			GroundAimLine->SetWorldLocation(Mid);
+			GroundAimLine->SetWorldRotation(LineRot);
+			GroundAimLine->SetWorldScale3D(FVector(Length / 100.0f, 0.12f, 0.02f));
+			GroundAimLine->SetVisibility(true);
+		}
+		else
+		{
+			GroundAimLine->SetVisibility(false);
+		}
+	}
+}
+
+// ========== AIM HIGHLIGHT (SMITE-style target outline) ==========
+
+AActor* ASkylandersCharacter::FindAutoAttackTarget() const
+{
+	TArray<AActor*> Targets;
+	CollectEnemyTargets(GetWorld(), Targets);
+	if (Targets.Num() == 0) return nullptr;
+
+	const FVector Origin = GetActorLocation();
+	const FVector AimDir = FRotator(0.0f, GetControlRotation().Yaw, 0.0f).Vector();
+	const float Reach = FMath::Max(AutoAttackRange, 350.0f);
+
+	AActor* Best = nullptr;
+	float BestDist = Reach;
+	for (AActor* T : Targets)
+	{
+		FVector ToT = T->GetActorLocation() - Origin;
+		ToT.Z = 0.0f;
+		const float Dist = ToT.Size();
+		if (Dist > Reach || Dist < 1.0f) continue;
+
+		// Must be roughly in front of the aim (within ~30 degrees)
+		if (FVector::DotProduct(ToT.GetSafeNormal(), AimDir) < 0.86f) continue;
+
+		if (Dist < BestDist)
+		{
+			BestDist = Dist;
+			Best = T;
+		}
+	}
+	return Best;
+}
+
+// Sets or clears the highlight overlay on a target's mesh
+static void SetTargetHighlight(AActor* Target, UMaterialInterface* Mat)
+{
+	if (!Target) return;
+	if (UMeshComponent* Mesh = Target->FindComponentByClass<UMeshComponent>())
+	{
+		Mesh->SetOverlayMaterial(Mat);
+	}
+}
+
+void ASkylandersCharacter::UpdateAimHighlight()
+{
+	AActor* NewTarget = FindAutoAttackTarget();
+	if (NewTarget == CurrentAimTarget) return;
+
+	// Clear the previous highlight, apply the new one
+	SetTargetHighlight(CurrentAimTarget, nullptr);
+	if (HighlightMaterial)
+	{
+		SetTargetHighlight(NewTarget, HighlightMaterial);
+	}
+	CurrentAimTarget = NewTarget;
 }

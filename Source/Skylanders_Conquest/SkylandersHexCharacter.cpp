@@ -38,6 +38,16 @@ ASkylandersHexCharacter::ASkylandersHexCharacter()
 	// Slow, heavy autos
 	FireRate = 1.2f;
 	AutoAttackProjectileColor = HexPurple;
+	AutoAttackProjectileScale = 0.55f; // a slightly bigger orb than Trigger Happy's shot
+
+	// Ground-targeted abilities: Wall of Bones (index 1) and Rain of Skulls
+	// (index 2) both place at the aim point; Phantom Orb / Skull Storm don't.
+	bAbilityUsesGroundAim[1] = true;
+	AbilityAimRadius[1] = 150.0f;   // the wall is a line, keep the reticle tight
+	AbilityAimRange[1] = 800.0f;
+	bAbilityUsesGroundAim[2] = true;
+	AbilityAimRadius[2] = 250.0f;
+	AbilityAimRange[2] = 1050.0f;
 
 	// Ability tuning
 	Ability1_Cooldown = 7.0f;

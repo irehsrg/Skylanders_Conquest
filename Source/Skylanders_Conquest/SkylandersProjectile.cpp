@@ -56,6 +56,9 @@ ASkylandersProjectile::ASkylandersProjectile()
 	bIsCrit = false;
 	bDamagesStructures = true;
 	ProjectileColor = FLinearColor(1.0f, 0.85f, 0.1f, 1.0f); // Gold
+	VisualScale = 0.4f;      // Sphere default radius 50 -> 20
+	CleaveRadius = 0.0f;     // No cleave by default
+	CleaveDamageFraction = 0.5f;
 
 	InitialLifeSpan = Lifetime;
 }
@@ -78,7 +81,7 @@ void ASkylandersProjectile::BeginPlay()
 		if (UStaticMesh* SphereMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere")))
 		{
 			MeshComponent->SetStaticMesh(SphereMesh);
-			MeshComponent->SetWorldScale3D(FVector(0.4f)); // Sphere default radius 50 -> 20
+			MeshComponent->SetWorldScale3D(FVector(VisualScale));
 			MeshComponent->SetCastShadow(false);
 			if (UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial")))
 			{
@@ -132,6 +135,7 @@ void ASkylandersProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActo
 		if (Minion->Team == ETowerTeam::Friendly || Minion->bDead) return; // Fly through friendly minions
 		Minion->TakeDamage_Custom(Damage, this);
 		ApplyLifesteal();
+		CleaveNearby(OtherActor->GetActorLocation(), OtherActor);
 		Destroy();
 		return;
 	}
@@ -142,6 +146,7 @@ void ASkylandersProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActo
 	{
 		Enemy->TakeDamage_Custom(Damage, this);
 		ApplyLifesteal();
+		CleaveNearby(OtherActor->GetActorLocation(), OtherActor);
 		Destroy();
 		return;
 	}
@@ -152,6 +157,7 @@ void ASkylandersProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActo
 	{
 		EnemyGod->TakeDamage_Custom(Damage, this);
 		ApplyLifesteal();
+		CleaveNearby(OtherActor->GetActorLocation(), OtherActor);
 		Destroy();
 		return;
 	}
@@ -210,5 +216,51 @@ void ASkylandersProjectile::ApplyLifesteal()
 		{
 			Shooter->Heal(Damage * Lifesteal);
 		}
+	}
+}
+
+void ASkylandersProjectile::CleaveNearby(const FVector& ImpactPoint, AActor* PrimaryTarget)
+{
+	if (CleaveRadius <= 0.0f) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	APawn* Shooter = GetInstigator();
+	const float SplashDamage = Damage * CleaveDamageFraction;
+
+	// Gather every enemy-side pawn type and splash the ones inside the radius
+	auto InRange = [&](AActor* A) -> bool
+	{
+		return A && A != PrimaryTarget && A != Shooter
+			&& FVector::Dist(A->GetActorLocation(), ImpactPoint) <= CleaveRadius;
+	};
+
+	TArray<AActor*> Found;
+
+	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersMinion::StaticClass(), Found);
+	for (AActor* A : Found)
+	{
+		ASkylandersMinion* M = Cast<ASkylandersMinion>(A);
+		if (M && M->Team == ETowerTeam::Enemy && !M->bDead && InRange(A))
+			M->TakeDamage_Custom(SplashDamage, this);
+	}
+
+	Found.Reset();
+	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersEnemy::StaticClass(), Found);
+	for (AActor* A : Found)
+	{
+		ASkylandersEnemy* E = Cast<ASkylandersEnemy>(A);
+		if (E && E->CurrentHealth > 0.0f && InRange(A))
+			E->TakeDamage_Custom(SplashDamage, this);
+	}
+
+	Found.Reset();
+	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersEnemyGod::StaticClass(), Found);
+	for (AActor* A : Found)
+	{
+		ASkylandersEnemyGod* G = Cast<ASkylandersEnemyGod>(A);
+		if (G && G->CurrentState != EGodAIState::Dead && InRange(A))
+			G->TakeDamage_Custom(SplashDamage, this);
 	}
 }

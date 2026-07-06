@@ -38,9 +38,32 @@ ASkylandersTreeRexCharacter::ASkylandersTreeRexCharacter()
 	StartingBasePower = 22.0f;
 	PowerPerLevel = 2.2f;
 
-	// Melee: swings once per second, short reach
-	FireRate = 1.0f;
-	AutoAttackRange = 320.0f;
+	// Ranged cannon auto: a heavy, chunky green shot at a tank's slow cadence.
+	// Every 3rd shot in the chain cleaves nearby foes.
+	FireRate = 0.9f;
+	ProjectileSpeed = 2200.0f;      // reach = speed * projectile lifetime (0.35) ~= 770
+	AutoAttackRange = 800.0f;       // used for aim highlight reach
+	ProjectileSpawnOffset = FVector(110.0f, 0.0f, 60.0f); // from the cannon arm, forward + up
+	AutoAttackProjectileColor = FLinearColor(0.30f, 0.95f, 0.28f, 1.0f); // bright bark green
+	AutoAttackProjectileScale = 0.95f; // chunky boulder-sized shot
+	CleaveEveryNthHit = 3;          // the 3rd swing in the chain splashes
+	CleaveRadius = 300.0f;
+	CleaveDamageFraction = 0.6f;
+
+	// Shockwave Slam (ability 1 / index 0) is ground-placed — aim it with the slider
+	bAbilityUsesGroundAim[0] = true;
+	AbilityAimRadius[0] = 420.0f;
+	AbilityAimRange[0] = 900.0f;
+	// Barkskin (index 1) is a self-buff, not ground-placed — undo the base default
+	bAbilityUsesGroundAim[1] = false;
+
+	// Titan's Wrath charge defaults
+	bTitanCharging = false;
+	TitanChargeRemaining = 0.0f;
+	TitanChargeDuration = 0.55f;    // ~2-3 steps of forward travel
+	TitanChargeSpeed = 1000.0f;     // 1000 * 0.55 ~= 550 uu of travel
+	TitanChargeDir = FVector::ForwardVector;
+	TitanChargeAbilityRank = 0;
 
 	// Ability tuning
 	Ability1_Cooldown = 9.0f;
@@ -66,11 +89,13 @@ ASkylandersTreeRexCharacter::ASkylandersTreeRexCharacter()
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f)); // Interchange meshes face +X already
 	GetMesh()->SetRelativeScale3D(FVector(1.0f));
 
-	// Camera pulled back a little further for the bigger frame
+	// Giant-god camera (like SMITE's dynamic framing for large gods): pulled
+	// back and looking at a raised point so Tree Rex sits centered in frame
+	// with the lane ahead visible, rather than filling the top of the screen.
 	if (CameraBoom)
 	{
-		CameraBoom->TargetArmLength = 560.0f;
-		CameraBoom->SocketOffset = FVector(0.0f, 0.0f, 140.0f);
+		CameraBoom->TargetArmLength = 680.0f;
+		CameraBoom->SocketOffset = FVector(0.0f, 0.0f, 250.0f);
 	}
 
 	static ConstructorHelpers::FObjectFinder<USkeletalMesh> BodyMesh(TEXT("/Game/Characters/TreeRex/Models/TreeRex"));
@@ -86,7 +111,7 @@ ASkylandersTreeRexCharacter::ASkylandersTreeRexCharacter()
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> IdleSeq(TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_outwall"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> RunSeq(TEXT("/Game/Characters/TreeRex/Animations/photosynthesiscannon_hold"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> JumpSeq(TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_out"));
-	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> PunchA(TEXT("/Game/Characters/TreeRex/Animations/emotion_surprise_partial"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> PunchA(TEXT("/Game/Characters/TreeRex/Animations/shockwave_out_upgrade"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> SlamOut(TEXT("/Game/Characters/TreeRex/Animations/photosynthesiscannon_in"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> Brace(TEXT("/Game/Characters/TreeRex/Animations/shockwave_in"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> GroveCast(TEXT("/Game/Characters/TreeRex/Animations/magicmoment_intro"));
@@ -97,7 +122,7 @@ ASkylandersTreeRexCharacter::ASkylandersTreeRexCharacter()
 	if (RunSeq.Succeeded()) RunLocomotionAnim = RunSeq.Object;
 	if (JumpSeq.Succeeded()) JumpAnim = JumpSeq.Object;
 	if (PunchA.Succeeded()) AttackLeftAnim = PunchA.Object;
-	if (PunchA.Succeeded()) AttackRightAnim = PunchA.Object; // Same swing both hands (user-triaged pick)
+	if (PunchA.Succeeded()) AttackRightAnim = PunchA.Object; // shockwave_out_upgrade cannon swing (user pick)
 	if (SlamOut.Succeeded()) Ability1Anim = SlamOut.Object;   // Shockwave Slam
 	if (Brace.Succeeded()) Ability2Anim = Brace.Object;       // Barkskin
 	if (GroveCast.Succeeded()) HealingGroveAnim = GroveCast.Object; // Healing Grove
@@ -123,86 +148,38 @@ void ASkylandersTreeRexCharacter::LoadCharacterVisuals()
 	// Real mesh + materials come from the imported assets — nothing extra to load.
 }
 
-// Melee swing helper: cone damage + enemy structures in reach
-void ASkylandersTreeRexCharacter::MeleeCleave(float Damage, float Range, float MinDot)
+// The charge counts as channeling so the base class locks walk speed and blocks
+// auto-fire while Tree Rex is barreling forward.
+bool ASkylandersTreeRexCharacter::IsChanneling() const
 {
-	FVector Origin = GetActorLocation();
-	FVector Dir = FRotator(0.0f, GetControlRotation().Yaw, 0.0f).Vector();
-
-	// Enemies, minions, camps, gods
-	int32 HitCount = DamageEnemiesInCone(Origin, Dir, Range, MinDot, Damage);
-
-	// Auto attacks also damage structures — punch enemy towers/titans in reach
-	TArray<AActor*> Structures;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), Structures);
-	for (AActor* Actor : Structures)
-	{
-		ASkylandersTower* Tower = Cast<ASkylandersTower>(Actor);
-		if (!Tower || Tower->Team != ETowerTeam::Enemy || Tower->bDestroyed) continue;
-		FVector ToTower = Actor->GetActorLocation() - Origin;
-		if (ToTower.Size2D() < Range + 150.0f && FVector::DotProduct(ToTower.GetSafeNormal2D(), Dir) > MinDot)
-		{
-			Tower->TakeDamage_Custom(Damage, this);
-			HitCount++;
-		}
-	}
-	Structures.Reset();
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTitan::StaticClass(), Structures);
-	for (AActor* Actor : Structures)
-	{
-		ASkylandersTitan* Titan = Cast<ASkylandersTitan>(Actor);
-		if (!Titan || Titan->Team != ETowerTeam::Enemy || Titan->bDead) continue;
-		FVector ToTitan = Actor->GetActorLocation() - Origin;
-		if (ToTitan.Size2D() < Range + 200.0f && FVector::DotProduct(ToTitan.GetSafeNormal2D(), Dir) > MinDot)
-		{
-			Titan->TakeDamage_Custom(Damage, this);
-			HitCount++;
-		}
-	}
-
-	// Lifesteal on melee hits
-	if (HitCount > 0 && ItemBonusStats.Lifesteal > 0.0f)
-	{
-		Heal(Damage * ItemBonusStats.Lifesteal * HitCount);
-	}
+	return Super::IsChanneling() || bTitanCharging;
 }
 
-// Auto attack: melee cleave instead of a projectile
-void ASkylandersTreeRexCharacter::FireProjectile()
+void ASkylandersTreeRexCharacter::Tick(float DeltaTime)
 {
-	if (bIsRecalling) CancelRecall();
-	if (IsChanneling()) return;
+	Super::Tick(DeltaTime);
 
-	// Swing speed uses the same attack-speed pipeline as ranged autos
-	float CurrentTime = GetWorld()->GetTimeSeconds();
-	float SwingCooldown = 1.0f / GetEffectiveAttackSpeed();
-	if (CurrentTime - LastFireTime < SwingCooldown) return;
-	LastFireTime = CurrentTime;
+	// Drive the Titan's Wrath charge: sweep the capsule forward each frame so
+	// the elbow-slam anim reads as a real 2-3 step lunge, not a locked pose.
+	if (bTitanCharging)
+	{
+		// Override any residual walk velocity — the charge fully owns movement
+		GetCharacterMovement()->Velocity = FVector::ZeroVector;
 
-	if (AttackSound) UGameplayStatics::PlaySoundAtLocation(this, AttackSound, GetActorLocation());
+		FHitResult SweepHit;
+		AddActorWorldOffset(TitanChargeDir * TitanChargeSpeed * DeltaTime, true, &SweepHit);
 
-	// Alternate punch animations (reuses the L/R alternation flag)
-	if (bFireFromLeftGun)
-		PlayAnimOnSlot(AttackLeftAnim, 1.3f, 0.05f, 0.1f);
-	else
-		PlayAnimOnSlot(AttackRightAnim, 1.3f, 0.05f, 0.1f);
-	bFireFromLeftGun = !bFireFromLeftGun;
+		// Bark dust trail under him as he charges
+		SpawnColoredMeshVFX(TEXT("/Engine/BasicShapes/Cylinder"),
+			GetActorLocation() - FVector(0, 0, 78.0f), FRotator::ZeroRotator,
+			FVector(1.6f, 1.6f, 0.03f), BarkGreen, 0.25f);
 
-	AttackSlowRemainingTime = AttackSlowDuration;
-
-	float Damage = GetEffectivePower() * 1.15f;
-	bool bCrit = FMath::FRand() < ItemBonusStats.CritChance;
-	if (bCrit) Damage *= 2.0f;
-
-	// Swing arc visual
-	FVector Dir = FRotator(0.0f, GetControlRotation().Yaw, 0.0f).Vector();
-	SpawnColoredMeshVFX(TEXT("/Engine/BasicShapes/Cylinder"),
-		GetActorLocation() + Dir * (AutoAttackRange * 0.5f) - FVector(0, 0, 60.0f),
-		FRotator::ZeroRotator,
-		FVector(AutoAttackRange / 100.0f, AutoAttackRange / 100.0f, 0.03f),
-		BarkGreen, 0.25f);
-
-	MeleeCleave(Damage, AutoAttackRange, 0.35f);
+		TitanChargeRemaining -= DeltaTime;
+		if (TitanChargeRemaining <= 0.0f || SweepHit.bBlockingHit)
+		{
+			FinishTitanCharge();
+		}
+	}
 }
 
 // Ability 1 - Shockwave Slam: ground slam AoE around Tree Rex
@@ -229,12 +206,16 @@ void ASkylandersTreeRexCharacter::UseAbility1()
 		float RankScale = 0.6f + 0.08f * AbilityLevels[0];
 		float SlamDamage = GetEffectivePower() * 2.4f * RankScale;
 
+		// Ground-targeted: land the slam where the slider circle sits
+		FVector SlamCenter = GetGroundAimPoint(AbilityAimRange[0] - SlamRadius);
+		SlamCenter.Z = GetActorLocation().Z;
+
 		// Shockwave ring visual
 		SpawnColoredMeshVFX(TEXT("/Engine/BasicShapes/Cylinder"),
-			GetActorLocation() - FVector(0, 0, 90.0f), FRotator::ZeroRotator,
+			SlamCenter - FVector(0, 0, 90.0f), FRotator::ZeroRotator,
 			FVector(SlamRadius / 50.0f, SlamRadius / 50.0f, 0.06f), BarkGreen, 0.6f);
 
-		int32 HitCount = DamageEnemiesInSphere(GetActorLocation(), SlamRadius, SlamDamage);
+		int32 HitCount = DamageEnemiesInSphere(SlamCenter, SlamRadius, SlamDamage);
 		UE_LOG(LogTemp, Log, TEXT("Shockwave Slam hit %d targets for %.0f damage"), HitCount, SlamDamage);
 		if (HitCount > 0) AddCoins(HitCount);
 	}
@@ -337,7 +318,9 @@ void ASkylandersTreeRexCharacter::UseAbility3()
 	}
 }
 
-// Ability 4 - Titan's Wrath: huge frontal cone smash that heals per target hit (ultimate)
+// Ability 4 - Titan's Wrath: charges forward a few steps, then an elbow-slam
+// smash lands at the end of the lunge (ultimate). Movement is NOT locked in
+// place — Tree Rex physically travels while the elbow-slam anim plays.
 void ASkylandersTreeRexCharacter::UseAbility4()
 {
 	if (AbilityLevels[3] == 0)
@@ -355,29 +338,45 @@ void ASkylandersTreeRexCharacter::UseAbility4()
 		Ability4_RemainingCooldown = Ability4_Cooldown * CooldownScale;
 
 		if (AbilitySound) UGameplayStatics::PlaySoundAtLocation(this, AbilitySound, GetActorLocation());
-		PlayAnimOnSlot(YamatoAnim, 0.9f);
+		PlayAnimOnSlot(YamatoAnim, 1.0f); // elbow-slam charge anim, full body
 
-		const float WrathRange = 550.0f;
-		float UltRankScale = 0.5f + 0.10f * AbilityLevels[3];
-		float WrathDamage = GetEffectivePower() * 12.0f * UltRankScale;
+		// Lock in the charge direction (flat, aim yaw) and begin the lunge.
+		// Tick() drives the forward travel; FinishTitanCharge() lands the smash.
+		TitanChargeDir = FRotator(0.0f, GetControlRotation().Yaw, 0.0f).Vector();
+		TitanChargeAbilityRank = AbilityLevels[3];
+		TitanChargeRemaining = TitanChargeDuration;
+		bTitanCharging = true;
 
-		FVector Dir = FRotator(0.0f, GetControlRotation().Yaw, 0.0f).Vector();
-
-		// Massive smash visual in front
-		SpawnColoredMeshVFX(TEXT("/Engine/BasicShapes/Sphere"),
-			GetActorLocation() + Dir * (WrathRange * 0.5f), FRotator::ZeroRotator,
-			FVector(WrathRange / 60.0f), BarkGreen, 0.9f);
-
-		int32 HitCount = DamageEnemiesInCone(GetActorLocation(), Dir, WrathRange, 0.35f, WrathDamage, 0.2f);
-
-		// Sustain: heal 6% of effective max HP per target smashed
-		if (HitCount > 0)
-		{
-			float EffectiveMaxHP = MaxHealth + ItemBonusStats.MaxHealth;
-			Heal(EffectiveMaxHP * 0.06f * HitCount);
-			AddCoins(HitCount * 5);
-		}
-
-		UE_LOG(LogTemp, Warning, TEXT("TITAN'S WRATH hit %d targets for %.0f damage!"), HitCount, WrathDamage);
+		UE_LOG(LogTemp, Warning, TEXT("TITAN'S WRATH — charging forward!"));
 	}
+}
+
+void ASkylandersTreeRexCharacter::FinishTitanCharge()
+{
+	bTitanCharging = false;
+	TitanChargeRemaining = 0.0f;
+
+	// Smash lands in a frontal arc where the charge ended
+	const float WrathRange = 550.0f;
+	float UltRankScale = 0.5f + 0.10f * FMath::Max(TitanChargeAbilityRank, 1);
+	float WrathDamage = GetEffectivePower() * 12.0f * UltRankScale;
+
+	FVector Dir = TitanChargeDir;
+
+	// Massive smash visual in front of the landing spot
+	SpawnColoredMeshVFX(TEXT("/Engine/BasicShapes/Sphere"),
+		GetActorLocation() + Dir * (WrathRange * 0.5f), FRotator::ZeroRotator,
+		FVector(WrathRange / 60.0f), BarkGreen, 0.9f);
+
+	int32 HitCount = DamageEnemiesInCone(GetActorLocation(), Dir, WrathRange, 0.35f, WrathDamage, 0.2f);
+
+	// Sustain: heal 6% of effective max HP per target smashed
+	if (HitCount > 0)
+	{
+		float EffectiveMaxHP = MaxHealth + ItemBonusStats.MaxHealth;
+		Heal(EffectiveMaxHP * 0.06f * HitCount);
+		AddCoins(HitCount * 5);
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("TITAN'S WRATH smash hit %d targets for %.0f damage!"), HitCount, WrathDamage);
 }

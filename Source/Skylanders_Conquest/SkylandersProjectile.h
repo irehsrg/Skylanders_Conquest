@@ -60,6 +60,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile")
 	FLinearColor ProjectileColor;
 
+	// Uniform scale of the fallback sphere visual (sphere default radius 50).
+	// Tanks/heavy autos set this bigger for a chunkier shot.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile")
+	float VisualScale;
+
+	// Cleave: when > 0, on hitting its primary target the shot also splashes
+	// every other enemy within this radius (SMITE-style multi-target auto).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile")
+	float CleaveRadius;
+
+	// Fraction of the shot's damage dealt to secondary cleave targets (0-1)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile")
+	float CleaveDamageFraction;
+
 	// Hit callback (walls, towers, titans - WorldStatic/WorldDynamic)
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
@@ -70,4 +84,8 @@ public:
 
 	// Apply lifesteal if applicable
 	void ApplyLifesteal();
+
+	// Splash cleave damage to enemies near the impact (excludes PrimaryTarget
+	// and the shooter). No-op when CleaveRadius <= 0.
+	void CleaveNearby(const FVector& ImpactPoint, AActor* PrimaryTarget);
 };
