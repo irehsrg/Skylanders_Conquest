@@ -47,7 +47,7 @@ void ASkylandersMapBuilder::BeginPlay()
 // Defined later in this file; forward-declared so BuildMap can fill terrain.
 static AActor* SpawnColoredPrimitive(UWorld* World, const TCHAR* MeshPath,
 	const FVector& Loc, const FRotator& Rot, const FVector& Scale, const FLinearColor& Color,
-	const TCHAR* Label);
+	const TCHAR* Label, const TCHAR* MaterialPath = nullptr);
 
 // 2D distance from point P to segment A-B (for lane-corridor walkability tests)
 static float DistPointToSeg2D(const FVector2D& P, const FVector2D& A, const FVector2D& B)
@@ -94,7 +94,10 @@ void ASkylandersMapBuilder::BuildMap()
 	// z-fighting. Walls define the bounds; the map shape reads from structure
 	// and camp placement + the serpentine minion lane.
 	// ========================================================================
-	SpawnFloorSeg(FVector(-13500, 0, 0), FVector(13500, 0, 0), 10500.0f, 0.0f, Ground);
+	// One big grass ground plane (stylized grass material)
+	SpawnColoredPrimitive(World, TEXT("/Engine/BasicShapes/Cube"),
+		FVector(0.0f, 0.0f, -10.0f), FRotator::ZeroRotator, FVector(270.0f, 105.0f, 0.2f),
+		Ground, TEXT("MapGround"), TEXT("/Game/Environment/M_Ground.M_Ground"));
 
 	// ========================================================================
 	// CARVE THE JOUST SHAPE: the walkable area is a set of rounded chambers
@@ -155,10 +158,11 @@ void ASkylandersMapBuilder::BuildMap()
 			}
 			if (!bWalk)
 			{
-				// raised dark block (base at Z=0, top ~Z=230), slightly oversized so neighbours abut
+				// raised rock block (base at Z=0, top ~Z=230), slightly oversized so neighbours abut
 				SpawnColoredPrimitive(World, TEXT("/Engine/BasicShapes/Cube"),
 					FVector(gx, gy, 115.0f), FRotator::ZeroRotator,
-					FVector(Cell / 100.0f * 1.04f, Cell / 100.0f * 1.04f, 2.3f), Terrain, TEXT("MapTerrain"));
+					FVector(Cell / 100.0f * 1.04f, Cell / 100.0f * 1.04f, 2.3f), Terrain, TEXT("MapTerrain"),
+					TEXT("/Game/Environment/M_Terrain.M_Terrain"));
 			}
 		}
 	}
@@ -397,7 +401,7 @@ AActor* ASkylandersMapBuilder::SpawnGround(FVector Location, FVector Scale, FLin
 // Shared: spawn a colored primitive actor (cube or cylinder) with a transform
 static AActor* SpawnColoredPrimitive(UWorld* World, const TCHAR* MeshPath,
 	const FVector& Loc, const FRotator& Rot, const FVector& Scale, const FLinearColor& Color,
-	const TCHAR* Label)
+	const TCHAR* Label, const TCHAR* MaterialPath)
 {
 	if (!World) return nullptr;
 	FActorSpawnParameters Params;
@@ -420,9 +424,10 @@ static AActor* SpawnColoredPrimitive(UWorld* World, const TCHAR* MeshPath,
 	MeshComp->SetWorldScale3D(Scale);
 	MeshComp->SetCollisionProfileName(TEXT("BlockAllDynamic"));
 
-	// Prefer the unlit flat-color map material (exact colors regardless of light);
-	// fall back to the engine lit material if it hasn't been generated yet.
-	UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/VFX/M_MapFloor.M_MapFloor"));
+	// Use the caller's material if given (grass/rock), else the unlit flat-color
+	// map material, else the engine lit material as a last resort.
+	UMaterialInterface* BaseMat = MaterialPath ? LoadObject<UMaterialInterface>(nullptr, MaterialPath) : nullptr;
+	if (!BaseMat) BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/VFX/M_MapFloor.M_MapFloor"));
 	if (!BaseMat) BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
 	if (BaseMat)
 	{
