@@ -38,17 +38,18 @@ ASkylandersTreeRexCharacter::ASkylandersTreeRexCharacter()
 	StartingBasePower = 22.0f;
 	PowerPerLevel = 2.2f;
 
-	// Ranged cannon auto: a heavy, chunky green shot at a tank's slow cadence.
-	// Every 3rd shot in the chain cleaves nearby foes.
+	// Ranged cannon auto: a heavy, chunky green single-target shot at a tank's
+	// slow cadence. Shots fly FLAT (yaw only), so the muzzle height has to sit
+	// in the target band — minions are short (~Z52-112 collision). Spawning at
+	// TR's cannon-arm height sailed clean over their heads; drop it to hip level
+	// where his cannon actually hangs, so the flat shot connects at melee AND
+	// max range.
 	FireRate = 0.9f;
-	ProjectileSpeed = 2200.0f;      // reach = speed * projectile lifetime (0.35) ~= 770
-	AutoAttackRange = 800.0f;       // used for aim highlight reach
-	ProjectileSpawnOffset = FVector(110.0f, 0.0f, 60.0f); // from the cannon arm, forward + up
+	AutoAttackRange = 900.0f;       // aim-highlight reach (shots reach ~1050)
+	ProjectileSpawnOffset = FVector(120.0f, 0.0f, -45.0f); // hip-height cannon, forward
 	AutoAttackProjectileColor = FLinearColor(0.30f, 0.95f, 0.28f, 1.0f); // bright bark green
 	AutoAttackProjectileScale = 0.95f; // chunky boulder-sized shot
-	CleaveEveryNthHit = 3;          // the 3rd swing in the chain splashes
-	CleaveRadius = 300.0f;
-	CleaveDamageFraction = 0.6f;
+	// Single target (no cleave) — CleaveEveryNthHit stays 0 from the base ctor
 
 	// Shockwave Slam (ability 1 / index 0) is ground-placed — aim it with the slider
 	bAbilityUsesGroundAim[0] = true;
