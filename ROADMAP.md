@@ -12,10 +12,11 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 ## Tier 1 — Make one match feel complete
 *(all doable solo-vs-bots, no networking; highest value-per-effort)*
 
-- [ ] **Win/lose condition + end-of-match screen** — destroy the enemy Titan =
-  victory, lose yours = defeat; show a result screen and stop the match.
+- [x] **Win/lose condition + end-of-match screen** — already implemented
+  (Titan `Die()` -> `ShowEndScreen`, VICTORY/DEFEAT + stats + pause); verified.
 - [ ] **Match timer on the HUD** — real widget element (replaces debug text).
-- [ ] **Kill feed** — on-screen feed of kills (replaces debug messages).
+- [x] **Kill feed** — top-right auto-expiring feed (`SkylandersKillFeedWidget`);
+  posts god kills, player deaths, structures, and camps.
 - [ ] **Team gold** — shared team economy, tracked + displayed.
 - [ ] **Flesh out items + first balance pass** — enough meaningful items that
   shopping matters; a first numbers balance pass.
