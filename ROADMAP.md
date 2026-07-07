@@ -55,9 +55,9 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **Telemetry** — per-match JSONL event log + 2.5s god snapshots in
   `Saved/Telemetry/` (`USkylandersTelemetrySubsystem`). Deaths, abilities,
   structures, match result, and movement/`stuck` flags for data-driven tuning.
-- [ ] **NavMesh pathing for gods** — telemetry-confirmed: gods walk straight and
-  get stuck on their own base structures. Needs runtime navmesh + AIController
-  MoveTo (replaces the raw AddMovementInput).
+- [x] **NavMesh pathing for gods** — DONE: runtime NavMesh (dynamic generation +
+  bounds volume in Joust.umap) + AIController MoveTo. Telemetry-verified: gods
+  now path 7483->3414 down the lane instead of freezing at their base structures.
 
 ## Also on the pile (fold into tiers as we go)
 - [ ] Options / settings menu (audio, controls, video).
