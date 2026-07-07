@@ -189,7 +189,7 @@ void ASkylandersTower::Tick(float DeltaTime)
 
 	// Draw range ring above the ground (DepthPriority=1 = always on top)
 	FVector RingCenter = GetActorLocation();
-	RingCenter.Z = 50.0f;
+	RingCenter.Z = 12.0f; // hug the ground so the ring doesn't float or block UI
 	FColor RingColor = (Team == ETowerTeam::Friendly) ? FColor(20, 40, 160) : FColor::Red; // friendly dark blue, enemy red
 	int32 Segments = 64;
 	float AngleStep = 2.0f * PI / Segments;

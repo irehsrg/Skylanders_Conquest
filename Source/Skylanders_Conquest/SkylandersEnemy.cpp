@@ -320,23 +320,11 @@ void ASkylandersEnemy::TakeDamage_Custom(float DamageAmount, AActor* DamageCause
 		UE_LOG(LogTemp, Log, TEXT("Enemy '%s' aggro'd by player damage!"), *EnemyName);
 	}
 
-	// SMITE tower aggro rule: if the damage causer is a player, notify enemy towers
-	// so they switch aggro to the player temporarily
+	// Attacking a jungle monster does NOT draw tower fire in SMITE (only damaging an
+	// enemy god in tower range does). Nearby enemy minions still aggro the player.
 	{
 		if (AttackingPlayer)
 		{
-			// Notify enemy towers
-			TArray<AActor*> AllTowers;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
-			for (AActor* TowerActor : AllTowers)
-			{
-				ASkylandersTower* Tower = Cast<ASkylandersTower>(TowerActor);
-				if (Tower && Tower->Team == ETowerTeam::Enemy)
-				{
-					Tower->NotifyPlayerAggro(AttackingPlayer);
-				}
-			}
-
 			// SMITE minion aggro rule: nearby enemy minions aggro the player
 			TArray<AActor*> AllMinions;
 			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);

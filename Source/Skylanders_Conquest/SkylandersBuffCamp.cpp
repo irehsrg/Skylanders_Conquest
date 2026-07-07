@@ -146,7 +146,7 @@ void ASkylandersBuffCamp::Tick(float DeltaTime)
 	{
 		// Draw leash range ring above the ground (DepthPriority=1 = always on top)
 		FVector RingCenter = HomeLocation;
-		RingCenter.Z = 50.0f;
+		RingCenter.Z = 12.0f; // hug the ground so the ring doesn't float or block UI
 		// Ring color per camp: mana=cyan, red/damage buff=rose-red (distinct from
 		// the enemy tower red), harpies=gold, Bull Demon King=black.
 		FColor RingColor;

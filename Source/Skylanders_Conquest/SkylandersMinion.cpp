@@ -496,19 +496,10 @@ void ASkylandersMinion::TakeDamage_Custom(float DamageAmount, AActor* DamageCaus
 			}
 		}
 
-		// SMITE tower aggro rule: attacking anything inside tower range draws tower
-		// fire — this must apply even when this minion stays locked on enemy minions
-		// (NotifyPlayerAggro itself checks that the player is inside the tower's range)
-		TArray<AActor*> AllTowers;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
-		for (AActor* TowerActor : AllTowers)
-		{
-			ASkylandersTower* Tower = Cast<ASkylandersTower>(TowerActor);
-			if (Tower && Tower->Team == ETowerTeam::Enemy)
-			{
-				Tower->NotifyPlayerAggro(AttackingPlayer);
-			}
-		}
+		// NOTE: attacking MINIONS under a tower does NOT draw tower fire in SMITE —
+		// only damaging an enemy god in range does (handled in SkylandersEnemyGod).
+		// Pulling aggro here meant last-hitting the wave got the player towered even
+		// with friendly minions present, so the tower call was removed.
 
 		if (!bFightingMinions)
 		{
@@ -645,7 +636,10 @@ void ASkylandersMinion::UpdateHealthBar()
 	CachedHealthBar->SetPercent(Pct);
 
 	// Bar color based on team: blue for friendly, red for enemy
-	FLinearColor BarColor = (Team == ETowerTeam::Friendly) ? FLinearColor(0.2f, 0.6f, 1.0f) : FLinearColor(1.0f, 0.3f, 0.2f);
-	if (Pct < 0.3f) BarColor = FLinearColor(1.0f, 0.5f, 0.0f); // Orange when low
+	// SMITE-style: solid green for allied minions, solid red for enemy — no
+	// health-percentage color shift (the bar only shrinks).
+	FLinearColor BarColor = (Team == ETowerTeam::Friendly)
+		? FLinearColor(0.15f, 0.85f, 0.2f)   // green (your team)
+		: FLinearColor(0.9f, 0.15f, 0.15f);  // red (enemy)
 	CachedHealthBar->SetFillColorAndOpacity(BarColor);
 }
