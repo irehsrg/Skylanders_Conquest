@@ -1,6 +1,7 @@
 // Skylanders Conquest - Titan Implementation
 
 #include "SkylandersTitan.h"
+#include "SkylandersTelemetry.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersEnemy.h"
 #include "SkylandersMinion.h"
@@ -364,6 +365,13 @@ void ASkylandersTitan::Die()
 {
 	bDead = true;
 	UE_LOG(LogTemp, Warning, TEXT("Titan '%s' DESTROYED!"), *TitanName);
+
+	if (USkylandersTelemetrySubsystem* Tele = USkylandersTelemetrySubsystem::Get(this))
+	{
+		Tele->LogStructureDestroyed(TitanName, Team == ETowerTeam::Enemy ? TEXT("red") : TEXT("blue"));
+		// Destroying the enemy titan = player victory; losing ours = defeat.
+		Tele->LogMatchEnd(Team == ETowerTeam::Enemy, GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f);
+	}
 
 	// Play destroy sound
 	if (DestroySound)

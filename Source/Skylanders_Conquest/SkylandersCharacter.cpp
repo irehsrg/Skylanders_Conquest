@@ -39,6 +39,7 @@
 #include "SkylandersScoreboardWidget.h"
 #include "SkylandersKillFeedWidget.h"
 #include "SkylandersMatchStatusWidget.h"
+#include "SkylandersTelemetry.h"
 #include "Sound/SoundBase.h"
 #include "DrawDebugHelpers.h"
 #include "Components/StaticMeshComponent.h"
@@ -1297,6 +1298,11 @@ void ASkylandersCharacter::Die()
 
 	// Kill feed: player death
 	USkylandersKillFeedWidget::Post(this, TEXT("You were slain"), FLinearColor(1.0f, 0.25f, 0.25f));
+
+	if (USkylandersTelemetrySubsystem* Tele = USkylandersTelemetrySubsystem::Get(this))
+	{
+		Tele->LogPlayerDeath(this, TEXT("combat"));
+	}
 
 	// Play death sound
 	if (DeathSound)
@@ -2791,6 +2797,15 @@ AActor* ASkylandersCharacter::SpawnColoredMeshVFX(const TCHAR* MeshPath, const F
 
 void ASkylandersCharacter::CastAbilityByIndex(int32 Index)
 {
+	if (Index >= 0 && Index <= 3)
+	{
+		if (USkylandersTelemetrySubsystem* Tele = USkylandersTelemetrySubsystem::Get(this))
+		{
+			Tele->LogAbility(CharacterName.IsEmpty() ? GetName() : CharacterName,
+				TEXT("blue"), FString::Printf(TEXT("ability%d"), Index + 1), GetActorLocation());
+		}
+	}
+
 	switch (Index)
 	{
 	case 0: UseAbility1(); break;

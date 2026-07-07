@@ -2,6 +2,7 @@
 
 #include "SkylandersEnemyGod.h"
 #include "SkylandersKillFeedWidget.h"
+#include "SkylandersTelemetry.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersMinion.h"
 #include "SkylandersTower.h"
@@ -937,6 +938,11 @@ void ASkylandersEnemyGod::UseAbility()
 	float DistToHero = FVector::Dist(GetActorLocation(), Hero->GetActorLocation());
 	if (DistToHero > AttackRange) return;
 
+	if (USkylandersTelemetrySubsystem* Tele = USkylandersTelemetrySubsystem::Get(this))
+	{
+		Tele->LogAbility(GodName, Team == ETowerTeam::Enemy ? TEXT("red") : TEXT("blue"), TEXT("burst"), GetActorLocation());
+	}
+
 	// Play ability sound
 	if (AbilitySound)
 	{
@@ -1093,6 +1099,11 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 void ASkylandersEnemyGod::Die()
 {
 	UE_LOG(LogTemp, Warning, TEXT("Enemy God '%s' has been slain! Level %d"), *GodName, Level);
+
+	if (USkylandersTelemetrySubsystem* Tele = USkylandersTelemetrySubsystem::Get(this))
+	{
+		Tele->LogGodDeath(this, TEXT("combat"));
+	}
 
 	// Play death sound
 	if (DeathSound)

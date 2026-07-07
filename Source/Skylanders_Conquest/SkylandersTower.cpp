@@ -2,6 +2,7 @@
 
 #include "SkylandersTower.h"
 #include "SkylandersKillFeedWidget.h"
+#include "SkylandersTelemetry.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersEnemy.h"
 #include "SkylandersMinion.h"
@@ -449,6 +450,11 @@ void ASkylandersTower::Die()
 	// Kill feed: structure destroyed (green if enemy's, red if ours)
 	USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("%s destroyed"), *TowerName),
 		Team == ETowerTeam::Enemy ? FLinearColor(0.3f, 1.0f, 0.4f) : FLinearColor(1.0f, 0.4f, 0.3f));
+
+	if (USkylandersTelemetrySubsystem* Tele = USkylandersTelemetrySubsystem::Get(this))
+	{
+		Tele->LogStructureDestroyed(TowerName, Team == ETowerTeam::Enemy ? TEXT("red") : TEXT("blue"));
+	}
 
 	// Play destroy sound
 	if (DestroySound)

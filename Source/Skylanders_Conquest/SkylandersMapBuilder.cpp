@@ -7,6 +7,7 @@
 #include "SkylandersBuffCamp.h"
 #include "SkylandersSpawnArea.h"
 #include "SkylandersEnemyGod.h"
+#include "SkylandersTelemetry.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -327,6 +328,12 @@ void ASkylandersMapBuilder::BuildMap()
 	if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(World, 0))
 	{
 		PlayerPawn->SetActorLocation(FVector(-11300.0f, 0.0f, 200.0f));
+	}
+
+	// Telemetry: mark the start of a match
+	if (USkylandersTelemetrySubsystem* Tele = USkylandersTelemetrySubsystem::Get(this))
+	{
+		Tele->LogMatchStart(TEXT("Joust"));
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("=== Joust V2 Map Complete ==="));
