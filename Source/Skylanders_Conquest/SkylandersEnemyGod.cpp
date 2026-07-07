@@ -624,6 +624,30 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 	// === Item purchasing (any state, checks distance to base internally) ===
 	TryPurchaseItems();
 
+	// Respect enemy towers: if caught inside one without a real minion wave for
+	// cover, retreat instead of feeding. Towers now shoot gods, so diving solo is
+	// a death sentence.
+	if (CurrentState != EGodAIState::Retreating && IsPositionUnderEnemyTower(GetActorLocation()))
+	{
+		int32 Cover = 0;
+		TArray<AActor*> Ms;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), Ms);
+		for (AActor* A : Ms)
+		{
+			ASkylandersMinion* M = Cast<ASkylandersMinion>(A);
+			if (M && M->Team == Team && !M->bDead && FVector::Dist(GetActorLocation(), M->GetActorLocation()) < 900.0f)
+			{
+				Cover++;
+			}
+		}
+		if (Cover < 3)
+		{
+			CurrentState = EGodAIState::Retreating;
+			UE_LOG(LogTemp, Log, TEXT("God '%s' backing off an enemy tower (cover %d)"), *GodName, Cover);
+			return;
+		}
+	}
+
 	switch (CurrentState)
 	{
 	case EGodAIState::Laning:

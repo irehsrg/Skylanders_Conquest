@@ -318,18 +318,28 @@ void ASkylandersTower::FindTarget()
 		}
 		if (CurrentTarget) return;
 
-		// No minions - target player
+		// No minions - target the nearest hero in range: the player OR an ally
+		// (Friendly-team) god. Without this, AI allies dove enemy towers for free.
+		float BestDist = AttackRange;
 		APawn* Player = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
-		if (Player)
+		if (ASkylandersCharacter* SkyChar = Cast<ASkylandersCharacter>(Player))
 		{
-			ASkylandersCharacter* SkyChar = Cast<ASkylandersCharacter>(Player);
-			if (SkyChar && SkyChar->CurrentHealth > 0.0f)
+			if (SkyChar->CurrentHealth > 0.0f)
 			{
 				float Dist = FVector::Dist(GetActorLocation(), Player->GetActorLocation());
-				if (Dist < AttackRange)
-				{
-					CurrentTarget = Player;
-				}
+				if (Dist < BestDist) { BestDist = Dist; CurrentTarget = Player; }
+			}
+		}
+
+		TArray<AActor*> AllGods;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllGods);
+		for (AActor* Actor : AllGods)
+		{
+			ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Actor);
+			if (God && God->Team == ETowerTeam::Friendly && God->CurrentState != EGodAIState::Dead)
+			{
+				float Dist = FVector::Dist(GetActorLocation(), Actor->GetActorLocation());
+				if (Dist < BestDist) { BestDist = Dist; CurrentTarget = Actor; }
 			}
 		}
 	}
@@ -372,12 +382,15 @@ void ASkylandersTower::AttackTarget()
 			God->TakeDamage_Custom(AttackDamage, this);
 		}
 	}
-	else
+	else // Enemy tower
 	{
-		ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(CurrentTarget);
-		if (Player)
+		if (ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(CurrentTarget))
 		{
 			Player->TakeDamage_Custom(AttackDamage);
+		}
+		else if (ASkylandersEnemyGod* AllyGod = Cast<ASkylandersEnemyGod>(CurrentTarget))
+		{
+			AllyGod->TakeDamage_Custom(AttackDamage, this);
 		}
 	}
 
