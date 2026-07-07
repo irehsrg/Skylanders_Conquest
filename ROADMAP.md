@@ -34,8 +34,10 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
   friendly towers. Allies lane toward the enemy base, blue; enemies red. TODO
   from playtest: tune ally aggressiveness, enemy towers ignore ally gods, minions
   don't yet target gods.
-- [ ] **Better enemy AI + real character** — give the god(s) a real Skylander
-  model (still colored cylinders) and smarter combat/objective AI.
+- [~] **Better enemy AI + real character** — real animated models DONE: gods wear
+  Hex/TreeRex skeletal meshes (the only two with rip anims) + team-colored ground
+  rings. Remaining: more model variety (needs importing anims for other
+  Skylanders) and smarter combat/objective AI.
 - [ ] **Replace minion placeholders** with real minion models.
 
 ## Tier 3 — Presentation
