@@ -7,6 +7,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/Texture2D.h"
 #include "Kismet/GameplayStatics.h"
@@ -40,14 +41,26 @@ ASkylandersHexCharacter::ASkylandersHexCharacter()
 	AutoAttackProjectileColor = HexPurple;
 	AutoAttackProjectileScale = 0.55f; // a slightly bigger orb than Trigger Happy's shot
 
-	// Ground-targeted abilities: Wall of Bones (index 1) and Rain of Skulls
-	// (index 2) both place at the aim point; Phantom Orb / Skull Storm don't.
+	// Aimed abilities all show the hold-to-aim targeter. Phantom Orb (0) is a
+	// line skillshot, Wall of Bones (1) and Rain of Skulls (2) place at a point;
+	// Skull Storm (3) is a self-centered nova so it stays instant-cast.
+	bAbilityUsesGroundAim[0] = true;
+	AbilityAimRadius[0] = 110.0f;   // orb width — thin reticle for the skillshot
+	AbilityAimRange[0] = 1400.0f;
 	bAbilityUsesGroundAim[1] = true;
 	AbilityAimRadius[1] = 150.0f;   // the wall is a line, keep the reticle tight
 	AbilityAimRange[1] = 800.0f;
 	bAbilityUsesGroundAim[2] = true;
 	AbilityAimRadius[2] = 250.0f;
 	AbilityAimRange[2] = 1050.0f;
+
+	// She hovers, so the base camera framed her too high with the crosshair below
+	// her. Raise the look point (like the giant-god camera) so she sits centered.
+	if (CameraBoom)
+	{
+		CameraBoom->TargetArmLength = 480.0f;
+		CameraBoom->SocketOffset = FVector(0.0f, 0.0f, 200.0f);
+	}
 
 	// Ability tuning
 	Ability1_Cooldown = 7.0f;

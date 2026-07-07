@@ -327,7 +327,7 @@ ASkylandersCharacter::ASkylandersCharacter()
 
 	// Base stats
 	BasePower = 20.0f; // Base auto attack damage, scales with level
-	HealthRegenRate = 0.0f;
+	HealthRegenRate = 1.6f; // ~HP8/s baseline (SMITE-like HP5 ≈ 8); boosted near fountain
 
 	// Animation references (set in Blueprint Class Defaults after importing)
 	IdleLocomotionAnim = nullptr;
@@ -2764,6 +2764,10 @@ AActor* ASkylandersCharacter::SpawnColoredMeshVFX(const TCHAR* MeshPath, const F
 	{
 		MeshComp->SetStaticMesh(VFXMesh);
 	}
+	// Assigning a fresh root AFTER SpawnActor discards the spawn transform, so the
+	// actor snaps to the origin (this is why Hex's Wall of Bones and other ability
+	// VFX appeared at the map center). Re-apply location/rotation explicitly.
+	VFX->SetActorLocationAndRotation(Location, Rotation);
 	MeshComp->SetWorldScale3D(Scale);
 	MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	MeshComp->SetCastShadow(false);
