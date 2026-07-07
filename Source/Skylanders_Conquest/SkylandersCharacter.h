@@ -105,6 +105,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	int32 Coins;
 
+	// Cumulative gold earned (never spent down) — the team-economy metric shown
+	// on the HUD; Coins is the spendable balance.
+	UPROPERTY(BlueprintReadOnly, Category = "Stats")
+	int32 TotalGoldEarned;
+
 	// XP
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float CurrentXP;

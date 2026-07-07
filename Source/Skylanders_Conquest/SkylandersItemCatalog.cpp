@@ -24,85 +24,45 @@ void USkylandersItemCatalog::InitializeItems()
 		return Item;
 	};
 
-	// ===== OFFENSE ITEMS =====
+	// Compact stat builder: (power, atkSpeed, crit, health, mana, hpRegen, mpRegen, prot, lifesteal, moveSpeed)
+	auto St = [](float Pow = 0, float AS = 0, float Crit = 0, float HP = 0, float Mana = 0,
+		float HPR = 0, float MPR = 0, float Prot = 0, float LS = 0, float MS = 0) -> FSkylandersItemStats
+	{
+		FSkylandersItemStats S;
+		S.Power = Pow; S.AttackSpeed = AS; S.CritChance = Crit; S.MaxHealth = HP; S.MaxMana = Mana;
+		S.HealthRegen = HPR; S.ManaRegen = MPR; S.Protections = Prot; S.Lifesteal = LS; S.MovementSpeed = MS;
+		return S;
+	};
 
-	{
-		FSkylandersItemStats S;
-		S.Power = 15.0f;
-		AllItems.Add(MakeItem(1, TEXT("Short Sword"), TEXT("+15 Power"), 500, ESkylandersItemCategory::Offense, S));
-	}
-	{
-		FSkylandersItemStats S;
-		S.Power = 30.0f;
-		S.AttackSpeed = 0.3f;
-		AllItems.Add(MakeItem(2, TEXT("Elemental Blade"), TEXT("+30 Power, +0.3 Attack Speed"), 1200, ESkylandersItemCategory::Offense, S));
-	}
-	{
-		FSkylandersItemStats S;
-		S.AttackSpeed = 0.5f;
-		S.CritChance = 0.10f;
-		AllItems.Add(MakeItem(3, TEXT("Berserker Gauntlets"), TEXT("+0.5 Attack Speed, +10% Crit"), 800, ESkylandersItemCategory::Offense, S));
-	}
-	{
-		FSkylandersItemStats S;
-		S.Power = 10.0f;
-		S.Lifesteal = 0.10f;
-		AllItems.Add(MakeItem(4, TEXT("Vampire Fangs"), TEXT("+10 Power, +10% Lifesteal"), 900, ESkylandersItemCategory::Offense, S));
-	}
-	{
-		FSkylandersItemStats S;
-		S.Power = 45.0f;
-		S.CritChance = 0.15f;
-		AllItems.Add(MakeItem(5, TEXT("Golden Gatling"), TEXT("+45 Power, +15% Crit"), 1800, ESkylandersItemCategory::Offense, S));
-	}
+	const ESkylandersItemCategory OFF = ESkylandersItemCategory::Offense;
+	const ESkylandersItemCategory DEF = ESkylandersItemCategory::Defense;
+	const ESkylandersItemCategory UTL = ESkylandersItemCategory::Utility;
 
-	// ===== DEFENSE ITEMS =====
+	// ===== OFFENSE (basic -> capstone) =====
+	AllItems.Add(MakeItem(1,  TEXT("Short Sword"),         TEXT("+15 Power"),                                    500,  OFF, St(15)));
+	AllItems.Add(MakeItem(2,  TEXT("Blade of Fire"),       TEXT("+35 Power"),                                    1150, OFF, St(35)));
+	AllItems.Add(MakeItem(3,  TEXT("Berserker Gauntlets"), TEXT("+0.6 Attack Speed, +10% Crit"),                 900,  OFF, St(0, 0.6f, 0.10f)));
+	AllItems.Add(MakeItem(4,  TEXT("Vampire Fangs"),       TEXT("+15 Power, +12% Lifesteal"),                    950,  OFF, St(15, 0, 0, 0, 0, 0, 0, 0, 0.12f)));
+	AllItems.Add(MakeItem(5,  TEXT("Storm Hammer"),        TEXT("+25 Power, +0.4 Attack Speed"),                 1400, OFF, St(25, 0.4f)));
+	AllItems.Add(MakeItem(6,  TEXT("Golden Gatling"),      TEXT("+45 Power, +20% Crit"),                         1900, OFF, St(45, 0, 0.20f)));
+	AllItems.Add(MakeItem(7,  TEXT("Executioner"),         TEXT("+30 Power, +0.3 Attack Speed, +25% Crit"),      2400, OFF, St(30, 0.3f, 0.25f)));
+	AllItems.Add(MakeItem(8,  TEXT("Bloodthirster"),       TEXT("+40 Power, +20% Lifesteal"),                    2200, OFF, St(40, 0, 0, 0, 0, 0, 0, 0, 0.20f)));
 
-	{
-		FSkylandersItemStats S;
-		S.MaxHealth = 100.0f;
-		S.Protections = 10.0f;
-		AllItems.Add(MakeItem(6, TEXT("Skystone Shield"), TEXT("+100 Health, +10 Protections"), 600, ESkylandersItemCategory::Defense, S));
-	}
-	{
-		FSkylandersItemStats S;
-		S.MaxHealth = 200.0f;
-		S.HealthRegen = 5.0f;
-		AllItems.Add(MakeItem(7, TEXT("Heart of Skylands"), TEXT("+200 Health, +5 HP/s"), 850, ESkylandersItemCategory::Defense, S));
-	}
-	{
-		FSkylandersItemStats S;
-		S.MaxHealth = 150.0f;
-		S.Protections = 25.0f;
-		AllItems.Add(MakeItem(8, TEXT("Guardian Plate"), TEXT("+150 Health, +25 Protections"), 1100, ESkylandersItemCategory::Defense, S));
-	}
-	{
-		FSkylandersItemStats S;
-		S.Protections = 40.0f;
-		S.HealthRegen = 8.0f;
-		AllItems.Add(MakeItem(9, TEXT("Portal Master's Armor"), TEXT("+40 Protections, +8 HP/s"), 1500, ESkylandersItemCategory::Defense, S));
-	}
+	// ===== DEFENSE (basic -> capstone) =====
+	AllItems.Add(MakeItem(9,  TEXT("Skystone Shield"),        TEXT("+100 Health, +12 Protections"),             600,  DEF, St(0, 0, 0, 100, 0, 0, 0, 12)));
+	AllItems.Add(MakeItem(10, TEXT("Heart of Skylands"),      TEXT("+250 Health, +6 HP/s"),                      950,  DEF, St(0, 0, 0, 250, 0, 6)));
+	AllItems.Add(MakeItem(11, TEXT("Guardian Plate"),         TEXT("+150 Health, +30 Protections"),              1200, DEF, St(0, 0, 0, 150, 0, 0, 0, 30)));
+	AllItems.Add(MakeItem(12, TEXT("Portal Master's Armor"),  TEXT("+100 Health, +45 Protections, +8 HP/s"),     1700, DEF, St(0, 0, 0, 100, 0, 8, 0, 45)));
+	AllItems.Add(MakeItem(13, TEXT("Titan's Bulwark"),        TEXT("+400 Health, +20 Protections, +10 HP/s"),    2300, DEF, St(0, 0, 0, 400, 0, 10, 0, 20)));
+	AllItems.Add(MakeItem(14, TEXT("Aegis of Life"),          TEXT("+150 Health, +25 Protections, +15% Lifesteal"), 2000, DEF, St(0, 0, 0, 150, 0, 0, 0, 25, 0.15f)));
 
-	// ===== UTILITY ITEMS =====
-
-	{
-		FSkylandersItemStats S;
-		S.MovementSpeed = 50.0f;
-		AllItems.Add(MakeItem(10, TEXT("Winged Boots"), TEXT("+50 Movement Speed"), 450, ESkylandersItemCategory::Utility, S));
-	}
-	{
-		FSkylandersItemStats S;
-		S.MaxMana = 50.0f;
-		S.ManaRegen = 3.0f;
-		AllItems.Add(MakeItem(11, TEXT("Crystal Wand"), TEXT("+50 Mana, +3 MP/s"), 550, ESkylandersItemCategory::Utility, S));
-	}
-	{
-		FSkylandersItemStats S;
-		S.Power = 20.0f;
-		S.MaxMana = 75.0f;
-		S.ManaRegen = 5.0f;
-		AllItems.Add(MakeItem(12, TEXT("Sage's Ring"), TEXT("+20 Power, +75 Mana, +5 MP/s"), 1300, ESkylandersItemCategory::Utility, S));
-	}
+	// ===== UTILITY (basic -> capstone) =====
+	AllItems.Add(MakeItem(15, TEXT("Winged Boots"),      TEXT("+60 Movement Speed"),                            500,  UTL, St(0, 0, 0, 0, 0, 0, 0, 0, 0, 60)));
+	AllItems.Add(MakeItem(16, TEXT("Crystal Wand"),      TEXT("+60 Mana, +4 MP/s"),                             600,  UTL, St(0, 0, 0, 0, 60, 0, 4)));
+	AllItems.Add(MakeItem(17, TEXT("Swiftstrike Charm"), TEXT("+0.3 Attack Speed, +80 Movement Speed"),         1100, UTL, St(0, 0.3f, 0, 0, 0, 0, 0, 0, 0, 80)));
+	AllItems.Add(MakeItem(18, TEXT("Sage's Ring"),       TEXT("+25 Power, +80 Mana, +6 MP/s"),                  1400, UTL, St(25, 0, 0, 0, 80, 0, 6)));
+	AllItems.Add(MakeItem(19, TEXT("Boots of Celerity"), TEXT("+100 Health, +110 Movement Speed"),              1300, UTL, St(0, 0, 0, 100, 0, 0, 0, 0, 0, 110)));
+	AllItems.Add(MakeItem(20, TEXT("Arcane Battery"),    TEXT("+20 Power, +150 Mana, +10 MP/s"),                1800, UTL, St(20, 0, 0, 0, 150, 0, 10)));
 }
 
 const TArray<FSkylandersItemData>& USkylandersItemCatalog::GetAllItems()

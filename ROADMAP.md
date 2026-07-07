@@ -14,12 +14,14 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 - [x] **Win/lose condition + end-of-match screen** — already implemented
   (Titan `Die()` -> `ShowEndScreen`, VICTORY/DEFEAT + stats + pause); verified.
-- [ ] **Match timer on the HUD** — real widget element (replaces debug text).
+- [x] **Match timer on the HUD** — `SkylandersMatchStatusWidget` (top-center bar).
 - [x] **Kill feed** — top-right auto-expiring feed (`SkylandersKillFeedWidget`);
   posts god kills, player deaths, structures, and camps.
-- [ ] **Team gold** — shared team economy, tracked + displayed.
-- [ ] **Flesh out items + first balance pass** — enough meaningful items that
-  shopping matters; a first numbers balance pass.
+- [x] **Team gold** — cumulative earned gold per team (blue = player
+  `TotalGoldEarned`, red = enemy god gold) shown in the status bar; sums real
+  teammates once Tier 2 adds them.
+- [x] **Flesh out items + first balance pass** — 20 items (8 off / 6 def / 6 utl),
+  basic -> capstone tiers, tuned cost/stat ratios.
 - [ ] **Scoreboard / death-recap polish** — the widget exists; make it read well
   (KDA, gold, items per player).
 

@@ -38,6 +38,7 @@
 #include "SkylandersMinimapWidget.h"
 #include "SkylandersScoreboardWidget.h"
 #include "SkylandersKillFeedWidget.h"
+#include "SkylandersMatchStatusWidget.h"
 #include "Sound/SoundBase.h"
 #include "DrawDebugHelpers.h"
 #include "Components/StaticMeshComponent.h"
@@ -188,6 +189,7 @@ ASkylandersCharacter::ASkylandersCharacter()
 	ManaRegenRate = 5.0f; // 5 mana per second
 	PlayerLevel = 1;
 	Coins = 0;
+	TotalGoldEarned = 0;
 	BuffProtections = 0.0f;
 
 	// XP
@@ -543,6 +545,12 @@ void ASkylandersCharacter::BeginPlay()
 					Feed->AddToViewport(6);
 				}
 
+				// Match status bar (team gold + timer, top-center)
+				if (USkylandersMatchStatusWidget* Status = CreateWidget<USkylandersMatchStatusWidget>(PlayerController, USkylandersMatchStatusWidget::StaticClass()))
+				{
+					Status->AddToViewport(6);
+				}
+
 				// Initial HUD update + per-character icon/portrait swap
 				UpdateHUD();
 				ApplyCharacterHUDArt();
@@ -608,15 +616,8 @@ void ASkylandersCharacter::Tick(float DeltaTime)
 		}
 	}
 
-	// Game timer
+	// Game timer (displayed by the match status bar widget now)
 	GameElapsedTime += DeltaTime;
-	if (GEngine)
-	{
-		int32 Minutes = FMath::FloorToInt(GameElapsedTime / 60.0f);
-		int32 Seconds = FMath::FloorToInt(FMath::Fmod(GameElapsedTime, 60.0f));
-		GEngine->AddOnScreenDebugMessage(400, 0.0f, FColor::White,
-			FString::Printf(TEXT("%02d:%02d"), Minutes, Seconds));
-	}
 
 	// Update ability cooldowns
 	UpdateCooldowns(DeltaTime);
@@ -1196,6 +1197,7 @@ void ASkylandersCharacter::RestoreMana(float ManaAmount)
 void ASkylandersCharacter::AddCoins(int32 Amount)
 {
 	Coins += Amount;
+	if (Amount > 0) TotalGoldEarned += Amount; // team-economy metric only counts income
 	UE_LOG(LogTemp, Log, TEXT("Coins added: %d | Total: %d"), Amount, Coins);
 
 	// Update coin display in HUD
