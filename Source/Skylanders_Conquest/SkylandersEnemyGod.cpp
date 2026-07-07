@@ -18,6 +18,8 @@
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "AIController.h"
+#include "Navigation/PathFollowingComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/StaticMesh.h"
@@ -479,6 +481,49 @@ AActor* ASkylandersEnemyGod::FindEnemyHero()
 	return Best;
 }
 
+void ASkylandersEnemyGod::MoveToPoint(const FVector& Dest, float AcceptRadius, float FallbackScale)
+{
+	AAIController* AI = Cast<AAIController>(GetController());
+	if (AI)
+	{
+		// Re-issue only when the goal moved a lot or we've stopped, so the path
+		// isn't torn down every tick.
+		const bool bGoalChanged = FVector::Dist2D(Dest, LastMoveGoal) > 200.0f;
+		const bool bIdle = AI->GetMoveStatus() != EPathFollowingStatus::Moving;
+		if (bGoalChanged || bIdle)
+		{
+			LastMoveGoal = Dest;
+			EPathFollowingRequestResult::Type Result = AI->MoveToLocation(
+				Dest, AcceptRadius, /*bStopOnOverlap*/ false, /*bUsePathfinding*/ true,
+				/*bProjectDestinationToNavigation*/ true, /*bCanStrafe*/ false, nullptr, /*bAllowPartialPath*/ true);
+			if (Result != EPathFollowingRequestResult::Failed)
+			{
+				return; // pathing (or already at goal)
+			}
+		}
+		else
+		{
+			return; // already moving toward this goal
+		}
+	}
+
+	// Fallback: no controller or no navmesh path — steer straight (old behavior).
+	FVector Dir = (Dest - GetActorLocation()).GetSafeNormal2D();
+	if (!Dir.IsNearlyZero())
+	{
+		AddMovementInput(Dir, FallbackScale);
+	}
+}
+
+void ASkylandersEnemyGod::StopMoving()
+{
+	if (AAIController* AI = Cast<AAIController>(GetController()))
+	{
+		AI->StopMovement();
+	}
+	LastMoveGoal = FVector(FLT_MAX); // force a fresh MoveTo next time
+}
+
 void ASkylandersEnemyGod::FaceTarget(AActor* Target)
 {
 	if (!Target) return;
@@ -565,8 +610,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 				FVector TargetPos = StayBehindWave(TargetMinion->GetActorLocation());
 				if (!IsPositionUnderEnemyTower(TargetPos))
 				{
-					FVector MoveDir = (TargetPos - GetActorLocation()).GetSafeNormal2D();
-					AddMovementInput(MoveDir, 1.0f);
+					MoveToPoint(TargetPos, AttackRange * 0.85f, 1.0f);
 				}
 			}
 		}
@@ -629,8 +673,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 					FVector TargetPos = StayBehindWave(TargetStructure->GetActorLocation());
 					if (!IsPositionUnderEnemyTower(TargetPos))
 					{
-						FVector MoveDir = (TargetPos - GetActorLocation()).GetSafeNormal2D();
-						AddMovementInput(MoveDir, 0.8f);
+						MoveToPoint(TargetPos, AttackRange * 0.85f, 0.8f);
 					}
 				}
 			}
@@ -644,7 +687,9 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 				// Advance only if behind our own front minion (or no minions yet)
 				if (!bTowerBlock && (!bHasOwnMinions || (GetActorLocation().X - OwnFrontX) * LaneSign() < -200.0f))
 				{
-					AddMovementInput(LaneDir, 0.5f);
+					// Path toward a point well down the lane so the navmesh routes
+					// around our own base structures instead of bumping into them.
+					MoveToPoint(GetActorLocation() + LaneDir * 2500.0f, 150.0f, 0.5f);
 				}
 			}
 		}
@@ -734,13 +779,17 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 		FaceTarget(Hero);
 		if (DistToHero > AttackRange)
 		{
-			FVector MoveDir = (Hero->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
-			AddMovementInput(MoveDir, 1.0f);
+			MoveToPoint(Hero->GetActorLocation(), AttackRange * 0.85f, 1.0f);
 		}
 		else if (DistToHero < AttackRange * 0.4f && AttackTimer > 0.0f)
 		{
+			// Kite straight back a short hop (no pathfinding needed for a nudge)
 			FVector AwayDir = (GetActorLocation() - Hero->GetActorLocation()).GetSafeNormal2D();
 			AddMovementInput(AwayDir, 0.6f);
+		}
+		else
+		{
+			StopMoving();
 		}
 
 		// Auto-attack
@@ -762,15 +811,9 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 
 	case EGodAIState::Retreating:
 	{
-		// Move back to base at 1.3x speed
+		// Move back to base at 1.3x speed (navmesh-pathed around structures)
 		GetCharacterMovement()->MaxWalkSpeed = (MoveSpeed + ItemBonusStats.MovementSpeed) * 1.3f;
-
-		FVector ReturnDir = (BasePosition - GetActorLocation()).GetSafeNormal2D();
-		AddMovementInput(ReturnDir, 1.0f);
-
-		// Face movement direction
-		FRotator ReturnRot = ReturnDir.Rotation();
-		SetActorRotation(FMath::RInterpTo(GetActorRotation(), ReturnRot, DeltaTime, 10.0f));
+		MoveToPoint(BasePosition, 100.0f, 1.0f);
 
 		// Fight back if cornered (hero within 200 units)
 		if (bHeroAlive && DistToHero <= 200.0f)

@@ -192,6 +192,13 @@ private:
 	void PerformAttack(AActor* Target);
 	void UseAbility(); // Burst damage ability
 
+	// NavMesh-based movement: paths around structures/terrain via the AIController
+	// (falls back to straight steering if no navmesh/path). Throttled so it doesn't
+	// restart the path every tick. StopMoving halts the current path.
+	void MoveToPoint(const FVector& Dest, float AcceptRadius, float FallbackScale = 1.0f);
+	void StopMoving();
+	FVector LastMoveGoal = FVector(FLT_MAX);
+
 	// Tower awareness: is a position inside an enemy (FoeTeam) tower's range?
 	bool IsPositionUnderEnemyTower(const FVector& Position) const;
 

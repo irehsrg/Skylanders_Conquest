@@ -16,7 +16,9 @@ public class Skylanders_Conquest : ModuleRules
 			"EnhancedInput",
 			"UMG",
 			"Slate",
-			"SlateCore"
+			"SlateCore",
+			"AIModule",          // AAIController::MoveTo for god pathing
+			"NavigationSystem"   // runtime NavMesh over the procedural map
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
