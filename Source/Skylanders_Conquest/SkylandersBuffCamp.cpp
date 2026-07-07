@@ -1,6 +1,7 @@
 // Skylanders Conquest - Jungle Buff Camp Implementation
 
 #include "SkylandersBuffCamp.h"
+#include "SkylandersKillFeedWidget.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersDamageNumber.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -393,6 +394,10 @@ void ASkylandersBuffCamp::Die()
 	UE_LOG(LogTemp, Warning, TEXT("Buff Camp '%s' killed!"), *CampName);
 	bDead = true;
 	AggroTarget = nullptr;
+
+	// Kill feed: camp cleared (gold, since it grants a buff/reward)
+	USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("%s cleared"), *CampName),
+		FLinearColor(1.0f, 0.82f, 0.2f));
 
 	// Play death sound
 	if (DeathSound)

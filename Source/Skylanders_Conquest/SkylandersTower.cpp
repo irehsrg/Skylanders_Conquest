@@ -1,6 +1,7 @@
 // Skylanders Conquest - Tower Implementation
 
 #include "SkylandersTower.h"
+#include "SkylandersKillFeedWidget.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersEnemy.h"
 #include "SkylandersMinion.h"
@@ -443,6 +444,10 @@ void ASkylandersTower::Die()
 {
 	bDestroyed = true;
 	UE_LOG(LogTemp, Warning, TEXT("Tower '%s' DESTROYED!"), *TowerName);
+
+	// Kill feed: structure destroyed (green if enemy's, red if ours)
+	USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("%s destroyed"), *TowerName),
+		Team == ETowerTeam::Enemy ? FLinearColor(0.3f, 1.0f, 0.4f) : FLinearColor(1.0f, 0.4f, 0.3f));
 
 	// Play destroy sound
 	if (DestroySound)

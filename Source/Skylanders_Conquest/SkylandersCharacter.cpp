@@ -37,6 +37,7 @@
 #include "SkylandersItemHUDWidget.h"
 #include "SkylandersMinimapWidget.h"
 #include "SkylandersScoreboardWidget.h"
+#include "SkylandersKillFeedWidget.h"
 #include "Sound/SoundBase.h"
 #include "DrawDebugHelpers.h"
 #include "Components/StaticMeshComponent.h"
@@ -534,6 +535,12 @@ void ASkylandersCharacter::BeginPlay()
 					ScoreboardWidget->AddToViewport(25);
 					ScoreboardWidget->SetVisibility(ESlateVisibility::Collapsed);
 					UE_LOG(LogTemp, Log, TEXT("Scoreboard created (Tab to show)"));
+				}
+
+				// Kill feed (top-right, auto-expiring entries)
+				if (USkylandersKillFeedWidget* Feed = CreateWidget<USkylandersKillFeedWidget>(PlayerController, USkylandersKillFeedWidget::StaticClass()))
+				{
+					Feed->AddToViewport(6);
 				}
 
 				// Initial HUD update + per-character icon/portrait swap
@@ -1287,10 +1294,7 @@ void ASkylandersCharacter::Die()
 	UE_LOG(LogTemp, Warning, TEXT("Player Died! Deaths: %d"), Deaths);
 
 	// Kill feed: player death
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(106, 4.0f, FColor::Red, TEXT("You have been slain!"));
-	}
+	USkylandersKillFeedWidget::Post(this, TEXT("You were slain"), FLinearColor(1.0f, 0.25f, 0.25f));
 
 	// Play death sound
 	if (DeathSound)

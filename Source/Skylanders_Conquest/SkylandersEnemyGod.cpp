@@ -1,6 +1,7 @@
 // Skylanders Conquest - AI-Controlled Enemy God Implementation
 
 #include "SkylandersEnemyGod.h"
+#include "SkylandersKillFeedWidget.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersMinion.h"
 #include "SkylandersTower.h"
@@ -1093,11 +1094,8 @@ void ASkylandersEnemyGod::Die()
 	}
 
 	// Kill feed: enemy god slain
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(105, 5.0f, FColor::Yellow,
-			FString::Printf(TEXT("You have slain %s!"), *GodName));
-	}
+	USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("You slew %s"), *GodName),
+		FLinearColor(0.3f, 1.0f, 0.4f));
 
 	CurrentState = EGodAIState::Dead;
 	SetActorHiddenInGame(true);
