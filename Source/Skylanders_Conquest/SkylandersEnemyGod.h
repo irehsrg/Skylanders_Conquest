@@ -112,6 +112,16 @@ public:
 	// friendly ally pushes toward +X (red base).
 	float LaneSign() const { return Team == ETowerTeam::Enemy ? -1.0f : 1.0f; }
 
+	// Real skeletal model this god wears ("Hex" or "TreeRex"). Empty = the old
+	// placeholder cylinder. Set by the map builder before BeginPlay.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Team")
+	FString GodModel;
+
+	// Flat team-colored ring under the god (so teams read at a glance once the
+	// bodies are real Skylander models instead of red/blue cylinders).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh")
+	UStaticMeshComponent* TeamRing;
+
 	// ========== AI STATE ==========
 
 	UPROPERTY(BlueprintReadOnly, Category = "AI")
@@ -161,6 +171,9 @@ public:
 	void UpdateAI(float DeltaTime);
 	void UpdateHealthBar();
 	void FaceTarget(AActor* Target);
+
+	// Swap the placeholder cylinder for a real animated skeletal model (GodModel).
+	void ApplyGodModel();
 
 	/** Get effective power including item bonuses */
 	float GetEffectivePower() const;

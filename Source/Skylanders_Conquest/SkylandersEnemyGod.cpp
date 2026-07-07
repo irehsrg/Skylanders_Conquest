@@ -3,6 +3,10 @@
 #include "SkylandersEnemyGod.h"
 #include "SkylandersKillFeedWidget.h"
 #include "SkylandersTelemetry.h"
+#include "SkylandersSimpleAnimInstance.h"
+#include "Engine/SkeletalMesh.h"
+#include "Animation/AnimSequenceBase.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersMinion.h"
 #include "SkylandersTower.h"
@@ -63,6 +67,23 @@ ASkylandersEnemyGod::ASkylandersEnemyGod()
 	{
 		BodyMesh->SetStaticMesh(CylinderMesh.Object);
 		BodyMesh->SetRelativeScale3D(FVector(0.8f, 0.8f, 1.5f));
+	}
+
+	// Inherited character skeletal mesh (used when GodModel names a real model).
+	// Skylander rips face +X, so no -90 yaw; visual only, no collision.
+	GetMesh()->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
+	GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// Flat team-colored ring at the god's feet
+	TeamRing = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TeamRing"));
+	TeamRing->SetupAttachment(RootComponent);
+	TeamRing->SetRelativeLocation(FVector(0.0f, 0.0f, -48.0f));
+	TeamRing->SetRelativeScale3D(FVector(1.7f, 1.7f, 0.03f));
+	TeamRing->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	TeamRing->SetCastShadow(false);
+	if (CylinderMesh.Succeeded())
+	{
+		TeamRing->SetStaticMesh(CylinderMesh.Object);
 	}
 
 	// Health bar widget component
@@ -140,21 +161,32 @@ void ASkylandersEnemyGod::BeginPlay()
 		HealthBarComp->InitWidget();
 	}
 
-	// Body color by team: enemy red, friendly ally blue. Build from BasicShapeMaterial
+	// Team color: enemy red, friendly ally blue. Build from BasicShapeMaterial
 	// explicitly — the cylinder's default slot is the engine DefaultMaterial, which
 	// has no "Color" parameter (so the tint was silently ignored -> gray gods).
-	if (BodyMesh)
+	const FLinearColor TeamColor = (Team == ETowerTeam::Enemy)
+		? FLinearColor(0.85f, 0.12f, 0.12f) : FLinearColor(0.15f, 0.4f, 1.0f);
+	if (UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial")))
 	{
-		UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
-		if (BaseMat)
+		if (BodyMesh)
 		{
 			UMaterialInstanceDynamic* DynMat = UMaterialInstanceDynamic::Create(BaseMat, this);
-			FLinearColor BodyColor = (Team == ETowerTeam::Enemy)
-				? FLinearColor(0.8f, 0.1f, 0.1f) : FLinearColor(0.15f, 0.35f, 0.9f);
-			DynMat->SetVectorParameterValue(FName("Color"), BodyColor);
+			DynMat->SetVectorParameterValue(FName("Color"), TeamColor);
 			BodyMesh->SetMaterial(0, DynMat);
 		}
+		// Team ring under the god's feet (unlit flat color reads clearly on grass)
+		if (TeamRing)
+		{
+			UMaterialInterface* RingBase = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/VFX/M_MapFloor.M_MapFloor"));
+			if (!RingBase) RingBase = BaseMat;
+			UMaterialInstanceDynamic* RingMat = UMaterialInstanceDynamic::Create(RingBase, this);
+			RingMat->SetVectorParameterValue(FName("Color"), TeamColor);
+			TeamRing->SetMaterial(0, RingMat);
+		}
 	}
+
+	// Swap the cylinder for a real animated Skylander model if one is assigned.
+	ApplyGodModel();
 
 	UE_LOG(LogTemp, Log, TEXT("Enemy God '%s' spawned at (%.0f, %.0f, %.0f) with %.0f HP, Level %d"),
 		*GodName, BasePosition.X, BasePosition.Y, BasePosition.Z, MaxHealth, Level);
@@ -479,6 +511,47 @@ AActor* ASkylandersEnemyGod::FindEnemyHero()
 		}
 	}
 	return Best;
+}
+
+void ASkylandersEnemyGod::ApplyGodModel()
+{
+	if (GodModel.IsEmpty() || !GetMesh()) return; // keep the placeholder cylinder
+
+	FString MeshPath, IdlePath, RunPath;
+	float MeshZ = -50.0f, Scale = 1.0f;
+	if (GodModel.Equals(TEXT("TreeRex"), ESearchCase::IgnoreCase))
+	{
+		MeshPath = TEXT("/Game/Characters/TreeRex/Models/TreeRex");
+		IdlePath = TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_outwall");
+		RunPath  = TEXT("/Game/Characters/TreeRex/Animations/photosynthesiscannon_hold");
+		MeshZ = -50.0f;
+		Scale = 0.55f; // Giant model shrunk to the god capsule
+	}
+	else // Hex (default)
+	{
+		MeshPath = TEXT("/Game/Characters/Hex/Models/Hex");
+		IdlePath = TEXT("/Game/Characters/Hex/Animations/drive_idle");
+		RunPath  = TEXT("/Game/Characters/Hex/Animations/drive_run");
+		MeshZ = -50.0f;
+		Scale = 1.0f;
+	}
+
+	USkeletalMesh* SkelMesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath);
+	if (!SkelMesh) return; // asset missing — leave the cylinder
+
+	USkeletalMeshComponent* MeshComp = GetMesh();
+	MeshComp->SetSkeletalMesh(SkelMesh);
+	MeshComp->SetRelativeLocation(FVector(0.0f, 0.0f, MeshZ));
+	MeshComp->SetRelativeScale3D(FVector(Scale));
+	MeshComp->SetAnimInstanceClass(USkylandersSimpleAnimInstance::StaticClass());
+	if (USkylandersSimpleAnimInstance* Simple = Cast<USkylandersSimpleAnimInstance>(MeshComp->GetAnimInstance()))
+	{
+		Simple->IdleAnim = LoadObject<UAnimSequenceBase>(nullptr, *IdlePath);
+		Simple->RunAnim  = LoadObject<UAnimSequenceBase>(nullptr, *RunPath);
+	}
+
+	// Real body replaces the placeholder cylinder
+	if (BodyMesh) BodyMesh->SetVisibility(false);
 }
 
 void ASkylandersEnemyGod::MoveToPoint(const FVector& Dest, float AcceptRadius, float FallbackScale)
