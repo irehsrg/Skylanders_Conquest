@@ -51,6 +51,14 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ---
 
+## Tooling
+- [x] **Telemetry** — per-match JSONL event log + 2.5s god snapshots in
+  `Saved/Telemetry/` (`USkylandersTelemetrySubsystem`). Deaths, abilities,
+  structures, match result, and movement/`stuck` flags for data-driven tuning.
+- [ ] **NavMesh pathing for gods** — telemetry-confirmed: gods walk straight and
+  get stuck on their own base structures. Needs runtime navmesh + AIController
+  MoveTo (replaces the raw AddMovementInput).
+
 ## Also on the pile (fold into tiers as we go)
 - [ ] Options / settings menu (audio, controls, video).
 - [ ] Make jungle objectives pay off (Bull Demon King worth contesting).
