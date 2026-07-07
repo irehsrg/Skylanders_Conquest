@@ -151,14 +151,19 @@ void ASkylandersProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActo
 		return;
 	}
 
-	// Enemy god
+	// Enemy god (player projectiles only hit the enemy team — fly through allies)
 	ASkylandersEnemyGod* EnemyGod = Cast<ASkylandersEnemyGod>(OtherActor);
-	if (EnemyGod && EnemyGod->CurrentState != EGodAIState::Dead)
+	if (EnemyGod && EnemyGod->Team == ETowerTeam::Enemy && EnemyGod->CurrentState != EGodAIState::Dead)
 	{
 		EnemyGod->TakeDamage_Custom(Damage, this);
 		ApplyLifesteal();
 		CleaveNearby(OtherActor->GetActorLocation(), OtherActor);
 		Destroy();
+		return;
+	}
+	// An ally god — let the projectile pass through instead of blocking on it
+	if (EnemyGod)
+	{
 		return;
 	}
 
@@ -260,7 +265,7 @@ void ASkylandersProjectile::CleaveNearby(const FVector& ImpactPoint, AActor* Pri
 	for (AActor* A : Found)
 	{
 		ASkylandersEnemyGod* G = Cast<ASkylandersEnemyGod>(A);
-		if (G && G->CurrentState != EGodAIState::Dead && InRange(A))
+		if (G && G->Team == ETowerTeam::Enemy && G->CurrentState != EGodAIState::Dead && InRange(A))
 			G->TakeDamage_Custom(SplashDamage, this);
 	}
 }

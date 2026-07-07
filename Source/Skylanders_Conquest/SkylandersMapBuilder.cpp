@@ -294,10 +294,30 @@ void ASkylandersMapBuilder::BuildMap()
 	MidCamp = SpawnCamp(FVector(0, -3400, 75), TEXT("Mid Harpies"), EBuffType::None, 1.0f, 300.0f, 80.0f, 40);
 
 	// ========================================================================
-	// ENEMY GOD (parks in the red jungle)
+	// GODS: a full 3v3 — the player + 2 AI allies (blue) vs 3 AI enemies (red).
+	// Spawned deferred so Team is set before BeginPlay colors them / sets a base.
 	// ========================================================================
-	World->SpawnActor<ASkylandersEnemyGod>(
-		ASkylandersEnemyGod::StaticClass(), FVector(7500, 0, 100), FRotator::ZeroRotator, SP);
+	auto SpawnGod = [&](FVector Loc, ETowerTeam GodTeam, const FString& Name)
+	{
+		ASkylandersEnemyGod* God = World->SpawnActorDeferred<ASkylandersEnemyGod>(
+			ASkylandersEnemyGod::StaticClass(), FTransform(FRotator::ZeroRotator, Loc),
+			nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (God)
+		{
+			God->Team = GodTeam;
+			God->GodName = Name;
+			God->FinishSpawning(FTransform(FRotator::ZeroRotator, Loc));
+		}
+	};
+
+	// Red team (enemies) near the red base (+X)
+	SpawnGod(FVector(7500, 0, 100), ETowerTeam::Enemy, TEXT("Kaos"));
+	SpawnGod(FVector(8000, 700, 100), ETowerTeam::Enemy, TEXT("Malefor"));
+	SpawnGod(FVector(8000, -700, 100), ETowerTeam::Enemy, TEXT("Chompy King"));
+
+	// Blue team (AI allies) near the blue base (-X), fighting alongside the player
+	SpawnGod(FVector(-8000, 700, 100), ETowerTeam::Friendly, TEXT("Spyro"));
+	SpawnGod(FVector(-8000, -700, 100), ETowerTeam::Friendly, TEXT("Stealth Elf"));
 
 	// ========================================================================
 	// INITIAL SPAWN: the GameMode drops the pawn at the .umap PlayerStart, which

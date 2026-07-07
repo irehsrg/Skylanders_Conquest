@@ -28,9 +28,14 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 ## Tier 2 — Make it feel like a real 3v3
 *(bigger, still bots)*
 
-- [ ] **Teams of three** — AI allies + enemies (3 per side), not just the player.
-- [ ] **Better enemy AI + real character** — give the enemy god(s) a real
-  Skylander model and smarter combat/objective AI.
+- [~] **Teams of three** — DONE (needs playtest): god AI is now team-aware
+  (`ETowerTeam Team`), spawns a 3v3 (player + 2 blue AI allies vs 3 red AI
+  enemies), with friendly-fire prevented for the player's shots/abilities and
+  friendly towers. Allies lane toward the enemy base, blue; enemies red. TODO
+  from playtest: tune ally aggressiveness, enemy towers ignore ally gods, minions
+  don't yet target gods.
+- [ ] **Better enemy AI + real character** — give the god(s) a real Skylander
+  model (still colored cylinders) and smarter combat/objective AI.
 - [ ] **Replace minion placeholders** with real minion models.
 
 ## Tier 3 — Presentation

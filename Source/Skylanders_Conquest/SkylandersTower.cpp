@@ -262,7 +262,8 @@ void ASkylandersTower::FindTarget()
 			for (AActor* Actor : AllGods)
 			{
 				ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Actor);
-				if (God && God->CurrentState != EGodAIState::Dead)
+				// Only enemy-team gods — never shoot the player's ally gods
+				if (God && God->Team == ETowerTeam::Enemy && God->CurrentState != EGodAIState::Dead)
 				{
 					float Dist = FVector::Dist(GetActorLocation(), Actor->GetActorLocation());
 					if (Dist < AttackRange)

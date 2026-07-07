@@ -2684,7 +2684,8 @@ static void CollectEnemyTargets(UWorld* World, TArray<AActor*>& OutTargets)
 	for (AActor* Actor : Found)
 	{
 		ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Actor);
-		if (God && God->CurrentState != EGodAIState::Dead) OutTargets.Add(Actor);
+		// Only enemy-team gods — the player's abilities never hit ally gods
+		if (God && God->Team == ETowerTeam::Enemy && God->CurrentState != EGodAIState::Dead) OutTargets.Add(Actor);
 	}
 }
 

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "SkylandersItem.h"
+#include "SkylandersTower.h" // ETowerTeam
 #include "SkylandersEnemyGod.generated.h"
 
 class UWidgetComponent;
@@ -97,6 +98,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float Protections;
 
+	// ========== TEAM ==========
+
+	// Which side this god fights for. Enemy = red team (default, opposes the
+	// player); Friendly = blue team (AI ally that fights alongside the player).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Team")
+	ETowerTeam Team = ETowerTeam::Enemy;
+
+	// The opposing team this god targets.
+	ETowerTeam FoeTeam() const { return Team == ETowerTeam::Enemy ? ETowerTeam::Friendly : ETowerTeam::Enemy; }
+
+	// Push direction along the lane: enemy pushes toward -X (blue base), a
+	// friendly ally pushes toward +X (red base).
+	float LaneSign() const { return Team == ETowerTeam::Enemy ? -1.0f : 1.0f; }
+
 	// ========== AI STATE ==========
 
 	UPROPERTY(BlueprintReadOnly, Category = "AI")
@@ -168,15 +183,20 @@ private:
 
 	// AI helpers
 	ASkylandersCharacter* FindPlayer();
-	ASkylandersMinion* FindNearestEnemyMinion(); // Finds player-team minions to attack
+	// Nearest opposing hero: the player and/or ally gods for an enemy god, or
+	// enemy gods for a friendly ally. Returns null if none in the world.
+	AActor* FindEnemyHero();
+	// Health fraction (0..1) of a hero actor (player or another god).
+	static float GetHeroHealthPct(AActor* Hero);
+	ASkylandersMinion* FindNearestEnemyMinion(); // Finds FoeTeam() minions to attack
 	void PerformAttack(AActor* Target);
 	void UseAbility(); // Burst damage ability
 
-	// Tower awareness: check if a position is in range of a Friendly (player-team) tower
-	bool IsPositionUnderFriendlyTower(const FVector& Position) const;
+	// Tower awareness: is a position inside an enemy (FoeTeam) tower's range?
+	bool IsPositionUnderEnemyTower(const FVector& Position) const;
 
-	// Check if chasing the player would put us under a friendly tower
-	bool WouldChaseIntoFriendlyTower(AActor* Target) const;
+	// Check if chasing a target would put us under an enemy tower
+	bool WouldChaseIntoEnemyTower(AActor* Target) const;
 
 	// Item purchasing AI
 	void TryPurchaseItems();

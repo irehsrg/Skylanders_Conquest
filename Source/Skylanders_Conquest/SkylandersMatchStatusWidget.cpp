@@ -71,6 +71,7 @@ void USkylandersMatchStatusWidget::NativeTick(const FGeometry& MyGeometry, float
 	Super::NativeTick(MyGeometry, DeltaTime);
 
 	ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(GetOwningPlayerPawn());
+	int32 BlueGold = 0;
 	if (Player)
 	{
 		if (TimerText)
@@ -79,25 +80,25 @@ void USkylandersMatchStatusWidget::NativeTick(const FGeometry& MyGeometry, float
 			int32 Seconds = FMath::FloorToInt(FMath::Fmod(Player->GameElapsedTime, 60.0f));
 			TimerText->SetText(FText::FromString(FString::Printf(TEXT("%02d:%02d"), Minutes, Seconds)));
 		}
-		if (BlueGoldText)
-		{
-			BlueGoldText->SetText(FText::FromString(FString::Printf(TEXT("%d"), Player->TotalGoldEarned)));
-		}
+		BlueGold += Player->TotalGoldEarned;
 	}
 
-	// Enemy (red) team economy = sum of enemy god gold (until real teammates exist)
-	if (RedGoldText && GetWorld())
+	// Team economy = player + ally gods (blue) vs enemy gods (red)
+	if (GetWorld())
 	{
+		int32 RedGold = 0;
 		TArray<AActor*> Gods;
 		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), Gods);
-		int32 RedGold = 0;
 		for (AActor* A : Gods)
 		{
 			if (ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(A))
 			{
-				RedGold += God->Gold;
+				if (God->Team == ETowerTeam::Enemy) RedGold += God->Gold;
+				else BlueGold += God->Gold;
 			}
 		}
-		RedGoldText->SetText(FText::FromString(FString::Printf(TEXT("%d"), RedGold)));
+		if (RedGoldText) RedGoldText->SetText(FText::FromString(FString::Printf(TEXT("%d"), RedGold)));
 	}
+
+	if (BlueGoldText) BlueGoldText->SetText(FText::FromString(FString::Printf(TEXT("%d"), BlueGold)));
 }

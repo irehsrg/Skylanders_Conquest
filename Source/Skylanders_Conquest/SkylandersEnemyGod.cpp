@@ -137,14 +137,18 @@ void ASkylandersEnemyGod::BeginPlay()
 		HealthBarComp->InitWidget();
 	}
 
-	// Dark red body color
+	// Body color by team: enemy red, friendly ally blue. Build from BasicShapeMaterial
+	// explicitly — the cylinder's default slot is the engine DefaultMaterial, which
+	// has no "Color" parameter (so the tint was silently ignored -> gray gods).
 	if (BodyMesh)
 	{
-		UMaterialInterface* DefaultMat = BodyMesh->GetMaterial(0);
-		if (DefaultMat)
+		UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
+		if (BaseMat)
 		{
-			UMaterialInstanceDynamic* DynMat = UMaterialInstanceDynamic::Create(DefaultMat, this);
-			DynMat->SetVectorParameterValue(FName("Color"), FLinearColor(0.8f, 0.1f, 0.1f));
+			UMaterialInstanceDynamic* DynMat = UMaterialInstanceDynamic::Create(BaseMat, this);
+			FLinearColor BodyColor = (Team == ETowerTeam::Enemy)
+				? FLinearColor(0.8f, 0.1f, 0.1f) : FLinearColor(0.15f, 0.35f, 0.9f);
+			DynMat->SetVectorParameterValue(FName("Color"), BodyColor);
 			BodyMesh->SetMaterial(0, DynMat);
 		}
 	}
@@ -269,17 +273,16 @@ float ASkylandersEnemyGod::GetEffectiveProtections() const
 
 // ========== TOWER AWARENESS ==========
 
-bool ASkylandersEnemyGod::IsPositionUnderFriendlyTower(const FVector& Position) const
+bool ASkylandersEnemyGod::IsPositionUnderEnemyTower(const FVector& Position) const
 {
-	// "Friendly" towers from the player's perspective (ETowerTeam::Friendly)
-	// The enemy god should NOT walk into these
+	// Towers of the opposing team — this god should not dive into these.
 	TArray<AActor*> AllTowers;
 	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
 
 	for (AActor* TowerActor : AllTowers)
 	{
 		ASkylandersTower* Tower = Cast<ASkylandersTower>(TowerActor);
-		if (Tower && Tower->Team == ETowerTeam::Friendly && !Tower->bDestroyed)
+		if (Tower && Tower->Team == FoeTeam() && !Tower->bDestroyed)
 		{
 			float DistToTower = FVector::Dist(Position, Tower->GetActorLocation());
 			if (DistToTower < Tower->AttackRange)
@@ -291,10 +294,10 @@ bool ASkylandersEnemyGod::IsPositionUnderFriendlyTower(const FVector& Position) 
 	return false;
 }
 
-bool ASkylandersEnemyGod::WouldChaseIntoFriendlyTower(AActor* Target) const
+bool ASkylandersEnemyGod::WouldChaseIntoEnemyTower(AActor* Target) const
 {
 	if (!Target) return false;
-	return IsPositionUnderFriendlyTower(Target->GetActorLocation());
+	return IsPositionUnderEnemyTower(Target->GetActorLocation());
 }
 
 // ========== ITEM PURCHASING ==========
@@ -399,7 +402,7 @@ ASkylandersCharacter* ASkylandersEnemyGod::FindPlayer()
 
 ASkylandersMinion* ASkylandersEnemyGod::FindNearestEnemyMinion()
 {
-	// Find the nearest player-team (Friendly) minion to attack
+	// Find the nearest opposing-team minion to attack
 	TArray<AActor*> AllMinions;
 	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
 
@@ -409,7 +412,7 @@ ASkylandersMinion* ASkylandersEnemyGod::FindNearestEnemyMinion()
 	for (AActor* Actor : AllMinions)
 	{
 		ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
-		if (Minion && Minion->Team == ETowerTeam::Friendly && !Minion->bDead)
+		if (Minion && Minion->Team == FoeTeam() && !Minion->bDead)
 		{
 			float Dist = FVector::Dist(GetActorLocation(), Minion->GetActorLocation());
 			if (Dist < NearestDist)
@@ -420,6 +423,59 @@ ASkylandersMinion* ASkylandersEnemyGod::FindNearestEnemyMinion()
 		}
 	}
 	return Nearest;
+}
+
+float ASkylandersEnemyGod::GetHeroHealthPct(AActor* Hero)
+{
+	if (ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(Hero))
+	{
+		return (Player->MaxHealth > 0.0f) ? Player->CurrentHealth / Player->MaxHealth : 0.0f;
+	}
+	if (ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Hero))
+	{
+		float EffMax = God->MaxHealth + God->ItemBonusStats.MaxHealth;
+		return (EffMax > 0.0f) ? God->CurrentHealth / EffMax : 0.0f;
+	}
+	return 0.0f;
+}
+
+// Nearest living opposing hero: for an enemy god that's the player plus any
+// friendly ally gods; for a friendly ally that's the enemy gods.
+AActor* ASkylandersEnemyGod::FindEnemyHero()
+{
+	AActor* Best = nullptr;
+	float BestDist = TNumericLimits<float>::Max();
+
+	// The player is on the Friendly team, so enemy gods count them as a hero.
+	if (FoeTeam() == ETowerTeam::Friendly)
+	{
+		if (ASkylandersCharacter* Player = FindPlayer())
+		{
+			if (Player->CurrentHealth > 0.0f)
+			{
+				Best = Player;
+				BestDist = FVector::Dist(GetActorLocation(), Player->GetActorLocation());
+			}
+		}
+	}
+
+	// Opposing gods
+	TArray<AActor*> AllGods;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllGods);
+	for (AActor* Actor : AllGods)
+	{
+		ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Actor);
+		if (God && God != this && God->Team == FoeTeam() && God->CurrentState != EGodAIState::Dead)
+		{
+			float Dist = FVector::Dist(GetActorLocation(), God->GetActorLocation());
+			if (Dist < BestDist)
+			{
+				BestDist = Dist;
+				Best = God;
+			}
+		}
+	}
+	return Best;
 }
 
 void ASkylandersEnemyGod::FaceTarget(AActor* Target)
@@ -438,9 +494,11 @@ void ASkylandersEnemyGod::FaceTarget(AActor* Target)
 
 void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 {
-	ASkylandersCharacter* Player = FindPlayer();
-	float DistToPlayer = Player ? FVector::Dist(GetActorLocation(), Player->GetActorLocation()) : 99999.0f;
-	bool bPlayerAlive = Player && Player->CurrentHealth > 0.0f;
+	// The opposing hero this god fights (player for an enemy god; an enemy god for
+	// a friendly ally). FindEnemyHero only returns living heroes.
+	AActor* Hero = FindEnemyHero();
+	float DistToHero = Hero ? FVector::Dist(GetActorLocation(), Hero->GetActorLocation()) : 99999.0f;
+	bool bHeroAlive = Hero != nullptr;
 	float EffMaxHealth = MaxHealth + ItemBonusStats.MaxHealth;
 	float HealthPct = (EffMaxHealth > 0.0f) ? (CurrentHealth / EffMaxHealth) : 0.0f;
 
@@ -451,8 +509,43 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 	{
 	case EGodAIState::Laning:
 	{
-		// Auto-attack nearest player-team minion
+		// Auto-attack nearest opposing minion
 		ASkylandersMinion* TargetMinion = FindNearestEnemyMinion();
+
+		// Frontmost own-team minion along the push direction, for cover checks. A
+		// higher (X * LaneSign) is more advanced toward the foe base.
+		TArray<AActor*> AllMinions;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
+		float OwnFrontX = GetActorLocation().X;
+		bool bHasOwnMinions = false;
+		int32 OwnMinionsNearby = 0;
+		for (AActor* Actor : AllMinions)
+		{
+			ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
+			if (Minion && Minion->Team == Team && !Minion->bDead)
+			{
+				bHasOwnMinions = true;
+				if (Minion->GetActorLocation().X * LaneSign() > OwnFrontX * LaneSign())
+				{
+					OwnFrontX = Minion->GetActorLocation().X;
+				}
+				if (FVector::Dist(GetActorLocation(), Minion->GetActorLocation()) < 1500.0f)
+				{
+					OwnMinionsNearby++;
+				}
+			}
+		}
+
+		// Clamp a move target so we don't push more than ~200 past our front minion.
+		auto StayBehindWave = [&](FVector TargetPos) -> FVector
+		{
+			if (bHasOwnMinions && (TargetPos.X - OwnFrontX) * LaneSign() > 200.0f)
+			{
+				TargetPos.X = OwnFrontX - 200.0f * LaneSign();
+			}
+			return TargetPos;
+		};
+
 		if (TargetMinion)
 		{
 			float DistToMinion = FVector::Dist(GetActorLocation(), TargetMinion->GetActorLocation());
@@ -468,83 +561,28 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 			}
 			else
 			{
-				// Move toward minion but stay behind friendly (enemy team) minion wave
-				// Find the frontmost enemy-team minion to stay behind
-				TArray<AActor*> AllMinions;
-				UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
-				float FriendlyFrontX = GetActorLocation().X; // Default to our position
-				bool bHasFriendlyMinions = false;
-				for (AActor* Actor : AllMinions)
-				{
-					ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
-					if (Minion && Minion->Team == ETowerTeam::Enemy && !Minion->bDead)
-					{
-						bHasFriendlyMinions = true;
-						// Enemy team minions push toward negative X (toward player base)
-						if (Minion->GetActorLocation().X < FriendlyFrontX)
-						{
-							FriendlyFrontX = Minion->GetActorLocation().X;
-						}
-					}
-				}
-
-				// Only advance as far as the front friendly minion (stay ~200 units behind)
-				FVector TargetPos = TargetMinion->GetActorLocation();
-				if (bHasFriendlyMinions && TargetPos.X < FriendlyFrontX - 200.0f)
-				{
-					// Don't push past our minion wave
-					TargetPos.X = FriendlyFrontX + 200.0f;
-				}
-
-				// Tower awareness: don't walk into friendly (player-team) tower range
-				if (!IsPositionUnderFriendlyTower(TargetPos))
+				FVector TargetPos = StayBehindWave(TargetMinion->GetActorLocation());
+				if (!IsPositionUnderEnemyTower(TargetPos))
 				{
 					FVector MoveDir = (TargetPos - GetActorLocation()).GetSafeNormal2D();
 					AddMovementInput(MoveDir, 1.0f);
 				}
-				// else: stay put, don't advance into tower range
 			}
 		}
 		else
 		{
-			// No enemy minions in range - look for structures to push or advance down lane
+			// No opposing minions in range - look for structures to push or advance
 
-			// Gather friendly (Enemy-team) minion info for cover checks
-			TArray<AActor*> AllMinions;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
-			float FriendlyFrontX = GetActorLocation().X;
-			bool bHasFriendlyMinions = false;
-			int32 FriendlyMinionsNearby = 0;
-			for (AActor* Actor : AllMinions)
-			{
-				ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
-				if (Minion && Minion->Team == ETowerTeam::Enemy && !Minion->bDead)
-				{
-					bHasFriendlyMinions = true;
-					if (Minion->GetActorLocation().X < FriendlyFrontX)
-					{
-						FriendlyFrontX = Minion->GetActorLocation().X;
-					}
-					// Count friendly minions within 1500 units (nearby for cover)
-					float MinionDist = FVector::Dist(GetActorLocation(), Minion->GetActorLocation());
-					if (MinionDist < 1500.0f)
-					{
-						FriendlyMinionsNearby++;
-					}
-				}
-			}
-
-			// === Structure targeting: find nearest vulnerable Friendly-team tower/phoenix/titan ===
+			// === Structure targeting: nearest vulnerable FoeTeam tower/phoenix/titan ===
 			AActor* TargetStructure = nullptr;
 			float NearestStructureDist = 99999.0f;
 
-			// Check towers (includes phoenixes)
 			TArray<AActor*> AllTowers;
 			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
 			for (AActor* TowerActor : AllTowers)
 			{
 				ASkylandersTower* Tower = Cast<ASkylandersTower>(TowerActor);
-				if (Tower && Tower->Team == ETowerTeam::Friendly && !Tower->bDestroyed && Tower->IsVulnerable())
+				if (Tower && Tower->Team == FoeTeam() && !Tower->bDestroyed && Tower->IsVulnerable())
 				{
 					float Dist = FVector::Dist(GetActorLocation(), Tower->GetActorLocation());
 					if (Dist < NearestStructureDist)
@@ -555,13 +593,12 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 				}
 			}
 
-			// Check titans (only if their protecting tower is destroyed)
 			TArray<AActor*> AllTitans;
 			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTitan::StaticClass(), AllTitans);
 			for (AActor* TitanActor : AllTitans)
 			{
 				ASkylandersTitan* Titan = Cast<ASkylandersTitan>(TitanActor);
-				if (Titan && Titan->Team == ETowerTeam::Friendly && !Titan->bDead && Titan->IsVulnerable())
+				if (Titan && Titan->Team == FoeTeam() && !Titan->bDead && Titan->IsVulnerable())
 				{
 					float Dist = FVector::Dist(GetActorLocation(), Titan->GetActorLocation());
 					if (Dist < NearestStructureDist)
@@ -572,15 +609,13 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 				}
 			}
 
-			// Only push structures if we have minion cover (at least 2 friendly minions nearby)
-			// This prevents the god from solo-diving towers
-			bool bHasMinionCover = FriendlyMinionsNearby >= 2;
+			// Only push structures with minion cover, so the god doesn't solo-dive.
+			bool bHasMinionCover = OwnMinionsNearby >= 2;
 
 			if (TargetStructure && bHasMinionCover && NearestStructureDist < AggroRange)
 			{
 				if (NearestStructureDist <= AttackRange)
 				{
-					// In range - attack the structure
 					FaceTarget(TargetStructure);
 					if (AttackTimer <= 0.0f)
 					{
@@ -590,16 +625,8 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 				}
 				else
 				{
-					// Move toward structure but stay behind friendly minion wave
-					FVector TargetPos = TargetStructure->GetActorLocation();
-					if (bHasFriendlyMinions && TargetPos.X < FriendlyFrontX - 200.0f)
-					{
-						// Don't push past our minion wave
-						TargetPos.X = FriendlyFrontX + 200.0f;
-					}
-
-					// Tower awareness: don't walk into tower range without minion wave ahead of us
-					if (!IsPositionUnderFriendlyTower(TargetPos))
+					FVector TargetPos = StayBehindWave(TargetStructure->GetActorLocation());
+					if (!IsPositionUnderEnemyTower(TargetPos))
 					{
 						FVector MoveDir = (TargetPos - GetActorLocation()).GetSafeNormal2D();
 						AddMovementInput(MoveDir, 0.8f);
@@ -608,36 +635,33 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 			}
 			else
 			{
-				// No valid structure target or no minion cover - advance slowly down lane
-				FVector LaneDir = FVector(-1.0f, 0.0f, 0.0f);
-
-				// Tower awareness: check if advancing would put us under a friendly tower
+				// No valid structure target or no cover - advance slowly down the lane
+				FVector LaneDir = FVector(LaneSign(), 0.0f, 0.0f);
 				FVector ProjectedPos = GetActorLocation() + LaneDir * 100.0f;
-				bool bTowerBlock = IsPositionUnderFriendlyTower(ProjectedPos);
+				bool bTowerBlock = IsPositionUnderEnemyTower(ProjectedPos);
 
-				if (!bTowerBlock && (!bHasFriendlyMinions || GetActorLocation().X > FriendlyFrontX + 200.0f))
+				// Advance only if behind our own front minion (or no minions yet)
+				if (!bTowerBlock && (!bHasOwnMinions || (GetActorLocation().X - OwnFrontX) * LaneSign() < -200.0f))
 				{
-					AddMovementInput(LaneDir, 0.5f); // Slow advance
+					AddMovementInput(LaneDir, 0.5f);
 				}
 			}
 		}
 
-		// Check if player is close and we have enough HP to fight
-		if (bPlayerAlive && DistToPlayer <= AggroRange && HealthPct > 0.5f)
+		// Check if a hero is close and we have enough HP to fight
+		if (bHeroAlive && DistToHero <= AggroRange && HealthPct > 0.5f)
 		{
-			// Tower awareness: don't engage if player is under their tower
-			if (!WouldChaseIntoFriendlyTower(Player))
+			// Tower awareness: don't engage a hero under their tower
+			if (!WouldChaseIntoEnemyTower(Hero))
 			{
-				// Smarter engagement: prefer fighting low-HP players
-				float PlayerHealthPct = Player->CurrentHealth / Player->MaxHealth;
-				bool bPlayerVulnerable = PlayerHealthPct < 0.5f;
+				float FoeHealthPct = GetHeroHealthPct(Hero);
+				bool bFoeVulnerable = FoeHealthPct < 0.5f;
 
-				// Engage if player is within 70% of aggro range, or if player is vulnerable
-				if (DistToPlayer <= AggroRange * 0.7f || bPlayerVulnerable)
+				if (DistToHero <= AggroRange * 0.7f || bFoeVulnerable)
 				{
 					CurrentState = EGodAIState::Fighting;
-					UE_LOG(LogTemp, Log, TEXT("Enemy God '%s' engages player! Distance: %.0f, PlayerHP: %.0f%%"),
-						*GodName, DistToPlayer, PlayerHealthPct * 100.0f);
+					UE_LOG(LogTemp, Log, TEXT("God '%s' engages a hero! Distance: %.0f, FoeHP: %.0f%%"),
+						*GodName, DistToHero, FoeHealthPct * 100.0f);
 				}
 			}
 		}
@@ -647,18 +671,18 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 
 	case EGodAIState::Fighting:
 	{
-		if (!bPlayerAlive)
+		if (!bHeroAlive)
 		{
 			CurrentState = EGodAIState::Laning;
-			UE_LOG(LogTemp, Log, TEXT("Enemy God '%s' returns to laning - player dead."), *GodName);
+			UE_LOG(LogTemp, Log, TEXT("God '%s' returns to laning - no hero."), *GodName);
 			break;
 		}
 
-		// Disengage if player too far
-		if (DistToPlayer > 1500.0f)
+		// Disengage if the hero is too far
+		if (DistToHero > 1500.0f)
 		{
 			CurrentState = EGodAIState::Laning;
-			UE_LOG(LogTemp, Log, TEXT("Enemy God '%s' lost aggro on player, returning to lane."), *GodName);
+			UE_LOG(LogTemp, Log, TEXT("God '%s' lost aggro, returning to lane."), *GodName);
 			break;
 		}
 
@@ -667,71 +691,66 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 		if (HealthPct < RetreatThreshold)
 		{
 			CurrentState = EGodAIState::Retreating;
-			UE_LOG(LogTemp, Warning, TEXT("Enemy God '%s' retreating! HP: %.0f/%.0f (%.0f%%)"),
+			UE_LOG(LogTemp, Warning, TEXT("God '%s' retreating! HP: %.0f/%.0f (%.0f%%)"),
 				*GodName, CurrentHealth, EffMaxHealth, HealthPct * 100.0f);
 			break;
 		}
 
-		// Tower awareness: back off if chasing would put us under a friendly tower
-		if (WouldChaseIntoFriendlyTower(Player))
+		// Tower awareness: back off if chasing would put us under an enemy tower
+		if (WouldChaseIntoEnemyTower(Hero))
 		{
-			if (IsPositionUnderFriendlyTower(GetActorLocation()))
+			if (IsPositionUnderEnemyTower(GetActorLocation()))
 			{
-				// Already inside tower range - retreat immediately
 				CurrentState = EGodAIState::Retreating;
-				UE_LOG(LogTemp, Warning, TEXT("Enemy God '%s' retreating - under friendly tower!"), *GodName);
+				UE_LOG(LogTemp, Warning, TEXT("God '%s' retreating - under enemy tower!"), *GodName);
 				break;
 			}
 			else
 			{
-				// Player is under tower but we're safe - disengage
 				CurrentState = EGodAIState::Laning;
-				UE_LOG(LogTemp, Log, TEXT("Enemy God '%s' disengaging - player is under tower."), *GodName);
+				UE_LOG(LogTemp, Log, TEXT("God '%s' disengaging - hero is under tower."), *GodName);
 				break;
 			}
 		}
 
-		// Smarter target priority: last-hit low-HP minions for gold even during fights
+		// Last-hit low-HP minions for gold even during fights
 		ASkylandersMinion* NearMinion = FindNearestEnemyMinion();
 		if (NearMinion)
 		{
 			float MinionDist = FVector::Dist(GetActorLocation(), NearMinion->GetActorLocation());
 			float MinionHpPct = NearMinion->CurrentHealth / NearMinion->MaxHealth;
 
-			// Prioritize last-hitting a very low HP minion within attack range
 			if (MinionDist <= AttackRange && MinionHpPct < 0.2f && AttackTimer <= 0.0f)
 			{
 				FaceTarget(NearMinion);
 				PerformAttack(NearMinion);
 				AttackTimer = AttackCooldown;
-				break; // Skip player attack this tick, focus on the last hit
+				break; // Skip the hero attack this tick, focus on the last hit
 			}
 		}
 
 		// Chase and kite: approach when attack is ready, back off when on cooldown
-		FaceTarget(Player);
-		if (DistToPlayer > AttackRange)
+		FaceTarget(Hero);
+		if (DistToHero > AttackRange)
 		{
-			// Chase player
-			FVector MoveDir = (Player->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+			FVector MoveDir = (Hero->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
 			AddMovementInput(MoveDir, 1.0f);
 		}
-		else if (DistToPlayer < AttackRange * 0.4f && AttackTimer > 0.0f)
+		else if (DistToHero < AttackRange * 0.4f && AttackTimer > 0.0f)
 		{
-			// Kiting: too close and attack on cooldown - back up to maintain optimal range
-			FVector AwayDir = (GetActorLocation() - Player->GetActorLocation()).GetSafeNormal2D();
+			FVector AwayDir = (GetActorLocation() - Hero->GetActorLocation()).GetSafeNormal2D();
 			AddMovementInput(AwayDir, 0.6f);
 		}
 
 		// Auto-attack
-		if (DistToPlayer <= AttackRange && AttackTimer <= 0.0f)
+		if (DistToHero <= AttackRange && AttackTimer <= 0.0f)
 		{
-			PerformAttack(Player);
+			PerformAttack(Hero);
 			AttackTimer = AttackCooldown;
 		}
 
 		// Use ability (burst damage every 8 seconds)
-		if (AbilityCooldownTimer <= 0.0f && DistToPlayer <= AttackRange)
+		if (AbilityCooldownTimer <= 0.0f && DistToHero <= AttackRange)
 		{
 			UseAbility();
 			AbilityCooldownTimer = 8.0f;
@@ -752,13 +771,13 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 		FRotator ReturnRot = ReturnDir.Rotation();
 		SetActorRotation(FMath::RInterpTo(GetActorRotation(), ReturnRot, DeltaTime, 10.0f));
 
-		// Fight back if cornered (player within 200 units)
-		if (bPlayerAlive && DistToPlayer <= 200.0f)
+		// Fight back if cornered (hero within 200 units)
+		if (bHeroAlive && DistToHero <= 200.0f)
 		{
-			FaceTarget(Player);
+			FaceTarget(Hero);
 			if (AttackTimer <= 0.0f)
 			{
-				PerformAttack(Player);
+				PerformAttack(Hero);
 				AttackTimer = AttackCooldown;
 			}
 
@@ -912,11 +931,11 @@ void ASkylandersEnemyGod::PerformAttack(AActor* Target)
 
 void ASkylandersEnemyGod::UseAbility()
 {
-	ASkylandersCharacter* Player = FindPlayer();
-	if (!Player || Player->CurrentHealth <= 0.0f) return;
+	AActor* Hero = FindEnemyHero();
+	if (!Hero) return;
 
-	float DistToPlayer = FVector::Dist(GetActorLocation(), Player->GetActorLocation());
-	if (DistToPlayer > AttackRange) return;
+	float DistToHero = FVector::Dist(GetActorLocation(), Hero->GetActorLocation());
+	if (DistToHero > AttackRange) return;
 
 	// Play ability sound
 	if (AbilitySound)
@@ -932,7 +951,7 @@ void ASkylandersEnemyGod::UseAbility()
 	{
 		FActorSpawnParameters AbilVFXParams;
 		AbilVFXParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		AActor* AbilVFX = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), Player->GetActorLocation(), FRotator::ZeroRotator, AbilVFXParams);
+		AActor* AbilVFX = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), Hero->GetActorLocation(), FRotator::ZeroRotator, AbilVFXParams);
 		if (AbilVFX)
 		{
 			UStaticMeshComponent* AbilMesh = NewObject<UStaticMeshComponent>(AbilVFX);
@@ -955,15 +974,22 @@ void ASkylandersEnemyGod::UseAbility()
 		}
 	}
 
-	// The player's TakeDamage_Custom applies the protections formula itself —
+	// The target's TakeDamage_Custom applies the protections formula itself —
 	// pre-mitigating here would count protections twice. Compute the mitigated
-	// value only for lifesteal. (It also spawns the damage number.)
-	float TargetProtections = Player->GetEffectiveProtections();
+	// value only for lifesteal. Route to the player or god damage path.
+	float TargetProtections = 0.0f;
+	if (ASkylandersCharacter* PlayerHero = Cast<ASkylandersCharacter>(Hero))
+	{
+		TargetProtections = PlayerHero->GetEffectiveProtections();
+		PlayerHero->TakeDamage_Custom(BurstDamage);
+	}
+	else if (ASkylandersEnemyGod* GodHero = Cast<ASkylandersEnemyGod>(Hero))
+	{
+		TargetProtections = GodHero->GetEffectiveProtections();
+		GodHero->TakeDamage_Custom(BurstDamage, this);
+	}
 	float DamageReduction = TargetProtections / (TargetProtections + 100.0f);
 	float MitigatedDamage = BurstDamage * (1.0f - DamageReduction);
-
-	// Deal burst damage
-	Player->TakeDamage_Custom(BurstDamage);
 
 	// Lifesteal from ability damage (based on damage actually dealt)
 	if (ItemBonusStats.Lifesteal > 0.0f)
@@ -1004,23 +1030,14 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 		DmgNum->SetDamageNumber(FinalDamage, DmgColor, bBigHit);
 	}
 
-	// Getting hit while Laning switches to Fighting if a player did it
+	// Getting hit while Laning switches to Fighting (Fighting re-derives the foe
+	// hero). Don't chase an attacker that is safe under their own tower.
 	if (CurrentState == EGodAIState::Laning && DamageCauser)
 	{
-		ASkylandersCharacter* AttackingPlayer = Cast<ASkylandersCharacter>(DamageCauser);
-		if (!AttackingPlayer)
+		if (!WouldChaseIntoEnemyTower(DamageCauser))
 		{
-			APawn* DmgInstigator = DamageCauser->GetInstigator();
-			AttackingPlayer = Cast<ASkylandersCharacter>(DmgInstigator);
-		}
-		if (AttackingPlayer)
-		{
-			// Only aggro if the player is NOT under a friendly tower
-			if (!WouldChaseIntoFriendlyTower(AttackingPlayer))
-			{
-				CurrentState = EGodAIState::Fighting;
-				UE_LOG(LogTemp, Log, TEXT("Enemy God '%s' aggro'd by player damage!"), *GodName);
-			}
+			CurrentState = EGodAIState::Fighting;
+			UE_LOG(LogTemp, Log, TEXT("God '%s' aggro'd by damage!"), *GodName);
 		}
 	}
 
@@ -1083,19 +1100,26 @@ void ASkylandersEnemyGod::Die()
 		UGameplayStatics::PlaySoundAtLocation(this, DeathSound, GetActorLocation());
 	}
 
-	// Reward player with XP and coins (scaled with level)
-	ASkylandersCharacter* Player = FindPlayer();
-	if (Player)
+	// Only an enemy-team god rewards the player / posts the "you slew" feed. An
+	// ally god dying is a loss for the player's team, not a kill.
+	if (Team == ETowerTeam::Enemy)
 	{
-		Player->AddXP(XPReward);
-		Player->AddCoins(CoinReward);
-		Player->Kills++;
-		UE_LOG(LogTemp, Log, TEXT("Player rewarded for god kill: %.0f XP, %d coins (Kills: %d)"), XPReward, CoinReward, Player->Kills);
+		ASkylandersCharacter* Player = FindPlayer();
+		if (Player)
+		{
+			Player->AddXP(XPReward);
+			Player->AddCoins(CoinReward);
+			Player->Kills++;
+			UE_LOG(LogTemp, Log, TEXT("Player rewarded for god kill: %.0f XP, %d coins (Kills: %d)"), XPReward, CoinReward, Player->Kills);
+		}
+		USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("You slew %s"), *GodName),
+			FLinearColor(0.3f, 1.0f, 0.4f));
 	}
-
-	// Kill feed: enemy god slain
-	USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("You slew %s"), *GodName),
-		FLinearColor(0.3f, 1.0f, 0.4f));
+	else
+	{
+		USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("Ally %s was slain"), *GodName),
+			FLinearColor(1.0f, 0.5f, 0.3f));
+	}
 
 	CurrentState = EGodAIState::Dead;
 	SetActorHiddenInGame(true);
