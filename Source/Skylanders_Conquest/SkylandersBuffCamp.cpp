@@ -91,10 +91,12 @@ void ASkylandersBuffCamp::BeginPlay()
 	// Save spawn location as home
 	HomeLocation = GetActorLocation();
 
-	// Color based on buff type (CampName is set by the map builder / editor)
+	// Color based on buff type. Build from BasicShapeMaterial — wrapping the mesh's
+	// default DefaultMaterial (no "Color" param) left camps gray.
 	if (BodyMesh)
 	{
-		UMaterialInstanceDynamic* DynMat = BodyMesh->CreateAndSetMaterialInstanceDynamic(0);
+		UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
+		UMaterialInstanceDynamic* DynMat = BaseMat ? UMaterialInstanceDynamic::Create(BaseMat, this) : nullptr;
 		if (DynMat)
 		{
 			FLinearColor CampColor;
@@ -106,6 +108,7 @@ void ASkylandersBuffCamp::BeginPlay()
 			default:               CampColor = FLinearColor(1.0f, 0.6f, 0.0f, 1.0f); break; // Orange (Damage)
 			}
 			DynMat->SetVectorParameterValue(FName("Color"), CampColor);
+			BodyMesh->SetMaterial(0, DynMat);
 		}
 	}
 

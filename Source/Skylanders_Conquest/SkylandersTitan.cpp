@@ -96,10 +96,11 @@ void ASkylandersTitan::BeginPlay()
 		HealthBarComp->InitWidget();
 	}
 
-	// Color based on team
+	// Color based on team (BasicShapeMaterial has the "Color" param; the mesh's
+	// default DefaultMaterial does not, which left titans gray).
 	if (BodyMesh)
 	{
-		UMaterialInterface* DefaultMat = BodyMesh->GetMaterial(0);
+		UMaterialInterface* DefaultMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
 		if (DefaultMat)
 		{
 			UMaterialInstanceDynamic* DynMat = UMaterialInstanceDynamic::Create(DefaultMat, this);

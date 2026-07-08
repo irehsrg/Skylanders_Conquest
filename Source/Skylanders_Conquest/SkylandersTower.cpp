@@ -101,10 +101,12 @@ void ASkylandersTower::BeginPlay()
 		HealthBarComp->InitWidget();
 	}
 
-	// Color the tower based on team
+	// Color the tower based on team. Build from BasicShapeMaterial explicitly —
+	// the cylinder's default slot is the engine DefaultMaterial (no "Color" param),
+	// so tinting it was silently ignored and towers rendered gray.
 	if (BaseMesh)
 	{
-		UMaterialInterface* DefaultMat = BaseMesh->GetMaterial(0);
+		UMaterialInterface* DefaultMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
 		if (DefaultMat)
 		{
 			UMaterialInstanceDynamic* DynMat = UMaterialInstanceDynamic::Create(DefaultMat, this);
@@ -124,8 +126,7 @@ void ASkylandersTower::BeginPlay()
 	// Phoenix override: golden/orange color
 	if (bIsPhoenix && BaseMesh)
 	{
-		UMaterialInterface* PhxMat = BaseMesh->GetMaterial(0);
-		if (!PhxMat) PhxMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
+		UMaterialInterface* PhxMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
 		if (PhxMat)
 		{
 			UMaterialInstanceDynamic* PhxDynMat = UMaterialInstanceDynamic::Create(PhxMat, this);
