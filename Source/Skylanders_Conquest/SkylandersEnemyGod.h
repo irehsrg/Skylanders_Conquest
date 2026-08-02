@@ -201,7 +201,10 @@ private:
 	AActor* FindEnemyHero();
 	// Health fraction (0..1) of a hero actor (player or another god).
 	static float GetHeroHealthPct(AActor* Hero);
-	ASkylandersMinion* FindNearestEnemyMinion(); // Finds FoeTeam() minions to attack
+	// Nearest living FoeTeam() minion within SearchRadius. Pass a radius wider than
+	// AttackRange when the god should *walk toward* the wave (laning); pass the
+	// default (AttackRange) when it should only consider what it can already hit.
+	ASkylandersMinion* FindNearestEnemyMinion(float SearchRadius = -1.0f);
 	void PerformAttack(AActor* Target);
 	void UseAbility(); // Burst damage ability
 
@@ -227,6 +230,11 @@ private:
 
 	// Cached references
 	ASkylandersCharacter* CachedPlayer;
+
+	// Who landed the most recent hit, so Die() can credit the actual killer
+	// instead of handing every red-god death to the player.
+	UPROPERTY()
+	AActor* LastDamageCauser = nullptr;
 
 	// Spawn / respawn
 	FVector BasePosition; // Where the god retreats to and respawns

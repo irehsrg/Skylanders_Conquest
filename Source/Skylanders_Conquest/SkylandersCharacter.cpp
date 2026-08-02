@@ -696,13 +696,28 @@ void ASkylandersCharacter::Tick(float DeltaTime)
 		// Force stationary
 		GetCharacterMovement()->Velocity = FVector::ZeroVector;
 
-		// Keep the firing loop animation running once the start anim finishes
+		// Keep the firing loop animation running once the start anim finishes.
+		// Characters on the code-driven anim instance (Hex, Tree Rex) never create
+		// montages, so Montage_IsPlaying is always false there — asking it alone
+		// restarted the loop every tick and froze the anim on frame 0.
 		if (MachineGunLoopAnim)
 		{
-			UAnimInstance* AnimInst = GetMesh()->GetAnimInstance();
-			if (AnimInst && !AnimInst->Montage_IsPlaying(nullptr))
+			if (UAnimInstance* AnimInst = GetMesh()->GetAnimInstance())
 			{
-				PlayAnimOnSlot(MachineGunLoopAnim, 1.0f);
+				bool bAnimBusy;
+				if (USkylandersSimpleAnimInstance* Simple = Cast<USkylandersSimpleAnimInstance>(AnimInst))
+				{
+					bAnimBusy = Simple->IsFullBodyAnimPlaying();
+				}
+				else
+				{
+					bAnimBusy = AnimInst->Montage_IsPlaying(nullptr);
+				}
+
+				if (!bAnimBusy)
+				{
+					PlayAnimOnSlot(MachineGunLoopAnim, 1.0f);
+				}
 			}
 		}
 

@@ -75,6 +75,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Animation")
 	void StopFullBodyAnim();
 
+	// Is a one-shot override still running? This is the code-driven equivalent of
+	// UAnimInstance::Montage_IsPlaying — callers chaining anims (start -> loop)
+	// need it, since this instance never creates montages.
+	UFUNCTION(BlueprintPure, Category = "Animation")
+	bool IsFullBodyAnimPlaying() const { return ActiveOverride != nullptr; }
+
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
