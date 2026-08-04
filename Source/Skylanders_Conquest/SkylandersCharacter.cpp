@@ -487,6 +487,19 @@ void ASkylandersCharacter::BeginPlay()
 	if (!ProjectileClass)
 		ProjectileClass = ASkylandersProjectile::StaticClass();
 
+	// Audio fallbacks — placeholder synthesized SFX (Scripts/GenerateSFX.py).
+	// Only fill slots a Blueprint hasn't already set, so BP overrides still win.
+	if (!AttackSound)
+		AttackSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_Attack_Shot.SFX_Attack_Shot"));
+	if (!AbilitySound)
+		AbilitySound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_Ability_Cast.SFX_Ability_Cast"));
+	if (!DeathSound)
+		DeathSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_Death.SFX_Death"));
+	if (!LevelUpSound)
+		LevelUpSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_LevelUp.SFX_LevelUp"));
+	if (!ItemBuySound)
+		ItemBuySound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_ItemBuy.SFX_ItemBuy"));
+
 	UE_LOG(LogTemp, Warning, TEXT("=== CHARACTER BEGIN PLAY ==="));
 	UE_LOG(LogTemp, Warning, TEXT("MaxHealth: %.1f, CurrentHealth: %.1f"), MaxHealth, CurrentHealth);
 	UE_LOG(LogTemp, Warning, TEXT("MaxMana: %.1f, CurrentMana: %.1f"), MaxMana, CurrentMana);
