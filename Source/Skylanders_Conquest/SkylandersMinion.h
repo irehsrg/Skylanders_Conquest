@@ -98,10 +98,15 @@ public:
 	UPROPERTY()
 	AActor* CurrentTarget;
 
-	// Forced aggro target (e.g. player attacked this minion)
+	// Forced aggro target (e.g. a hero attacked this minion)
 	UPROPERTY()
 	AActor* ForcedAggroTarget;
 	float ForcedAggroTimer; // How long forced aggro lasts
+
+	// Who landed the most recent hit, so Die() can pay the actual killer instead
+	// of always paying the player.
+	UPROPERTY()
+	AActor* LastDamageCauser;
 
 	// Stuck detection for obstacle avoidance
 	FVector LastPosition;
@@ -119,6 +124,12 @@ public:
 	void Die();
 	void UpdateAI(float DeltaTime);
 	void FindTarget();
+
+	// True if Actor is a living hero fighting for the other side. Heroes are the
+	// player (who fights for ETowerTeam::Friendly) and the AI gods, which carry
+	// their own Team. Used for both target selection and aggro pulls.
+	bool IsOpposingHero(AActor* Actor) const;
+
 	void AttackTarget();
 	void FaceTarget(AActor* Target);
 	void UpdateHealthBar();

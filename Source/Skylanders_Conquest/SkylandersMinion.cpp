@@ -3,6 +3,7 @@
 #include "SkylandersMinion.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersEnemy.h"
+#include "SkylandersEnemyGod.h"
 #include "SkylandersTower.h"
 #include "SkylandersTitan.h"
 #include "SkylandersDamageNumber.h"
@@ -80,6 +81,7 @@ ASkylandersMinion::ASkylandersMinion()
 	CurrentTarget = nullptr;
 	ForcedAggroTarget = nullptr;
 	ForcedAggroTimer = 0.0f;
+	LastDamageCauser = nullptr;
 	bHealthBarInitialized = false;
 	CachedHealthBar = nullptr;
 	CachedNameText = nullptr;
@@ -113,6 +115,10 @@ void ASkylandersMinion::BeginPlay()
 		CurrentHealth = 80.0f;
 		AttackDamage = 18.0f;
 		AttackRange = 600.0f;
+		// Must exceed AttackRange or the chase branch in UpdateAI is unreachable —
+		// a ranged minion could never walk toward anything it wasn't already
+		// standing in range of.
+		AggroRange = 700.0f;
 		MoveSpeed = 300.0f;
 		XPReward = 20.0f;
 		CoinReward = 12;
@@ -316,19 +322,36 @@ FVector ASkylandersMinion::GetLaneGoal()
 	return LaneWaypoints[CurrentWaypointIndex];
 }
 
+bool ASkylandersMinion::IsOpposingHero(AActor* Actor) const
+{
+	if (!Actor) return false;
+
+	// The human player always fights for the Friendly (blue) team.
+	if (const ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(Actor))
+	{
+		return Team == ETowerTeam::Enemy && Player->CurrentHealth > 0.0f;
+	}
+
+	if (const ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Actor))
+	{
+		return God->Team != Team && God->CurrentState != EGodAIState::Dead;
+	}
+
+	return false;
+}
+
 void ASkylandersMinion::FindTarget()
 {
 	CurrentTarget = nullptr;
 
-	// Priority 0: Forced aggro (player attacked this minion or attacked nearby)
+	// Priority 0: Forced aggro (a hero attacked this minion or attacked nearby)
 	if (ForcedAggroTarget && ForcedAggroTimer > 0.0f)
 	{
-		ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(ForcedAggroTarget);
-		if (Player && Player->CurrentHealth > 0.0f)
+		if (IsOpposingHero(ForcedAggroTarget))
 		{
-			float DistToPlayer = FVector::Dist(GetActorLocation(), Player->GetActorLocation());
-			// Break aggro if player is too far away (leash back to lane)
-			if (DistToPlayer < AggroRange)
+			float DistToHero = FVector::Dist(GetActorLocation(), ForcedAggroTarget->GetActorLocation());
+			// Break aggro if the hero is too far away (leash back to lane)
+			if (DistToHero < AggroRange)
 			{
 				CurrentTarget = ForcedAggroTarget;
 				return;
@@ -359,22 +382,46 @@ void ASkylandersMinion::FindTarget()
 	}
 	if (CurrentTarget) return;
 
-	// Priority 2: Player (enemy minions only, within aggro range)
-	if (Team == ETowerTeam::Enemy)
+	// Priority 2: Nearest opposing hero within aggro range. That's the player for
+	// red minions, and the AI gods for both sides — blue minions used to ignore
+	// the red gods entirely, so a 3v3 lane fight had the waves fighting past the
+	// gods as if they weren't there.
 	{
-		APawn* Player = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
-		if (Player)
+		float ClosestHeroDist = AggroRange;
+		AActor* BestHero = nullptr;
+
+		if (APawn* Player = UGameplayStatics::GetPlayerPawn(GetWorld(), 0))
 		{
-			ASkylandersCharacter* SkyChar = Cast<ASkylandersCharacter>(Player);
-			if (SkyChar && SkyChar->CurrentHealth > 0.0f)
+			if (IsOpposingHero(Player))
 			{
 				float Dist = FVector::Dist(GetActorLocation(), Player->GetActorLocation());
-				if (Dist < AggroRange)
+				if (Dist < ClosestHeroDist)
 				{
-					CurrentTarget = Player;
-					return;
+					ClosestHeroDist = Dist;
+					BestHero = Player;
 				}
 			}
+		}
+
+		TArray<AActor*> AllGods;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllGods);
+		for (AActor* Actor : AllGods)
+		{
+			if (IsOpposingHero(Actor))
+			{
+				float Dist = FVector::Dist(GetActorLocation(), Actor->GetActorLocation());
+				if (Dist < ClosestHeroDist)
+				{
+					ClosestHeroDist = Dist;
+					BestHero = Actor;
+				}
+			}
+		}
+
+		if (BestHero)
+		{
+			CurrentTarget = BestHero;
+			return;
 		}
 	}
 
@@ -465,6 +512,13 @@ void ASkylandersMinion::AttackTarget()
 		Player->TakeDamage_Custom(AttackDamage);
 		return;
 	}
+
+	ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(CurrentTarget);
+	if (God)
+	{
+		God->TakeDamage_Custom(AttackDamage, this);
+		return;
+	}
 }
 
 void ASkylandersMinion::TakeDamage_Custom(float DamageAmount, AActor* DamageCauser)
@@ -473,13 +527,22 @@ void ASkylandersMinion::TakeDamage_Custom(float DamageAmount, AActor* DamageCaus
 
 	CurrentHealth = FMath::Clamp(CurrentHealth - DamageAmount, 0.0f, MaxHealth);
 
-	// If a player attacked us, force aggro this minion AND nearby allies onto the player
-	APawn* PlayerPawn = Cast<APawn>(DamageCauser ? DamageCauser->GetInstigator() : nullptr);
-	if (!PlayerPawn) PlayerPawn = Cast<APawn>(DamageCauser);
-	ASkylandersCharacter* AttackingPlayer = Cast<ASkylandersCharacter>(PlayerPawn);
-	if (AttackingPlayer)
+	// Resolve the pawn behind the hit (projectiles pass themselves as the causer
+	// and their shooter as the instigator) so Die() can pay the real killer.
+	APawn* CauserPawn = Cast<APawn>(DamageCauser ? DamageCauser->GetInstigator() : nullptr);
+	if (!CauserPawn) CauserPawn = Cast<APawn>(DamageCauser);
+	if (CauserPawn)
 	{
-		// Check if we're currently engaged with enemy minions - if so, don't switch to player
+		LastDamageCauser = CauserPawn;
+	}
+
+	// If an opposing hero attacked us, force aggro this minion AND nearby allies
+	// onto them. Any hero counts, not just the player — an AI god poking the wave
+	// should pull it the same way.
+	AActor* AttackingHero = IsOpposingHero(CauserPawn) ? static_cast<AActor*>(CauserPawn) : nullptr;
+	if (AttackingHero)
+	{
+		// Check if we're currently engaged with enemy minions - if so, don't switch to the hero
 		bool bFightingMinions = false;
 		TArray<AActor*> NearbyMinions;
 		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), NearbyMinions);
@@ -504,8 +567,8 @@ void ASkylandersMinion::TakeDamage_Custom(float DamageAmount, AActor* DamageCaus
 
 		if (!bFightingMinions)
 		{
-			ForcedAggroTarget = AttackingPlayer;
-			ForcedAggroTimer = 4.0f; // Aggro player for 4 seconds
+			ForcedAggroTarget = AttackingHero;
+			ForcedAggroTimer = 4.0f; // Aggro the hero for 4 seconds
 
 			// Alert nearby same-team minions (only if they aren't fighting enemy minions)
 			for (AActor* Actor : NearbyMinions)
@@ -534,7 +597,7 @@ void ASkylandersMinion::TakeDamage_Custom(float DamageAmount, AActor* DamageCaus
 
 						if (!bAllyFightingMinions)
 						{
-							Ally->ForcedAggroTarget = AttackingPlayer;
+							Ally->ForcedAggroTarget = AttackingHero;
 							Ally->ForcedAggroTimer = 3.0f;
 						}
 					}
@@ -566,9 +629,19 @@ void ASkylandersMinion::Die()
 {
 	bDead = true;
 
-	// Reward player if enemy minion killed
-	if (Team == ETowerTeam::Enemy)
+	// Credit the hero who landed the killing blow. An AI god farming the wave used
+	// to bank the gold and creep score into the *player's* account and earn nothing
+	// itself, which broke the economy the moment Tier 2 added ally gods.
+	ASkylandersEnemyGod* KillerGod = Cast<ASkylandersEnemyGod>(LastDamageCauser);
+	if (KillerGod && KillerGod->Team != Team)
 	{
+		KillerGod->Gold += CoinReward;
+	}
+	else if (Team == ETowerTeam::Enemy)
+	{
+		// Not a god last-hit: fall back to paying the player, as before. Red minions
+		// only ever die to the player's side, so this stays "your team killed it"
+		// rather than strict last-hit rules.
 		ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(UGameplayStatics::GetPlayerPawn(GetWorld(), 0));
 		if (Player)
 		{

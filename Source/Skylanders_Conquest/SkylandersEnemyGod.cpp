@@ -435,14 +435,14 @@ ASkylandersCharacter* ASkylandersEnemyGod::FindPlayer()
 	return CachedPlayer;
 }
 
-ASkylandersMinion* ASkylandersEnemyGod::FindNearestEnemyMinion()
+ASkylandersMinion* ASkylandersEnemyGod::FindNearestEnemyMinion(float SearchRadius)
 {
 	// Find the nearest opposing-team minion to attack
 	TArray<AActor*> AllMinions;
 	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
 
 	ASkylandersMinion* Nearest = nullptr;
-	float NearestDist = AttackRange;
+	float NearestDist = (SearchRadius > 0.0f) ? SearchRadius : AttackRange;
 
 	for (AActor* Actor : AllMinions)
 	{
@@ -652,8 +652,11 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 	{
 	case EGodAIState::Laning:
 	{
-		// Auto-attack nearest opposing minion
-		ASkylandersMinion* TargetMinion = FindNearestEnemyMinion();
+		// Nearest opposing minion to farm. Search out to AggroRange (wider than
+		// AttackRange) so the god actually walks up to the wave — searching only
+		// AttackRange made the approach branch below unreachable, and the god
+		// marched past live minions straight at the structures.
+		ASkylandersMinion* TargetMinion = FindNearestEnemyMinion(FMath::Max(AggroRange, AttackRange));
 
 		// Frontmost own-team minion along the push direction, for cover checks. A
 		// higher (X * LaneSign) is more advanced toward the foe base.
@@ -1046,6 +1049,26 @@ void ASkylandersEnemyGod::PerformAttack(AActor* Target)
 		return;
 	}
 
+	// Opposing god (ally-vs-enemy god duels). Same protections-are-applied-by-the
+	// -target rule as the player branch above.
+	ASkylandersEnemyGod* GodTarget = Cast<ASkylandersEnemyGod>(Target);
+	if (GodTarget)
+	{
+		float TargetProtections = GodTarget->GetEffectiveProtections();
+		float DamageReduction = TargetProtections / (TargetProtections + 100.0f);
+		float MitigatedDamage = EffectiveDamage * (1.0f - DamageReduction);
+
+		GodTarget->TakeDamage_Custom(EffectiveDamage, this);
+
+		if (ItemBonusStats.Lifesteal > 0.0f)
+		{
+			float HealAmount = MitigatedDamage * ItemBonusStats.Lifesteal;
+			float EffMaxHP = MaxHealth + ItemBonusStats.MaxHealth;
+			CurrentHealth = FMath::Min(CurrentHealth + HealAmount, EffMaxHP);
+		}
+		return;
+	}
+
 	ASkylandersMinion* MinionTarget = Cast<ASkylandersMinion>(Target);
 	if (MinionTarget)
 	{
@@ -1163,6 +1186,17 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 	float EffMaxHealth = MaxHealth + ItemBonusStats.MaxHealth;
 	CurrentHealth = FMath::Clamp(CurrentHealth - FinalDamage, 0.0f, EffMaxHealth);
 
+	// Remember the pawn behind the hit (projectiles pass themselves as the causer
+	// and their shooter as the instigator) so Die() can credit the real killer.
+	{
+		APawn* CauserPawn = Cast<APawn>(DamageCauser ? DamageCauser->GetInstigator() : nullptr);
+		if (!CauserPawn) CauserPawn = Cast<APawn>(DamageCauser);
+		if (CauserPawn)
+		{
+			LastDamageCauser = CauserPawn;
+		}
+	}
+
 	// Spawn floating damage number
 	FVector NumberLoc = GetActorLocation() + FVector(0.0f, 0.0f, 80.0f);
 	FActorSpawnParameters SpawnParams;
@@ -1176,11 +1210,25 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 		DmgNum->SetDamageNumber(FinalDamage, DmgColor, bBigHit);
 	}
 
-	// Getting hit while Laning switches to Fighting (Fighting re-derives the foe
-	// hero). Don't chase an attacker that is safe under their own tower.
-	if (CurrentState == EGodAIState::Laning && DamageCauser)
+	// Getting hit by an opposing *hero* while Laning switches to Fighting (Fighting
+	// re-derives the foe hero). Don't chase an attacker that is safe under their
+	// own tower. Minion and tower chip damage is deliberately excluded: now that
+	// minions attack gods, letting any hit flip the state yanked the god out of
+	// lane on every wave tick. Tested against the resolved attacking pawn rather
+	// than the raw causer so a projectile's own location isn't what gets checked.
+	if (CurrentState == EGodAIState::Laning && LastDamageCauser)
 	{
-		if (!WouldChaseIntoEnemyTower(DamageCauser))
+		bool bHeroAttacker = false;
+		if (Cast<ASkylandersCharacter>(LastDamageCauser))
+		{
+			bHeroAttacker = (FoeTeam() == ETowerTeam::Friendly);
+		}
+		else if (ASkylandersEnemyGod* AttackingGod = Cast<ASkylandersEnemyGod>(LastDamageCauser))
+		{
+			bHeroAttacker = (AttackingGod->Team == FoeTeam());
+		}
+
+		if (bHeroAttacker && !WouldChaseIntoEnemyTower(LastDamageCauser))
 		{
 			CurrentState = EGodAIState::Fighting;
 			UE_LOG(LogTemp, Log, TEXT("God '%s' aggro'd by damage!"), *GodName);
@@ -1198,24 +1246,27 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 		}
 		if (AttackingPlayer)
 		{
+			// Notify the towers/minions that protect *this* god (its own team),
+			// not a hardcoded red team — otherwise hitting a blue ally would call
+			// red structures onto you.
 			TArray<AActor*> AllTowers;
 			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
 			for (AActor* TowerActor : AllTowers)
 			{
 				ASkylandersTower* Tower = Cast<ASkylandersTower>(TowerActor);
-				if (Tower && Tower->Team == ETowerTeam::Enemy)
+				if (Tower && Tower->Team == Team)
 				{
 					Tower->NotifyPlayerAggro(AttackingPlayer);
 				}
 			}
 
-			// Nearby enemy minions aggro the player
+			// Nearby minions of this god's team aggro the attacker
 			TArray<AActor*> AllMinions;
 			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
 			for (AActor* MinionActor : AllMinions)
 			{
 				ASkylandersMinion* Minion = Cast<ASkylandersMinion>(MinionActor);
-				if (Minion && Minion->Team == ETowerTeam::Enemy && !Minion->bDead)
+				if (Minion && Minion->Team == Team && !Minion->bDead)
 				{
 					float Dist = FVector::Dist(GetActorLocation(), Minion->GetActorLocation());
 					if (Dist < 500.0f)
@@ -1251,20 +1302,42 @@ void ASkylandersEnemyGod::Die()
 		UGameplayStatics::PlaySoundAtLocation(this, DeathSound, GetActorLocation());
 	}
 
+	// An ally god (or the player) killing a red god is a kill for whoever landed
+	// the blow — the player's KDA and gold shouldn't absorb their teammates' work.
+	// A god killing the player, or a red god killing a blue one, pays that god.
+	ASkylandersEnemyGod* KillerGod = Cast<ASkylandersEnemyGod>(LastDamageCauser);
+	if (KillerGod && (KillerGod == this || KillerGod->Team == Team))
+	{
+		KillerGod = nullptr; // Self/same-team damage isn't a kill for anyone
+	}
+	if (KillerGod)
+	{
+		KillerGod->Gold += CoinReward;
+	}
+
 	// Only an enemy-team god rewards the player / posts the "you slew" feed. An
 	// ally god dying is a loss for the player's team, not a kill.
 	if (Team == ETowerTeam::Enemy)
 	{
-		ASkylandersCharacter* Player = FindPlayer();
-		if (Player)
+		if (KillerGod)
 		{
-			Player->AddXP(XPReward);
-			Player->AddCoins(CoinReward);
-			Player->Kills++;
-			UE_LOG(LogTemp, Log, TEXT("Player rewarded for god kill: %.0f XP, %d coins (Kills: %d)"), XPReward, CoinReward, Player->Kills);
+			// An ally god got it — report it, but don't pay the player for it.
+			USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("%s slew %s"), *KillerGod->GodName, *GodName),
+				FLinearColor(0.4f, 0.8f, 1.0f));
 		}
-		USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("You slew %s"), *GodName),
-			FLinearColor(0.3f, 1.0f, 0.4f));
+		else
+		{
+			ASkylandersCharacter* Player = FindPlayer();
+			if (Player)
+			{
+				Player->AddXP(XPReward);
+				Player->AddCoins(CoinReward);
+				Player->Kills++;
+				UE_LOG(LogTemp, Log, TEXT("Player rewarded for god kill: %.0f XP, %d coins (Kills: %d)"), XPReward, CoinReward, Player->Kills);
+			}
+			USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("You slew %s"), *GodName),
+				FLinearColor(0.3f, 1.0f, 0.4f));
+		}
 	}
 	else
 	{
@@ -1295,6 +1368,7 @@ void ASkylandersEnemyGod::RespawnGod()
 	CurrentState = EGodAIState::Laning;
 	AttackTimer = 0.0f;
 	AbilityCooldownTimer = 8.0f;
+	LastDamageCauser = nullptr; // Don't let last life's killer credit this one's death
 
 	// Restore visibility and collision
 	SetActorHiddenInGame(false);

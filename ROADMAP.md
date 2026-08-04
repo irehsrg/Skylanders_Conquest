@@ -31,9 +31,10 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [~] **Teams of three** — DONE (needs playtest): god AI is now team-aware
   (`ETowerTeam Team`), spawns a 3v3 (player + 2 blue AI allies vs 3 red AI
   enemies), with friendly-fire prevented for the player's shots/abilities and
-  friendly towers. Allies lane toward the enemy base, blue; enemies red. TODO
-  from playtest: tune ally aggressiveness, enemy towers ignore ally gods, minions
-  don't yet target gods.
+  friendly towers. Allies lane toward the enemy base, blue; enemies red. Towers
+  now shoot gods on both sides, minions target opposing gods, gods can actually
+  auto-attack each other, and kills/farm are credited to whoever landed the blow
+  (see `docs/AUDIT-2026-08-02.md`). TODO from playtest: tune ally aggressiveness.
 - [~] **Better enemy AI + real character** — real animated models DONE: gods wear
   Hex/TreeRex skeletal meshes (the only two with rip anims) + team-colored ground
   rings. Remaining: more model variety (needs importing anims for other
