@@ -13,7 +13,9 @@ import unreal
 REPO = "C:/Users/ajoin/Downloads/Skylanders-Models"
 STAGING = REPO + "/Staging"
 
-CHARACTERS = ["Spyro", "StealthElf", "KaosSensei", "ChompyMage", "Cynder"]
+# Override with a comma-separated list, e.g.  set SKY_CHARS=Terrabite,Drobit
+CHARACTERS = [c for c in os.environ.get(
+    'SKY_CHARS', "Spyro,StealthElf,KaosSensei,ChompyMage,Cynder").split(',') if c.strip()]
 
 # Only import animations we might actually use — the full rip is ~50-60 per
 # character and most are cutscene/kart/knockback one-offs.

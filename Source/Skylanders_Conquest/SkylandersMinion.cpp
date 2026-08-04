@@ -1,6 +1,10 @@
 // Skylanders Conquest - Minion Implementation
 
 #include "SkylandersMinion.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimSequenceBase.h"
+#include "Engine/SkeletalMesh.h"
+#include "SkylandersSimpleAnimInstance.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersEnemy.h"
 #include "SkylandersEnemyGod.h"
@@ -162,6 +166,42 @@ void ASkylandersMinion::BeginPlay()
 				DynMat->SetVectorParameterValue(FName("Color"), FLinearColor(1.0f, 0.3f, 0.2f));
 			}
 			BodyMesh->SetMaterial(0, DynMat);
+		}
+	}
+
+	// Swap the placeholder capsule for a real animated Skylander (mini-Skylanders
+	// make good troops: Terrabite melee, Drobit ranged). Scale normalises the rip
+	// to ~70uu; MeshZ = -30 (capsule bottom) - bottomZ*Scale puts feet on the deck.
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		const bool bRanged = (MinionType == EMinionType::Ranged);
+		const TCHAR* Folder = bRanged ? TEXT("Drobit") : TEXT("Terrabite");
+		const float Scale   = bRanged ? 1.0f : 1.5f;
+		const float MeshZ   = bRanged ? 6.7f : 4.7f;
+
+		const FString MeshPath = FString::Printf(TEXT("/Game/Characters/%s/Models/%s"), Folder, Folder);
+		if (USkeletalMesh* SkelMesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath))
+		{
+			MeshComp->SetSkeletalMesh(SkelMesh);
+			MeshComp->SetRelativeLocation(FVector(0.0f, 0.0f, MeshZ));
+			MeshComp->SetRelativeRotation(FRotator::ZeroRotator); // rips face +X
+			MeshComp->SetRelativeScale3D(FVector(Scale));
+			MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			MeshComp->SetAnimInstanceClass(USkylandersSimpleAnimInstance::StaticClass());
+			if (USkylandersSimpleAnimInstance* Simple = Cast<USkylandersSimpleAnimInstance>(MeshComp->GetAnimInstance()))
+			{
+				Simple->IdleAnim = LoadObject<UAnimSequenceBase>(nullptr,
+					*FString::Printf(TEXT("/Game/Characters/%s/Animations/drive_idle"), Folder));
+				Simple->RunAnim = LoadObject<UAnimSequenceBase>(nullptr,
+					*FString::Printf(TEXT("/Game/Characters/%s/Animations/drive_run"), Folder));
+			}
+			// The tinted capsule would now be inside the model, so flatten it into a
+			// team-coloured ring at the minion's feet (keeps team ID at a glance).
+			if (BodyMesh)
+			{
+				BodyMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -29.0f));
+				BodyMesh->SetRelativeScale3D(FVector(0.85f, 0.85f, 0.04f));
+			}
 		}
 	}
 
