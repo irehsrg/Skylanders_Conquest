@@ -1,6 +1,7 @@
 // Skylanders Conquest - Tower Implementation
 
 #include "SkylandersTower.h"
+#include "Sound/SoundBase.h"
 #include "SkylandersKillFeedWidget.h"
 #include "SkylandersTelemetry.h"
 #include "SkylandersCharacter.h"
@@ -85,6 +86,14 @@ ASkylandersTower::ASkylandersTower()
 void ASkylandersTower::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Audio fallbacks (placeholder SFX); Blueprint-assigned sounds take priority.
+	if (!AttackSound)
+		AttackSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_Tower_Shot.SFX_Tower_Shot"));
+	if (!DestroySound)
+		DestroySound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_Structure_Destroy.SFX_Structure_Destroy"));
+	if (!PhoenixRespawnSound)
+		PhoenixRespawnSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_Phoenix_Respawn.SFX_Phoenix_Respawn"));
 
 	// All towers overlap with WorldDynamic (projectiles) — damage handled via OnOverlap
 	// Player (Pawn channel) is still blocked, so characters can't walk through towers

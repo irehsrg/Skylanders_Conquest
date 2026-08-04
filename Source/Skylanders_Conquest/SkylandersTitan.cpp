@@ -1,6 +1,7 @@
 // Skylanders Conquest - Titan Implementation
 
 #include "SkylandersTitan.h"
+#include "Sound/SoundBase.h"
 #include "SkylandersTelemetry.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersEnemy.h"
@@ -82,6 +83,12 @@ ASkylandersTitan::ASkylandersTitan()
 void ASkylandersTitan::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Audio fallbacks (placeholder SFX); Blueprint-assigned sounds take priority.
+	if (!AttackSound)
+		AttackSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_Titan_Attack.SFX_Titan_Attack"));
+	if (!DestroySound)
+		DestroySound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_Structure_Destroy.SFX_Structure_Destroy"));
 
 	// All titans overlap with WorldDynamic (projectiles) — damage handled via OnOverlap
 	// Player (Pawn channel) is still blocked

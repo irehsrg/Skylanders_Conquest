@@ -1,6 +1,7 @@
 // Skylanders Conquest - Jungle Buff Camp Implementation
 
 #include "SkylandersBuffCamp.h"
+#include "Sound/SoundBase.h"
 #include "SkylandersKillFeedWidget.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersDamageNumber.h"
@@ -87,6 +88,10 @@ ASkylandersBuffCamp::ASkylandersBuffCamp()
 void ASkylandersBuffCamp::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Audio fallback (placeholder SFX); Blueprint-assigned sound takes priority.
+	if (!DeathSound)
+		DeathSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_Camp_Death.SFX_Camp_Death"));
 
 	// Save spawn location as home
 	HomeLocation = GetActorLocation();
