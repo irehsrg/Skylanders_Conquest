@@ -35,10 +35,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
   now shoot gods on both sides, minions target opposing gods, gods can actually
   auto-attack each other, and kills/farm are credited to whoever landed the blow
   (see `docs/AUDIT-2026-08-02.md`). TODO from playtest: tune ally aggressiveness.
-- [~] **Better enemy AI + real character** — real animated models DONE: gods wear
-  Hex/TreeRex skeletal meshes (the only two with rip anims) + team-colored ground
-  rings. Remaining: more model variety (needs importing anims for other
-  Skylanders) and smarter combat/objective AI.
+- [~] **Better enemy AI + real character** — real models DONE: all 5 AI gods now
+  wear their own distinct animated Skylander (Spyro, Stealth Elf, Kaos Sensei,
+  Chompy Mage, Cynder) + team-colored ground rings. NOTE: the earlier "only Hex
+  and TreeRex have animations" limit was wrong — it was a sparse-checkout artifact
+  of the asset repo; 227 characters have full anim sets upstream (`git
+  sparse-checkout add Assets/Skylanders/Animations/<Name>`). Remaining: smarter
+  combat/objective AI.
 - [ ] **Replace minion placeholders** with real minion models.
 
 ## Tier 3 — Presentation
