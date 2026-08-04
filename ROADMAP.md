@@ -42,7 +42,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
   of the asset repo; 227 characters have full anim sets upstream (`git
   sparse-checkout add Assets/Skylanders/Animations/<Name>`). Remaining: smarter
   combat/objective AI.
-- [ ] **Replace minion placeholders** with real minion models.
+- [x] **Replace minion placeholders** — melee = Terrabite, ranged = Drobit, with
+  the old tinted capsule flattened into a team-coloured foot ring. Jungle camps
+  too: Shaman (mana x2), GraveClobberer (damage), GoldenQueen (boss), BadJuju.
+- [ ] **Towers/titans still geometric** — the rip has NO structure/environment
+  geometry (characters only), so these can't become real Skylanders buildings.
+  Options: better authored geometry (base + column + team crystal), or an
+  environment pack from Fab.
 
 ## Tier 3 — Presentation
 - [ ] **Map set-dressing** — prop/structure models on the greybox (trees, rocks,
