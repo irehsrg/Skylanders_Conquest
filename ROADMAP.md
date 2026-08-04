@@ -45,7 +45,11 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] **Map set-dressing** — prop/structure models on the greybox (trees, rocks,
   real base structures); further map polish.
 - [ ] **Menu / hub UI polish** — main menu, character select, shop, HUD styling.
-- [ ] **Audio** — infrastructure is wired but no clips assigned; add SFX + music.
+- [~] **Audio** — placeholder SFX only. 10 synthesized arcade sounds
+  (`Scripts/GenerateSFX.py` -> `/Game/Audio/SFX`) now fill every sound slot via
+  BeginPlay fallbacks, so the game is no longer silent. Still missing: real
+  authored SFX, any music, ambience, UI clicks, and per-character voice/ability
+  sounds. No source audio exists locally (the rip has zero audio files).
 
 ## Tier 4 — Heavy infrastructure *(optional given "won't get legs")*
 - [ ] **Networking** — real multiplayer 3v3 (replication, server authority, lag
