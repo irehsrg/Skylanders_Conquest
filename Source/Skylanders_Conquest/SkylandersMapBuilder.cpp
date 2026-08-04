@@ -266,7 +266,7 @@ void ASkylandersMapBuilder::BuildMap()
 	// JUNGLE CAMPS (positioned to match the grass pockets above)
 	// ========================================================================
 	auto SpawnCamp = [&](FVector Loc, const TCHAR* Name, EBuffType Buff, float Mult,
-		float HP, float XP, int32 Coins) -> ASkylandersBuffCamp*
+		float HP, float XP, int32 Coins, const TCHAR* Model = TEXT("")) -> ASkylandersBuffCamp*
 	{
 		FTransform T(FRotator::ZeroRotator, Loc);
 		ASkylandersBuffCamp* C = World->SpawnActorDeferred<ASkylandersBuffCamp>(
@@ -275,6 +275,7 @@ void ASkylandersMapBuilder::BuildMap()
 		if (C)
 		{
 			C->CampName = Name;
+			C->CampModel = Model; // real animated monster, set before BeginPlay
 			C->BuffType = Buff;
 			C->BuffDamageMultiplier = Mult;
 			C->BuffDuration = 90.0f;
@@ -287,12 +288,12 @@ void ASkylandersMapBuilder::BuildMap()
 	};
 
 	// Team mana buffs mirror across X=0 (both in the north jungle, one per side)
-	BlueBlueBuff = SpawnCamp(FVector(-5800, 2800, 75), TEXT("Blue Buff"), EBuffType::Mana, 1.0f, 0.0f, 0.0f, 0);
-	RedBlueBuff = SpawnCamp(FVector(5800, 2800, 75), TEXT("Blue Buff"), EBuffType::Mana, 1.0f, 0.0f, 0.0f, 0);
+	BlueBlueBuff = SpawnCamp(FVector(-5800, 2800, 75), TEXT("Blue Buff"), EBuffType::Mana, 1.0f, 0.0f, 0.0f, 0, TEXT("Shaman"));
+	RedBlueBuff = SpawnCamp(FVector(5800, 2800, 75), TEXT("Blue Buff"), EBuffType::Mana, 1.0f, 0.0f, 0.0f, 0, TEXT("Shaman"));
 	// Neutral objectives on the center line (x=0) — equidistant / contested
-	DamageCamp = SpawnCamp(FVector(0, -1600, 75), TEXT("Damage Buff"), EBuffType::Damage, 1.25f, 0.0f, 0.0f, 0);
-	BullDemonKing = SpawnCamp(FVector(0, 3400, 75), TEXT("Bull Demon King"), EBuffType::Damage, 1.50f, 2500.0f, 200.0f, 150);
-	MidCamp = SpawnCamp(FVector(0, -3400, 75), TEXT("Mid Harpies"), EBuffType::None, 1.0f, 300.0f, 80.0f, 40);
+	DamageCamp = SpawnCamp(FVector(0, -1600, 75), TEXT("Damage Buff"), EBuffType::Damage, 1.25f, 0.0f, 0.0f, 0, TEXT("GraveClobberer"));
+	BullDemonKing = SpawnCamp(FVector(0, 3400, 75), TEXT("Golden Queen"), EBuffType::Damage, 1.50f, 2500.0f, 200.0f, 150, TEXT("GoldenQueen"));
+	MidCamp = SpawnCamp(FVector(0, -3400, 75), TEXT("Bad Juju"), EBuffType::None, 1.0f, 300.0f, 80.0f, 40, TEXT("BadJuju"));
 
 	// ========================================================================
 	// GODS: a full 3v3 — the player + 2 AI allies (blue) vs 3 AI enemies (red).

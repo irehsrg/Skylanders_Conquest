@@ -7,6 +7,7 @@
 #include "SkylandersBuffCamp.generated.h"
 
 class UStaticMeshComponent;
+class USkeletalMeshComponent;
 class UWidgetComponent;
 class UProgressBar;
 class UTextBlock;
@@ -38,6 +39,15 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UStaticMeshComponent* BodyMesh;
+
+	// Real animated monster model for the camp (hides the placeholder sphere).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	USkeletalMeshComponent* CampMesh;
+
+	// Which Skylanders monster this camp wears ("Shaman", "GoldenQueen", ...).
+	// Set by the map builder before BeginPlay; empty keeps the sphere.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Components")
+	FString CampModel;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
 	UWidgetComponent* HealthBarComp;

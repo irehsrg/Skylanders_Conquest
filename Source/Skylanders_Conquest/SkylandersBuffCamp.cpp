@@ -1,6 +1,10 @@
 // Skylanders Conquest - Jungle Buff Camp Implementation
 
 #include "SkylandersBuffCamp.h"
+#include "SkylandersSimpleAnimInstance.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Animation/AnimSequenceBase.h"
 #include "SkylandersKillFeedWidget.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersDamageNumber.h"
@@ -36,6 +40,13 @@ ASkylandersBuffCamp::ASkylandersBuffCamp()
 		BodyMesh->SetStaticMesh(SphereMesh.Object);
 		BodyMesh->SetRelativeScale3D(FVector(1.5f, 1.5f, 1.5f));
 	}
+
+	// Real monster model (populated in BeginPlay from CampModel). Visual only —
+	// BodyMesh keeps owning collision/damage so the camp still plays the same.
+	CampMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CampMesh"));
+	CampMesh->SetupAttachment(RootComponent);
+	CampMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CampModel = TEXT("");
 
 	// Health bar widget component
 	HealthBarComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidget"));
@@ -90,6 +101,52 @@ void ASkylandersBuffCamp::BeginPlay()
 
 	// Save spawn location as home
 	HomeLocation = GetActorLocation();
+
+	// Swap the placeholder sphere for a real animated Skylanders monster. Camps
+	// are spawned at Z=75, so ground sits at -75 relative to the actor:
+	// MeshZ = -75 - bottomZ*Scale puts the monster's feet on the deck.
+	if (!CampModel.IsEmpty() && CampMesh)
+	{
+		struct FCampModelDef { const TCHAR* Key; float Scale; float MeshZ; };
+		static const FCampModelDef Defs[] =
+		{
+			{ TEXT("Shaman"),         1.00f,  5.5f },
+			{ TEXT("GoldenQueen"),    1.00f, 44.9f },
+			{ TEXT("BadJuju"),        1.00f, 25.9f },
+			{ TEXT("GraveClobberer"), 0.70f, 51.6f },
+		};
+
+		const FCampModelDef* Def = nullptr;
+		for (const FCampModelDef& C : Defs)
+		{
+			if (CampModel.Equals(C.Key, ESearchCase::IgnoreCase)) { Def = &C; break; }
+		}
+
+		if (Def)
+		{
+			const FString MeshPath = FString::Printf(TEXT("/Game/Characters/%s/Models/%s"), Def->Key, Def->Key);
+			if (USkeletalMesh* SkelMesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath))
+			{
+				CampMesh->SetSkeletalMesh(SkelMesh);
+				CampMesh->SetRelativeLocation(FVector(0.0f, 0.0f, Def->MeshZ));
+				CampMesh->SetRelativeScale3D(FVector(Def->Scale));
+				CampMesh->SetAnimInstanceClass(USkylandersSimpleAnimInstance::StaticClass());
+				if (USkylandersSimpleAnimInstance* Simple = Cast<USkylandersSimpleAnimInstance>(CampMesh->GetAnimInstance()))
+				{
+					Simple->IdleAnim = LoadObject<UAnimSequenceBase>(nullptr,
+						*FString::Printf(TEXT("/Game/Characters/%s/Animations/drive_idle"), Def->Key));
+					Simple->RunAnim = LoadObject<UAnimSequenceBase>(nullptr,
+						*FString::Printf(TEXT("/Game/Characters/%s/Animations/drive_run"), Def->Key));
+				}
+				// Hide the sphere but keep it collidable (it owns the damage volume)
+				BodyMesh->SetVisibility(false);
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Camp '%s': unknown CampModel '%s'"), *CampName, *CampModel);
+		}
+	}
 
 	// Color based on buff type. Build from BasicShapeMaterial — wrapping the mesh's
 	// default DefaultMaterial (no "Color" param) left camps gray.
@@ -153,7 +210,7 @@ void ASkylandersBuffCamp::Tick(float DeltaTime)
 		// Ring color per camp: mana=cyan, red/damage buff=rose-red (distinct from
 		// the enemy tower red), harpies=gold, Bull Demon King=black.
 		FColor RingColor;
-		if (CampName.Equals(TEXT("Bull Demon King")))
+		if (CampName.Equals(TEXT("Golden Queen")))
 		{
 			RingColor = FColor::Black;
 		}
