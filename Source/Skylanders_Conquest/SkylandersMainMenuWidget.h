@@ -8,14 +8,14 @@
 
 class UButton;
 class UTextBlock;
-class UWidgetSwitcher;
 class UVerticalBox;
 class USkylandersCharacterSelectWidget;
+class USkylandersSettingsWidget;
 
 /**
  * Fully code-built front-end menu. PLAY and CHARACTERS open the full-screen
- * character select (grid + live 3D preview + abilities); Settings lives in
- * the widget switcher.
+ * character select (grid + live 3D preview + abilities); SETTINGS opens the
+ * shared settings screen, which the in-match pause menu also uses.
  */
 UCLASS()
 class SKYLANDERS_CONQUEST_API USkylandersMainMenuWidget : public UUserWidget
@@ -30,24 +30,24 @@ public:
 	FName GameLevelName = TEXT("Joust");
 
 private:
-	// ----- Screen indices in the switcher -----
-	enum EMenuScreen : int32 { Screen_Main = 0, Screen_Settings = 1 };
-
-	UPROPERTY() UWidgetSwitcher* ScreenSwitcher = nullptr;
 	UPROPERTY() USkylandersCharacterSelectWidget* CharacterSelect = nullptr;
+	UPROPERTY() USkylandersSettingsWidget* SettingsWidget = nullptr;
 
 	// Build helpers
 	UVerticalBox* BuildMainScreen();
-	UVerticalBox* BuildSettingsScreen();
 	UButton* MakeMenuButton(const FString& Label, FName Name);
 
 	// Opens the full-screen character select overlay
 	void OpenCharacterSelect();
+
+	void HandleSettingsClosed();
+
+	/** Route UI-only input and keyboard focus to a specific widget. */
+	void FocusWidget(UUserWidget* Widget);
 
 	// Button handlers
 	UFUNCTION() void OnPlayClicked();
 	UFUNCTION() void OnCharactersClicked();
 	UFUNCTION() void OnSettingsClicked();
 	UFUNCTION() void OnQuitClicked();
-	UFUNCTION() void OnBackClicked();
 };

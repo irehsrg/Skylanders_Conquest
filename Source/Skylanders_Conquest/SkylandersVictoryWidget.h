@@ -20,10 +20,20 @@ public:
 	// Called after widget is on screen to fill in results
 	void ShowResult(bool bVictory, ASkylandersCharacter* Player);
 
+	/** Level opened by MAIN MENU. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
+	FName MainMenuLevelName = TEXT("MainMenu");
+
 private:
 	UPROPERTY() UTextBlock* ResultText;
 	UPROPERTY() UTextBlock* TimeText;
 	UPROPERTY() UTextBlock* KDAText;
 	UPROPERTY() UTextBlock* GoldText;
 	UPROPERTY() UTextBlock* LevelText;
+
+	/** The end screen pauses the match, so leaving it has to unpause first. */
+	void LeaveToLevel(FName LevelName);
+
+	UFUNCTION() void OnPlayAgainClicked();
+	UFUNCTION() void OnMainMenuClicked();
 };

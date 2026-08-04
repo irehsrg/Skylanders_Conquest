@@ -314,6 +314,18 @@ public:
 	void ShowScoreboard();
 	void HideScoreboard();
 
+	// ========== PAUSE MENU ==========
+
+	UPROPERTY(BlueprintReadOnly, Category = "UI")
+	class USkylandersPauseMenuWidget* PauseMenuWidget;
+
+	/** Opens the pause menu and pauses the match; closes it if already open. */
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void TogglePauseMenu();
+
+	/** Restores gameplay input once the pause menu closes. */
+	void OnPauseMenuClosed();
+
 	// ========== PROJECTILE ==========
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
