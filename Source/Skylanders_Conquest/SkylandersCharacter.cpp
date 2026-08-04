@@ -37,6 +37,8 @@
 #include "SkylandersItemHUDWidget.h"
 #include "SkylandersMinimapWidget.h"
 #include "SkylandersScoreboardWidget.h"
+#include "SkylandersPauseMenuWidget.h"
+#include "SkylandersGameSettings.h"
 #include "SkylandersKillFeedWidget.h"
 #include "SkylandersMatchStatusWidget.h"
 #include "SkylandersTelemetry.h"
@@ -306,6 +308,7 @@ ASkylandersCharacter::ASkylandersCharacter()
 	ShopWidget = nullptr;
 	InventoryHUDWidget = nullptr;
 	ItemHUDWidget = nullptr;
+	PauseMenuWidget = nullptr;
 
 	// Recall
 	bIsRecalling = false;
@@ -372,6 +375,12 @@ ASkylandersCharacter::ASkylandersCharacter()
 void ASkylandersCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Push saved volume/sensitivity into the engine for this session.
+	if (USkylandersGameSettings* Prefs = USkylandersGameSettings::Get())
+	{
+		Prefs->ApplyAll();
+	}
 
 	// Force correct stats (Blueprint defaults may override C++ constructor with garbage)
 	MaxHealth = StartingMaxHealth;
@@ -1008,6 +1017,11 @@ void ASkylandersCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ASkylandersCharacter::ShowScoreboard);
 	PlayerInputComponent->BindKey(EKeys::Tab, IE_Released, this, &ASkylandersCharacter::HideScoreboard);
 
+	// Pause menu. P is the PIE-friendly alternative, since the editor swallows
+	// Escape to stop the session before the game ever sees it.
+	PlayerInputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ASkylandersCharacter::TogglePauseMenu);
+	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &ASkylandersCharacter::TogglePauseMenu);
+
 	// Debug shop keys: F5-F6 buy items, F7 sells last item
 	PlayerInputComponent->BindKey(EKeys::F5, IE_Pressed, this, &ASkylandersCharacter::Debug_ShopBuy5);
 	PlayerInputComponent->BindKey(EKeys::F6, IE_Pressed, this, &ASkylandersCharacter::Debug_ShopBuy6);
@@ -1109,8 +1123,11 @@ void ASkylandersCharacter::Look(const FInputActionValue& Value)
 
 	if (Controller != nullptr)
 	{
-		AddControllerYawInput(LookAxisVector.X);
-		AddControllerPitchInput(LookAxisVector.Y);
+		const USkylandersGameSettings* Prefs = USkylandersGameSettings::Get();
+		const float Sensitivity = Prefs ? Prefs->MouseSensitivity : 1.0f;
+
+		AddControllerYawInput(LookAxisVector.X * Sensitivity);
+		AddControllerPitchInput(LookAxisVector.Y * Sensitivity);
 
 		// Clamp pitch to SMITE-like range - camera always stays behind/above character
 		APlayerController* PC = Cast<APlayerController>(Controller);
@@ -2251,6 +2268,57 @@ void ASkylandersCharacter::CloseShop()
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("Shop closed."));
+}
+
+// ========== PAUSE MENU ==========
+
+void ASkylandersCharacter::TogglePauseMenu()
+{
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC) return;
+
+	if (PauseMenuWidget && PauseMenuWidget->IsInViewport())
+	{
+		PauseMenuWidget->Resume();
+		return;
+	}
+
+	PauseMenuWidget = CreateWidget<USkylandersPauseMenuWidget>(PC, USkylandersPauseMenuWidget::StaticClass());
+	if (!PauseMenuWidget)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Failed to create pause menu widget."));
+		return;
+	}
+
+	PauseMenuWidget->OnClosed.BindUObject(this, &ASkylandersCharacter::OnPauseMenuClosed);
+	PauseMenuWidget->AddToViewport(200); // above HUD and shop
+
+	FInputModeUIOnly InputMode;
+	InputMode.SetWidgetToFocus(PauseMenuWidget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	PC->SetInputMode(InputMode);
+	PC->bShowMouseCursor = true;
+
+	PC->SetPause(true);
+}
+
+void ASkylandersCharacter::OnPauseMenuClosed()
+{
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC) return;
+
+	// The shop keeps its own cursor and GameAndUI mode, so only drop back to
+	// game-only input when it is not the thing the player was doing.
+	if (bIsShopOpen)
+	{
+		PC->bShowMouseCursor = true;
+		PC->SetInputMode(FInputModeGameAndUI());
+	}
+	else
+	{
+		PC->bShowMouseCursor = false;
+		PC->SetInputMode(FInputModeGameOnly());
+	}
 }
 
 bool ASkylandersCharacter::BuyItem(int32 ItemID)

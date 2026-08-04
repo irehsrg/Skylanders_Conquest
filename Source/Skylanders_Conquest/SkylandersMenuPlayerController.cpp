@@ -2,11 +2,18 @@
 
 #include "SkylandersMenuPlayerController.h"
 #include "SkylandersMainMenuWidget.h"
+#include "SkylandersGameSettings.h"
 #include "Blueprint/UserWidget.h"
 
 void ASkylandersMenuPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Front-end is the first thing to run, so apply saved preferences here too.
+	if (USkylandersGameSettings* Prefs = USkylandersGameSettings::Get())
+	{
+		Prefs->ApplyAll();
+	}
 
 	MenuWidget = CreateWidget<USkylandersMainMenuWidget>(this, USkylandersMainMenuWidget::StaticClass());
 	if (MenuWidget)

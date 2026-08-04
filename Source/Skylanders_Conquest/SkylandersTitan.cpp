@@ -421,7 +421,12 @@ void ASkylandersTitan::ShowEndScreen(bool bVictory)
 		ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(UGameplayStatics::GetPlayerPawn(GetWorld(), 0));
 		VictoryWidget->ShowResult(bVictory, Player);
 
-		// Show mouse cursor
+		// UI-only input so the PLAY AGAIN / MAIN MENU buttons actually receive
+		// the clicks instead of the game swallowing them.
+		FInputModeUIOnly InputMode;
+		InputMode.SetWidgetToFocus(VictoryWidget->TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PC->SetInputMode(InputMode);
 		PC->bShowMouseCursor = true;
 	}
 

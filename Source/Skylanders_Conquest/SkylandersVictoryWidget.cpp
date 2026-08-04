@@ -2,14 +2,19 @@
 
 #include "SkylandersVictoryWidget.h"
 #include "SkylandersCharacter.h"
+#include "SkylandersUIStyle.h"
 #include "Components/TextBlock.h"
+#include "Components/Button.h"
 #include "Components/Border.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Blueprint/WidgetTree.h"
 #include "Fonts/SlateFontInfo.h"
+#include "Kismet/GameplayStatics.h"
 
 static UTextBlock* MakeVictoryText(UWidgetTree* Tree, const FName& Name, int32 FontSize, FLinearColor Color, const FString& Default)
 {
@@ -50,10 +55,10 @@ void USkylandersVictoryWidget::NativeOnInitialized()
 	ContentBG->SetPadding(FMargin(40.0f, 30.0f));
 
 	UCanvasPanelSlot* ContentSlot = Root->AddChildToCanvas(ContentBG);
-	ContentSlot->SetAnchors(FAnchors(0.5f, 0.4f, 0.5f, 0.4f));
+	ContentSlot->SetAnchors(FAnchors(0.5f, 0.45f, 0.5f, 0.45f));
 	ContentSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 	ContentSlot->SetPosition(FVector2D(0.0f, 0.0f));
-	ContentSlot->SetSize(FVector2D(500.0f, 320.0f));
+	ContentSlot->SetSize(FVector2D(520.0f, 430.0f));
 	ContentSlot->SetAutoSize(false);
 
 	// Vertical layout inside content box
@@ -92,7 +97,54 @@ void USkylandersVictoryWidget::NativeOnInitialized()
 
 	// Level
 	LevelText = MakeVictoryText(WidgetTree, TEXT("VLevelText"), 16, FLinearColor(0.6f, 0.8f, 1.0f), TEXT("Level: 1"));
-	AddRow(LevelText, 0);
+	AddRow(LevelText, 20);
+
+	// Exits - without these the match ends on a paused screen with no way out.
+	UHorizontalBox* Actions = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("VActions"));
+
+	UButton* PlayAgainBtn = SkylandersUI::MakeButton(WidgetTree, TEXT("VPlayAgain"), TEXT("PLAY AGAIN"), 18);
+	PlayAgainBtn->OnClicked.AddDynamic(this, &USkylandersVictoryWidget::OnPlayAgainClicked);
+	UHorizontalBoxSlot* PlayAgainSlot = Actions->AddChildToHorizontalBox(PlayAgainBtn);
+	PlayAgainSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	PlayAgainSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
+
+	UButton* MainMenuBtn = SkylandersUI::MakeButton(WidgetTree, TEXT("VMainMenu"), TEXT("MAIN MENU"), 18);
+	MainMenuBtn->OnClicked.AddDynamic(this, &USkylandersVictoryWidget::OnMainMenuClicked);
+	UHorizontalBoxSlot* MainMenuSlot = Actions->AddChildToHorizontalBox(MainMenuBtn);
+	MainMenuSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	MainMenuSlot->SetPadding(FMargin(6.0f, 0.0f, 0.0f, 0.0f));
+
+	UVerticalBoxSlot* ActionsSlot = VBox->AddChildToVerticalBox(Actions);
+	ActionsSlot->SetHorizontalAlignment(HAlign_Fill);
+}
+
+void USkylandersVictoryWidget::LeaveToLevel(FName LevelName)
+{
+	UWorld* World = GetWorld();
+
+	// ShowEndScreen pauses the match; travelling while paused would carry the
+	// pause into the next level.
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		PC->SetPause(false);
+	}
+
+	RemoveFromParent();
+
+	if (World && !LevelName.IsNone())
+	{
+		UGameplayStatics::OpenLevel(World, LevelName);
+	}
+}
+
+void USkylandersVictoryWidget::OnPlayAgainClicked()
+{
+	LeaveToLevel(FName(*UGameplayStatics::GetCurrentLevelName(this, true)));
+}
+
+void USkylandersVictoryWidget::OnMainMenuClicked()
+{
+	LeaveToLevel(MainMenuLevelName);
 }
 
 void USkylandersVictoryWidget::ShowResult(bool bVictory, ASkylandersCharacter* Player)

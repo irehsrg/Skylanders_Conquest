@@ -2,9 +2,9 @@
 
 #include "SkylandersMainMenuWidget.h"
 #include "SkylandersCharacterSelectWidget.h"
+#include "SkylandersSettingsWidget.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
-#include "Components/WidgetSwitcher.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/CanvasPanel.h"
@@ -83,17 +83,13 @@ void USkylandersMainMenuWidget::NativeOnInitialized()
 	SubSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 	SubSlot->SetAutoSize(true);
 
-	// Screen switcher (centered)
-	ScreenSwitcher = WidgetTree->ConstructWidget<UWidgetSwitcher>(UWidgetSwitcher::StaticClass(), TEXT("MenuSwitcher"));
-	UCanvasPanelSlot* SwSlot = Root->AddChildToCanvas(ScreenSwitcher);
-	SwSlot->SetAnchors(FAnchors(0.5f, 0.55f, 0.5f, 0.55f));
-	SwSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-	SwSlot->SetSize(FVector2D(420.f, 360.f));
-	SwSlot->SetAutoSize(false);
-
-	ScreenSwitcher->AddChild(BuildMainScreen());        // Screen_Main
-	ScreenSwitcher->AddChild(BuildSettingsScreen());    // Screen_Settings
-	ScreenSwitcher->SetActiveWidgetIndex(Screen_Main);
+	// Button column (centered). Character select and settings are both
+	// full-screen overlays now, so no switcher is needed.
+	UCanvasPanelSlot* MenuSlot = Root->AddChildToCanvas(BuildMainScreen());
+	MenuSlot->SetAnchors(FAnchors(0.5f, 0.55f, 0.5f, 0.55f));
+	MenuSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+	MenuSlot->SetSize(FVector2D(420.f, 360.f));
+	MenuSlot->SetAutoSize(false);
 }
 
 UVerticalBox* USkylandersMainMenuWidget::BuildMainScreen()
@@ -127,24 +123,6 @@ UVerticalBox* USkylandersMainMenuWidget::BuildMainScreen()
 	return Box;
 }
 
-UVerticalBox* USkylandersMainMenuWidget::BuildSettingsScreen()
-{
-	UVerticalBox* Box = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SettingsScreen"));
-
-	UTextBlock* Header = MakeText(WidgetTree, TEXT("SetHeader"), TEXT("SETTINGS"), 24, MenuGold);
-	Box->AddChildToVerticalBox(Header)->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
-
-	UTextBlock* Note = MakeText(WidgetTree, TEXT("SetNote"),
-		TEXT("Audio, video and controls\nsettings coming soon."), 16, MenuWhite);
-	Box->AddChildToVerticalBox(Note)->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
-
-	UButton* Back = MakeMenuButton(TEXT("BACK"), TEXT("SetBack"));
-	Back->OnClicked.AddDynamic(this, &USkylandersMainMenuWidget::OnBackClicked);
-	Box->AddChildToVerticalBox(Back)->SetPadding(FMargin(0.f, 18.f, 0.f, 0.f));
-
-	return Box;
-}
-
 void USkylandersMainMenuWidget::OpenCharacterSelect()
 {
 	if (CharacterSelect && CharacterSelect->IsInViewport()) return;
@@ -170,12 +148,34 @@ void USkylandersMainMenuWidget::OnCharactersClicked()
 
 void USkylandersMainMenuWidget::OnSettingsClicked()
 {
-	if (ScreenSwitcher) ScreenSwitcher->SetActiveWidgetIndex(Screen_Settings);
+	SettingsWidget = CreateWidget<USkylandersSettingsWidget>(GetOwningPlayer(), USkylandersSettingsWidget::StaticClass());
+	if (!SettingsWidget) return;
+
+	SettingsWidget->OnClosed.BindUObject(this, &USkylandersMainMenuWidget::HandleSettingsClosed);
+	SettingsWidget->AddToViewport(50); // above the front-end
+
+	// Hide rather than remove, so returning does not rebuild the front-end.
+	SetVisibility(ESlateVisibility::Collapsed);
+	FocusWidget(SettingsWidget);
 }
 
-void USkylandersMainMenuWidget::OnBackClicked()
+void USkylandersMainMenuWidget::HandleSettingsClosed()
 {
-	if (ScreenSwitcher) ScreenSwitcher->SetActiveWidgetIndex(Screen_Main);
+	SettingsWidget = nullptr;
+	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	FocusWidget(this);
+}
+
+void USkylandersMainMenuWidget::FocusWidget(UUserWidget* Widget)
+{
+	APlayerController* PC = GetOwningPlayer();
+	if (!PC || !Widget) return;
+
+	FInputModeUIOnly InputMode;
+	InputMode.SetWidgetToFocus(Widget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	PC->SetInputMode(InputMode);
+	PC->bShowMouseCursor = true;
 }
 
 void USkylandersMainMenuWidget::OnQuitClicked()
