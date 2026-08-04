@@ -517,24 +517,50 @@ void ASkylandersEnemyGod::ApplyGodModel()
 {
 	if (GodModel.IsEmpty() || !GetMesh()) return; // keep the placeholder cylinder
 
-	FString MeshPath, IdlePath, RunPath;
-	float MeshZ = -50.0f, Scale = 1.0f;
-	if (GodModel.Equals(TEXT("TreeRex"), ESearchCase::IgnoreCase))
+	// Per-character model table. Scale normalises each rip to roughly the god
+	// capsule height; MeshZ = -50 - (meshBottomZ * Scale) puts the model's feet on
+	// the capsule bottom (pivots sit at the model centre, and differ per rip).
+	struct FGodModelDef
 	{
-		MeshPath = TEXT("/Game/Characters/TreeRex/Models/TreeRex");
-		IdlePath = TEXT("/Game/Characters/TreeRex/Animations/sequoiastampede_outwall");
-		RunPath  = TEXT("/Game/Characters/TreeRex/Animations/photosynthesiscannon_hold");
-		MeshZ = -50.0f;
-		Scale = 0.55f; // Giant model shrunk to the god capsule
-	}
-	else // Hex (default)
+		const TCHAR* Key;
+		const TCHAR* Folder;
+		const TCHAR* Idle;
+		const TCHAR* Run;
+		float Scale;
+		float MeshZ;
+	};
+	static const FGodModelDef Models[] =
 	{
-		MeshPath = TEXT("/Game/Characters/Hex/Models/Hex");
-		IdlePath = TEXT("/Game/Characters/Hex/Animations/drive_idle");
-		RunPath  = TEXT("/Game/Characters/Hex/Animations/drive_run");
-		MeshZ = -50.0f;
-		Scale = 1.0f;
+		// Key           Folder         Idle                        Run           Scale  MeshZ
+		{ TEXT("Spyro"),      TEXT("Spyro"),      TEXT("drive_modswap_pose01"), TEXT("drive_run"), 0.52f,   5.2f }, // no drive_idle in the rip
+		{ TEXT("StealthElf"), TEXT("StealthElf"), TEXT("drive_idle"),           TEXT("drive_run"), 1.20f,   3.5f },
+		{ TEXT("KaosSensei"), TEXT("KaosSensei"), TEXT("drive_idle"),           TEXT("drive_run"), 0.78f,   4.9f },
+		{ TEXT("ChompyMage"), TEXT("ChompyMage"), TEXT("drive_idle"),           TEXT("drive_run"), 0.53f,  -6.6f },
+		{ TEXT("Cynder"),     TEXT("Cynder"),     TEXT("drive_idle"),           TEXT("drive_run"), 0.53f,   5.1f },
+		{ TEXT("Hex"),        TEXT("Hex"),        TEXT("drive_idle"),           TEXT("drive_run"), 1.00f,  -2.7f },
+		{ TEXT("TreeRex"),    TEXT("TreeRex"),    TEXT("sequoiastampede_outwall"), TEXT("photosynthesiscannon_hold"), 0.55f, 78.8f },
+	};
+
+	const FGodModelDef* Def = nullptr;
+	for (const FGodModelDef& Candidate : Models)
+	{
+		if (GodModel.Equals(Candidate.Key, ESearchCase::IgnoreCase))
+		{
+			Def = &Candidate;
+			break;
+		}
 	}
+	if (!Def)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("God '%s': unknown GodModel '%s', keeping placeholder"), *GodName, *GodModel);
+		return;
+	}
+
+	const FString MeshPath = FString::Printf(TEXT("/Game/Characters/%s/Models/%s"), Def->Folder, Def->Folder);
+	const FString IdlePath = FString::Printf(TEXT("/Game/Characters/%s/Animations/%s"), Def->Folder, Def->Idle);
+	const FString RunPath  = FString::Printf(TEXT("/Game/Characters/%s/Animations/%s"), Def->Folder, Def->Run);
+	const float MeshZ = Def->MeshZ;
+	const float Scale = Def->Scale;
 
 	USkeletalMesh* SkelMesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath);
 	if (!SkelMesh) return; // asset missing — leave the cylinder

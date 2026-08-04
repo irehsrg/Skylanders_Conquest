@@ -313,13 +313,13 @@ void ASkylandersMapBuilder::BuildMap()
 	};
 
 	// Red team (enemies) near the red base (+X)
-	SpawnGod(FVector(7500, 0, 100), ETowerTeam::Enemy, TEXT("Kaos"), TEXT("Hex"));
-	SpawnGod(FVector(8000, 700, 100), ETowerTeam::Enemy, TEXT("Malefor"), TEXT("TreeRex"));
-	SpawnGod(FVector(8000, -700, 100), ETowerTeam::Enemy, TEXT("Chompy King"), TEXT("Hex"));
+	SpawnGod(FVector(7500, 0, 100), ETowerTeam::Enemy, TEXT("Kaos"), TEXT("KaosSensei"));
+	SpawnGod(FVector(8000, 700, 100), ETowerTeam::Enemy, TEXT("Cynder"), TEXT("Cynder"));
+	SpawnGod(FVector(8000, -700, 100), ETowerTeam::Enemy, TEXT("Chompy Mage"), TEXT("ChompyMage"));
 
 	// Blue team (AI allies) near the blue base (-X), fighting alongside the player
-	SpawnGod(FVector(-8000, 700, 100), ETowerTeam::Friendly, TEXT("Spyro"), TEXT("Hex"));
-	SpawnGod(FVector(-8000, -700, 100), ETowerTeam::Friendly, TEXT("Stealth Elf"), TEXT("TreeRex"));
+	SpawnGod(FVector(-8000, 700, 100), ETowerTeam::Friendly, TEXT("Spyro"), TEXT("Spyro"));
+	SpawnGod(FVector(-8000, -700, 100), ETowerTeam::Friendly, TEXT("Stealth Elf"), TEXT("StealthElf"));
 
 	// ========================================================================
 	// INITIAL SPAWN: the GameMode drops the pawn at the .umap PlayerStart, which
