@@ -1,7 +1,6 @@
 // Skylanders Conquest - AI-Controlled Enemy God Implementation
 
 #include "SkylandersEnemyGod.h"
-#include "Sound/SoundBase.h"
 #include "SkylandersKillFeedWidget.h"
 #include "SkylandersTelemetry.h"
 #include "SkylandersSimpleAnimInstance.h"
@@ -145,14 +144,6 @@ ASkylandersEnemyGod::ASkylandersEnemyGod()
 void ASkylandersEnemyGod::BeginPlay()
 {
 	Super::BeginPlay();
-
-	// Audio fallbacks (placeholder SFX); Blueprint-assigned sounds take priority.
-	if (!AttackSound)
-		AttackSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_Attack_Shot.SFX_Attack_Shot"));
-	if (!AbilitySound)
-		AbilitySound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_Ability_Cast.SFX_Ability_Cast"));
-	if (!DeathSound)
-		DeathSound = LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SFX/SFX_Death.SFX_Death"));
 
 	BasePosition = GetActorLocation(); // Use placed position as base, fallback to (4500,0,0)
 	if (BasePosition.IsNearlyZero())
