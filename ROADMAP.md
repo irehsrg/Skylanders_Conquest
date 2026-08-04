@@ -63,7 +63,9 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
   now path 7483->3414 down the lane instead of freezing at their base structures.
 
 ## Also on the pile (fold into tiers as we go)
-- [ ] Options / settings menu (audio, controls, video).
+- [x] Options / settings menu (audio, controls, video) — `SkylandersSettingsWidget`
+  shared by the front-end and the pause menu; plus an Escape/P pause menu and
+  PLAY AGAIN / MAIN MENU on the end screen (PR #2).
 - [ ] Make jungle objectives pay off (Bull Demon King worth contesting).
 - [ ] Finish ability telegraphs/targeters for every kit.
 - [ ] Buff camps: confirm kill → buff → XP/gold loop end to end.
