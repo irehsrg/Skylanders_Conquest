@@ -72,7 +72,17 @@ rejected and fell through to the raw-copy branch.
        alchemyVersion = IGA_Version.SkylandersImaginatorsNX; break;
    ```
 
-**Worth upstreaming as a PR** — `switch si` is a profile that tool doesn't have.
+**The patch is published** (so it is no longer only on the D: drive):
+<https://github.com/irehsrg/igArchiveExtractor/tree/add-imaginators-switch-support>
+(commit `49d11e6`). To recreate the working tree from scratch:
+
+```bash
+git clone -b add-imaginators-switch-support https://github.com/irehsrg/igArchiveExtractor.git
+cd igArchiveExtractor && dotnet build -c Release -f net6.0-windows
+```
+
+Upstream (`NefariousTechSupport/igArchiveExtractor`) is **archived / read-only**,
+so a PR cannot be opened against it. The fork branch is the canonical home.
 
 ### Build & run
 
