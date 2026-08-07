@@ -169,15 +169,20 @@ void ASkylandersMinion::BeginPlay()
 		}
 	}
 
-	// Swap the placeholder capsule for a real animated Skylander (mini-Skylanders
-	// make good troops: Terrabite melee, Drobit ranged). Scale normalises the rip
-	// to ~70uu; MeshZ = -30 (capsule bottom) - bottomZ*Scale puts feet on the deck.
+	// Swap the placeholder capsule for a real animated enemy. These must be actual
+	// Skylanders ENEMIES, not playable characters -- Terrabite/Drobit used to sit
+	// here and they are playable Minis, which reads wrong as lane fodder. Note the
+	// rip's "S6xx_" prefix marks Imaginators Senseis (playable), so ArcherGoat
+	// (S618) and ArcherRobot (S625) are off the table for the same reason.
+	// CrockWarrior = armoured croc grunt (melee), Scorpion = venom-stinger beast
+	// (ranged). Scale normalises the rip to ~70uu; MeshZ = -30 (capsule bottom)
+	// - bottomZ*Scale puts feet on the deck.
 	if (USkeletalMeshComponent* MeshComp = GetMesh())
 	{
 		const bool bRanged = (MinionType == EMinionType::Ranged);
-		const TCHAR* Folder = bRanged ? TEXT("Drobit") : TEXT("Terrabite");
-		const float Scale   = bRanged ? 1.0f : 1.5f;
-		const float MeshZ   = bRanged ? 6.7f : 4.7f;
+		const TCHAR* Folder = bRanged ? TEXT("Scorpion") : TEXT("CrockWarrior");
+		const float Scale   = bRanged ? 0.403f : 0.207f;
+		const float MeshZ   = bRanged ? 5.0f : 5.1f;
 
 		const FString MeshPath = FString::Printf(TEXT("/Game/Characters/%s/Models/%s"), Folder, Folder);
 		if (USkeletalMesh* SkelMesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath))
