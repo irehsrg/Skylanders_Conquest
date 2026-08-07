@@ -92,6 +92,17 @@ the way the C++ magic-number scanner does. Full format notes are in
   (vertex, index) pairs on 4-byte boundaries. The reader totals them and finds
   the section matching exactly, refusing the file if none does.
 
+## Ground textures need a re-import
+
+The three live ground textures were byte-identical to the **nx7 + `repair_tail`**
+output — their bottom ~20 rows were a fabricated mirror, because a 256x256 BC1
+top mip straddles the 32768 boundary and its last rows were another file's data.
+`repair_tail()` existed only to hide that, and is now **off by default**.
+
+`Saved/GroundTex/{Grass_C,Cobble_C,Dirt_C}.png` have been restaged from `nx9`
+with real pixels. **The imported `.uasset`s still hold the old ones** — they need
+a re-import in the editor to take effect.
+
 ## What is left
 
 Nothing from the previous handoff's list remains open. Two genuinely new, small

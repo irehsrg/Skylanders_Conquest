@@ -193,16 +193,25 @@ EXTRACTION WAS CORRUPTING FILES* below. With `nx9`, all 512x512 textures -
 - BC1 vs BC3 is chosen by which full mip chain matches the declared payload size
 - convert to **RGB, not RGBA** - DXT1's 1-bit alpha otherwise punches transparent
   texels that read as black stripes in the unlit ground material
-- some textures carry ~20 defective rows at the bottom. `repair_tail()` mirrors
-  the band above them. Two separate defects need two tests: NOISE rows (high
-  horizontal delta) and DEAD rows (near-black, which have *low* delta and slip
-  past a noise-only check). Mirror rather than replicate one row, and back off
-  8 rows first - the defect fades rather than stopping cleanly, so a naive
-  repair streaks dark dashes across every tile.
+- **"~20 defective rows at the bottom" was the extraction bug, not the game
+  data.** A 256x256 BC1 payload starts ~2.6 KiB into the file, so its top mip
+  straddled the 32768 boundary and its final ~20 pixel rows were *another
+  file's data*. `repair_tail()` was written to mirror the band above over that
+  damage. Extracted correctly it does not trigger on any ground texture, so it
+  is now **off by default** (`--repair-tail` to force it). It still fires on 85
+  of 390 colour maps, where it is as likely to be a false positive on a dark or
+  busy bottom edge as a real defect — and it overwrites genuine pixels when it
+  misfires. Turn it on only for a texture you have looked at.
 
 **In use now**: `SH_Grass01_C`, `L505_Cobblestone_01__C` and `SH_Mud_C` are the
 live ground textures in `M_Ground` (via `Saved/GroundTex/`). The map renders the
 real Skylanders cobbled path through real Skylanders grass.
+
+Those three were **restaged from `nx9` without tail repair**. The previous
+versions were byte-identical to the nx7-plus-repair output, i.e. their bottom
+~20 rows were a fabricated mirror rather than the real texture. **They need a
+re-import in the editor to take effect** — the PNGs on disk are updated, the
+imported `.uasset`s are not.
 
 ### THE EXTRACTION WAS CORRUPTING FILES (root cause, settled 2026-08-07)
 

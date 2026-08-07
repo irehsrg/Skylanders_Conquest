@@ -62,7 +62,7 @@ def mip_chain(w, h, block_bytes, levels):
     return total
 
 
-def convert(path, out_dir):
+def convert(path, out_dir, do_repair=False):
     igz = Igz(open(path, 'rb').read())
     info = image_info(igz)
     if not info:
@@ -98,12 +98,9 @@ def convert(path, out_dir):
     im = Image.open(dds).convert('RGB')
     os.remove(dds)
 
-    # A few textures carry noise in their last block rows (L505_Cobblestone_01__C
-    # ends with 8 such rows). The mip-chain arithmetic is exact and no offset
-    # shift removes them, so treat it as a tail defect: overwrite the affected
-    # rows with the last clean row. Invisible on these stone/ground textures and
-    # it keeps the image tileable, which cropping would not.
-    repaired = repair_tail(im)
+    # Those "defective rows at the bottom" were the EXTRACTION BUG, not a
+    # property of the game's textures -- see repair_tail. Off by default now.
+    repaired = repair_tail(im) if do_repair else 0
 
     im.save(png)
     return 'OK  %-30s %dx%d %s mips=%d%s -> %s.png' % (
@@ -112,12 +109,26 @@ def convert(path, out_dir):
 
 
 def repair_tail(im):
-    """Replace trailing defective rows with a copy of the last clean row.
+    """Replace trailing defective rows with a copy of the band above them.
 
-    Two distinct defects appear at the bottom of some textures and they need
-    different tests: NOISE rows (high horizontal delta) and DEAD rows (near
-    black, which have *low* delta and so slip past a noise-only check -- these
-    are what produced black stripes across the lane).
+    OFF BY DEFAULT -- pass --repair-tail to enable. This was a workaround for a
+    bug that no longer exists, and it destroys real pixels when it misfires.
+
+    The "noise in the last block rows" it was written for was the extractor
+    corrupting every file past its first 32 KiB. A 256x256 BC1 payload starts
+    ~2.6 KiB into the file, so its top mip straddled the 32768 boundary and its
+    last ~20 pixel rows were another file's data -- which is exactly the band
+    this function was built to hide. Extracted correctly (see pak_extract.py),
+    the ground textures now decode clean to the final row and this no longer
+    triggers on any of them.
+
+    It still fires on 85 of 390 colour textures, where it is now as likely to be
+    a false positive on a legitimately dark or busy bottom edge as a real
+    defect. Turn it on only for a specific texture you have looked at.
+
+    Two distinct defects need different tests: NOISE rows (high horizontal
+    delta) and DEAD rows (near black, which have *low* delta and so slip past a
+    noise-only check).
     """
     w, h = im.size
     px = im.load()
@@ -176,13 +187,15 @@ def main():
     out_dir = sys.argv[1]
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
-    if sys.argv[2] == '--glob':
-        files = globmod.glob(sys.argv[3])
+    args = [a for a in sys.argv[2:] if a != '--repair-tail']
+    do_repair = '--repair-tail' in sys.argv
+    if args[0] == '--glob':
+        files = globmod.glob(args[1])
     else:
-        files = sys.argv[2:]
+        files = args
     for f in files:
         try:
-            print(convert(f, out_dir))
+            print(convert(f, out_dir, do_repair))
         except Exception as exc:                       # noqa: BLE001
             print('ERR %-30s %s' % (os.path.basename(f)[:30], exc))
     return 0
