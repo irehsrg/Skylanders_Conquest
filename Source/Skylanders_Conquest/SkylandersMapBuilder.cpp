@@ -50,6 +50,74 @@ static AActor* SpawnColoredPrimitive(UWorld* World, const TCHAR* MeshPath,
 	const FVector& Loc, const FRotator& Rot, const FVector& Scale, const FLinearColor& Color,
 	const TCHAR* Label, const TCHAR* MaterialPath = nullptr);
 
+// Real ripped level_505 geometry, imported by Scripts/ImportLevelGeometry.py.
+// Only meshes that survived the rip with sane bounds are listed here -- a lot of
+// the level_505 statics carry infinite/degenerate vertex data and either refuse
+// to import or come in with astronomically large bounds (see docs/ASSET-EXTRACTION.md).
+// BaseZ is the mesh's own bottom in local space; placing it at world height H
+// means spawning at H - BaseZ*Scale so it sits ON the surface rather than in it.
+namespace L505
+{
+	static const TCHAR* RockBig   = TEXT("/Game/Environment/Level505/1505_rock02");
+	static const TCHAR* RockSmall = TEXT("/Game/Environment/Level505/l505_rock04");
+	static const TCHAR* Trees     = TEXT("/Game/Environment/Level505/L505_trees");
+	static const TCHAR* Grass     = TEXT("/Game/Environment/Level505/L505_grass");
+
+	static const float RockBigBase   = -236.0f;
+	static const float RockSmallBase = -98.0f;
+	static const float TreesBase     = -19.0f;
+	static const float GrassBase     = -4.0f;
+
+	// Deterministic per-cell noise: the map is rebuilt every BeginPlay, and a
+	// FMath::Rand()-driven scatter would reshuffle the scenery on every match.
+	static float Hash01(int32 X, int32 Y, int32 Salt)
+	{
+		uint32 H = uint32(X * 73856093) ^ uint32(Y * 19349663) ^ uint32(Salt * 83492791);
+		H ^= H >> 13; H *= 0x85ebca6bu; H ^= H >> 16;
+		return float(H & 0xFFFFFFu) / float(0x1000000u);
+	}
+}
+
+// Decorative real-geometry prop. Unlike SpawnColoredPrimitive this can opt out of
+// collision: scenery sitting on the out-of-bounds blocks must not add its own
+// blockers (the block underneath already stops the player) and lane-side foliage
+// must never snag pathing.
+static AActor* SpawnDecorMesh(UWorld* World, const TCHAR* MeshPath, const FVector& Loc,
+	const FRotator& Rot, const FVector& Scale, const TCHAR* Label,
+	const TCHAR* MaterialPath, bool bCollide)
+{
+	if (!World) return nullptr;
+
+	UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, MeshPath);
+	if (!Mesh) return nullptr;   // asset not imported yet -- skip silently
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AActor* A = World->SpawnActor<AActor>(AActor::StaticClass(), Loc, Rot, Params);
+	if (!A) return nullptr;
+
+	UStaticMeshComponent* MeshComp = NewObject<UStaticMeshComponent>(A);
+	A->SetRootComponent(MeshComp);
+	MeshComp->RegisterComponent();
+	MeshComp->SetStaticMesh(Mesh);
+	// Re-apply after RegisterComponent: swapping in a new root discards the
+	// spawn transform, which would stack every prop at the origin.
+	A->SetActorLocationAndRotation(Loc, Rot);
+	MeshComp->SetWorldScale3D(Scale);
+	MeshComp->SetCollisionEnabled(bCollide ? ECollisionEnabled::QueryAndPhysics
+										   : ECollisionEnabled::NoCollision);
+
+	if (UMaterialInterface* BaseMat = LoadObject<UMaterialInterface>(nullptr, MaterialPath))
+	{
+		MeshComp->SetMaterial(0, BaseMat);
+	}
+
+#if WITH_EDITOR
+	A->SetActorLabel(Label);
+#endif
+	return A;
+}
+
 // 2D distance from point P to segment A-B (for lane-corridor walkability tests)
 static float DistPointToSeg2D(const FVector2D& P, const FVector2D& A, const FVector2D& B)
 {
@@ -139,31 +207,89 @@ void ASkylandersMapBuilder::BuildMap()
 	// Fill the out-of-bounds with raised dark terrain
 	const FLinearColor Terrain(0.05f, 0.06f, 0.05f);
 	const float PX = 12600.0f, PY = 4700.0f, Cell = 460.0f;
+	const float TerrainTop = 230.0f;   // top face of the raised blocks below
+
+	auto IsWalkable = [&](const FVector2D& Pt) -> bool
+	{
+		for (const FVector& C : WalkCircles)
+		{
+			if (FVector2D::Distance(Pt, FVector2D(C.X, C.Y)) < C.Z) return true;
+		}
+		for (int32 i = 0; i + 4 < Corrs.Num(); i += 5)
+		{
+			if (DistPointToSeg2D(Pt, FVector2D(Corrs[i], Corrs[i + 1]),
+				FVector2D(Corrs[i + 2], Corrs[i + 3])) < Corrs[i + 4]) return true;
+		}
+		return false;
+	};
+
 	for (float gx = -PX; gx <= PX; gx += Cell)
 	{
 		for (float gy = -PY; gy <= PY; gy += Cell)
 		{
-			FVector2D Pt(gx, gy);
-			bool bWalk = false;
-			for (const FVector& C : WalkCircles)
+			const FVector2D Pt(gx, gy);
+			const bool bWalk = IsWalkable(Pt);
+
+			// A cell on the seam between walkable and out-of-bounds. Dressing the
+			// seam is what actually reads as level art -- trees line the playable
+			// edge, grass tufts spill onto the near side of it.
+			const bool bEdge =
+				IsWalkable(Pt + FVector2D(Cell, 0)) != bWalk ||
+				IsWalkable(Pt - FVector2D(Cell, 0)) != bWalk ||
+				IsWalkable(Pt + FVector2D(0, Cell)) != bWalk ||
+				IsWalkable(Pt - FVector2D(0, Cell)) != bWalk;
+
+			// Deterministic jitter so scenery is identical every match.
+			const int32 CX = FMath::RoundToInt(gx / Cell), CY = FMath::RoundToInt(gy / Cell);
+			const float R0 = L505::Hash01(CX, CY, 1), R1 = L505::Hash01(CX, CY, 2);
+			const float R2 = L505::Hash01(CX, CY, 3), R3 = L505::Hash01(CX, CY, 4);
+			const FRotator Yaw(0.0f, R1 * 360.0f, 0.0f);
+			const FVector Jitter(gx + (R2 - 0.5f) * Cell * 0.55f,
+								 gy + (R3 - 0.5f) * Cell * 0.55f, 0.0f);
+
+			if (bWalk)
 			{
-				if (FVector2D::Distance(Pt, FVector2D(C.X, C.Y)) < C.Z) { bWalk = true; break; }
-			}
-			if (!bWalk)
-			{
-				for (int32 i = 0; i + 4 < Corrs.Num(); i += 5)
+				// Grass tufts just inside the playable edge. No collision: these sit
+				// on the walkable deck and must not catch pawns or navmesh.
+				if (bEdge && R0 < 0.30f)
 				{
-					if (DistPointToSeg2D(Pt, FVector2D(Corrs[i], Corrs[i + 1]), FVector2D(Corrs[i + 2], Corrs[i + 3])) < Corrs[i + 4])
-					{ bWalk = true; break; }
+					const float S = 0.8f + R2 * 0.7f;
+					SpawnDecorMesh(World, L505::Grass,
+						FVector(Jitter.X, Jitter.Y, -L505::GrassBase * S), Yaw, FVector(S),
+						TEXT("MapGrassTuft"), TEXT("/Game/Environment/M_Ground.M_Ground"), false);
 				}
+				continue;
 			}
-			if (!bWalk)
+
+			// raised rock block (base at Z=0, top ~Z=230), slightly oversized so neighbours abut
+			SpawnColoredPrimitive(World, TEXT("/Engine/BasicShapes/Cube"),
+				FVector(gx, gy, 115.0f), FRotator::ZeroRotator,
+				FVector(Cell / 100.0f * 1.04f, Cell / 100.0f * 1.04f, 2.3f), Terrain, TEXT("MapTerrain"),
+				TEXT("/Game/Environment/M_Terrain.M_Terrain"));
+
+			// Real geometry on top of the block. The block keeps the gap-free
+			// silhouette and does the blocking, so all of this is collision-free.
+			// Along the seam, mix spires and boulders. An unbroken line of spires
+			// reads as a picket fence; breaking it up with rock keeps the barrier
+			// legible without looking placed by a machine.
+			if (bEdge && R0 < 0.32f)
 			{
-				// raised rock block (base at Z=0, top ~Z=230), slightly oversized so neighbours abut
-				SpawnColoredPrimitive(World, TEXT("/Engine/BasicShapes/Cube"),
-					FVector(gx, gy, 115.0f), FRotator::ZeroRotator,
-					FVector(Cell / 100.0f * 1.04f, Cell / 100.0f * 1.04f, 2.3f), Terrain, TEXT("MapTerrain"),
-					TEXT("/Game/Environment/M_Terrain.M_Terrain"));
+				const float S = 0.40f + R2 * 0.25f;
+				SpawnDecorMesh(World, L505::Trees,
+					FVector(Jitter.X, Jitter.Y, TerrainTop - L505::TreesBase * S), Yaw, FVector(S),
+					TEXT("MapTreeline"), TEXT("/Game/Environment/M_Terrain.M_Terrain"), false);
+			}
+			// Dense along the visible seam, sparse in the deep out-of-bounds the
+			// player never gets close to -- that back field is pure actor cost.
+			else if (R0 < (bEdge ? 0.75f : 0.28f))
+			{
+				const bool bBig = R0 < 0.15f;
+				const float S = bBig ? (0.5f + R2 * 0.4f) : (0.8f + R2 * 0.8f);
+				SpawnDecorMesh(World, bBig ? L505::RockBig : L505::RockSmall,
+					FVector(Jitter.X, Jitter.Y,
+							TerrainTop - (bBig ? L505::RockBigBase : L505::RockSmallBase) * S),
+					Yaw, FVector(S), TEXT("MapRock"),
+					TEXT("/Game/Environment/M_Terrain.M_Terrain"), false);
 			}
 		}
 	}

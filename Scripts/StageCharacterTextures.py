@@ -21,6 +21,13 @@ TEX = REPO + "/Assets/Skylanders/Textures"
 STAGING = REPO + "/Staging"
 
 
+# Playable characters end their body atlas in "_C"; the older enemy/villain rips
+# use Maya-era "_diffuse<n>" names instead (CrockWarrior, Chopper). Tried in
+# order, so "_C" still wins whenever a character has both.
+COLOR_SUFFIXES = ['_C', '_diffuse1', '_diffuse01', '_diffuse02', '_diffuse']
+NORMAL_SUFFIXES = ['_N', '_normal1', '_normal01', '_normal']
+
+
 def candidates(folder, pattern, suffix):
     """Non-meta files under folder matching pattern and a '<suffix>`' marker."""
     if not os.path.isdir(folder):
@@ -40,6 +47,15 @@ def candidates(folder, pattern, suffix):
     return out
 
 
+def first_match(folder, pattern, suffixes):
+    """candidates() over a suffix priority list; returns (suffix, matches)."""
+    for suffix in suffixes:
+        found = candidates(folder, pattern, suffix)
+        if found:
+            return suffix, found
+    return None, []
+
+
 def convert(src, dst):
     with Image.open(src) as im:
         im.convert('RGBA').save(dst)
@@ -49,16 +65,16 @@ def stage(name, pattern):
     out_dir = os.path.join(STAGING, name)
     os.makedirs(out_dir, exist_ok=True)
 
-    colors = candidates(os.path.join(TEX, 'Color'), pattern, '_C')
+    suffix, colors = first_match(os.path.join(TEX, 'Color'), pattern, COLOR_SUFFIXES)
     if not colors:
         print('{:<14} NO COLOUR TEXTURE for pattern "{}"'.format(name, pattern))
         return False
     src = colors[0][1]
     convert(src, os.path.join(out_dir, name + '_C.png'))
-    print('{:<14} C <- {:<52} ({} candidates)'.format(
-        name, os.path.basename(src)[:52], len(colors)))
+    print('{:<14} C <- {:<52} (via {}, {} candidates)'.format(
+        name, os.path.basename(src)[:52], suffix, len(colors)))
 
-    normals = candidates(os.path.join(TEX, 'Normals'), pattern, '_N')
+    _, normals = first_match(os.path.join(TEX, 'Normals'), pattern, NORMAL_SUFFIXES)
     if normals:
         convert(normals[0][1], os.path.join(out_dir, name + '_N.png'))
         print('{:<14} N <- {}'.format(name, os.path.basename(normals[0][1])[:52]))
