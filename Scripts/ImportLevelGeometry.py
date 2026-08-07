@@ -31,10 +31,22 @@ import os
 
 import unreal
 
-SRC = os.environ.get('SKY_GEO_DIR', r"D:/SkylandersExtract/fbx/level_505_statics")
+SRC = os.environ.get('SKY_GEO_DIR', r"D:/SkylandersExtract/fbx_nx9_statics")
 DEST = os.environ.get('SKY_GEO_DEST', '/Game/Environment/Level505')
+# Existing assets are skipped so a crashed run can resume. Set SKY_GEO_FORCE=1
+# to re-import over them -- needed after the 2026-08-07 extraction fix, because
+# everything imported before it was built from corrupted FBX and would
+# otherwise be silently kept.
+#
+# Force must still converge. "Skip what already exists" is ALSO the resume
+# mechanism, so simply ignoring it makes every pass redo all 133 files, crash at
+# the same place, and never finish -- 45 passes and 29 minutes to import 107 of
+# 133. So a forced run records each asset it has re-imported and skips those
+# instead, which forces exactly one re-import per asset and still resumes.
+FORCE = os.environ.get('SKY_GEO_FORCE', '') == '1'
 REPORT = os.environ.get('SKY_GEO_REPORT', SRC + '/_bounds.json')
 BLACKLIST = SRC + '/_import_blacklist.txt'
+REIMPORTED = SRC + '/_reimported.txt'
 MARKER = SRC + '/_importing.marker'
 
 asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
@@ -98,6 +110,7 @@ def import_all():
         return
 
     blacklist = claim_crashed_file(read_lines(BLACKLIST))
+    reimported = set(read_lines(REIMPORTED)) if FORCE else set()
     files = sorted(f for f in os.listdir(SRC) if f.lower().endswith('.fbx'))
     opts = make_options()
 
@@ -107,7 +120,11 @@ def import_all():
         if fbx in blacklist:
             skipped += 1
             continue
-        if unreal.EditorAssetLibrary.does_asset_exist(DEST + '/' + name):
+        if FORCE:
+            if fbx in reimported:        # already replaced on an earlier pass
+                done += 1
+                continue
+        elif unreal.EditorAssetLibrary.does_asset_exist(DEST + '/' + name):
             done += 1
             continue
 
@@ -129,6 +146,8 @@ def import_all():
 
         if task.get_editor_property('imported_object_paths'):
             done += 1
+            if FORCE:
+                append_line(REIMPORTED, fbx)
         else:
             failed += 1
             unreal.log_warning('no mesh imported from ' + fbx)

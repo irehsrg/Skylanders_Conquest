@@ -9,7 +9,7 @@ set -u
 UE="${UE:-/c/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe}"
 PROJ="${PROJ:-C:/Users/ajoin/Unreal Engine/Skylanders_Conquest/Skylanders_Conquest.uproject}"
 SCRIPT="${SCRIPT:-C:/Users/ajoin/Unreal Engine/Skylanders_Conquest/Scripts/ImportLevelGeometry.py}"
-SRC="${SKY_GEO_DIR:-D:/SkylandersExtract/fbx/level_505_statics}"
+SRC="${SKY_GEO_DIR:-D:/SkylandersExtract/fbx_nx9_statics}"
 MAX="${MAX:-45}"
 
 for i in $(seq 1 "$MAX"); do
