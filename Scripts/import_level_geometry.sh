@@ -12,14 +12,30 @@ SCRIPT="${SCRIPT:-C:/Users/ajoin/Unreal Engine/Skylanders_Conquest/Scripts/Impor
 SRC="${SKY_GEO_DIR:-D:/SkylandersExtract/fbx_nx9_statics}"
 MAX="${MAX:-45}"
 
+count() { wc -l < "$1" 2>/dev/null || echo 0; }
+
+# A non-zero exit does NOT mean the commandlet crashed. It also returns non-zero
+# when a file simply contains no importable mesh -- a permanent condition, so
+# retrying it forever is pure waste (12 passes, 2.5 minutes, zero progress).
+# Converge on PROGRESS instead: stop as soon as a pass neither imports anything
+# new nor blacklists anything new.
 for i in $(seq 1 "$MAX"); do
+  before_done=$(count "$SRC/_reimported.txt")
+  before_black=$(count "$SRC/_import_blacklist.txt")
   echo "--- import pass $i ---"
   "$UE" "$PROJ" -run=pythonscript -script="$SCRIPT" -unattended -nullrhi >/dev/null 2>&1
   rc=$?
-  blacklisted=$(wc -l < "$SRC/_import_blacklist.txt" 2>/dev/null || echo 0)
-  echo "    exit=$rc  blacklisted=$blacklisted"
+  after_done=$(count "$SRC/_reimported.txt")
+  after_black=$(count "$SRC/_import_blacklist.txt")
+  echo "    exit=$rc  imported=$after_done  blacklisted=$after_black"
   if [ $rc -eq 0 ]; then
-    echo "=== clean pass on attempt $i (blacklisted $blacklisted file(s)) ==="
+    echo "=== clean pass on attempt $i (imported $after_done, blacklisted $after_black) ==="
+    exit 0
+  fi
+  if [ "$after_done" = "$before_done" ] && [ "$after_black" = "$before_black" ]; then
+    echo "=== settled on attempt $i: no further progress possible ==="
+    echo "    imported $after_done, blacklisted $after_black;"
+    echo "    the rest contain no importable mesh (see the log for which)."
     exit 0
   fi
 done

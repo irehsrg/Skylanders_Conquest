@@ -72,7 +72,7 @@ export MSYS_NO_PATHCONV=1 SKY_GEO_DIR=... SKY_GEO_DEST=/Game/...
 ./Scripts/import_level_geometry.sh
 ```
 
-**Good tree is `D:/SkylandersExtract/nx9/`.** Delete `nx4`–`nx8`; they are all
+**Good tree is `D:/SkylandersExtract/nx9/`.** `nx4`-`nx8` have been deleted; they were all
 corrupt, and **nx7 in particular looks healthy and is not** — it passes every
 container check while containing other files' data.
 
@@ -92,43 +92,45 @@ the way the C++ magic-number scanner does. Full format notes are in
   (vertex, index) pairs on 4-byte boundaries. The reader totals them and finds
   the section matching exactly, refusing the file if none does.
 
-## THE GAME'S OWN ASSETS CAME FROM THE CORRUPT TREE
+## The game's assets have been re-imported (done)
 
-This is the biggest remaining piece of work, and it needs the editor.
+Everything under `Content/Environment/` had been imported from the corrupt
+extraction. The famous "33 of 91 survived the import" was not Unreal being
+fussy — the other 58 had NaN vertices because the *data* was wrong.
 
-Everything currently imported under `Content/Environment/` was built from the
-corrupt extraction. The famous "33 of 91 survived the import" was not Unreal
-being fussy — the other 58 had NaN vertices because the *data* was wrong.
+**All 133 level_505 statics are now in the project**, up from 33:
 
-`SkylandersMapBuilder` dresses the out-of-bounds terrain with exactly four
-meshes, and **all four differ between the old and new FBX**:
+- **125 from the corrected FBX** via `Scripts/import_level_geometry.sh`.
+- **8 from OBJ** via `Scripts/ImportGeometryOBJ.py`, because the FBX route
+  cannot deliver them: `l505_nautical_area` and `l505_water` hard-crash the UE
+  FBX parser, and the clouds, lantern and animated props convert to an FBX with
+  no importable mesh at all. `igz_mesh.py` reads every one of them correctly
+  (`l505_nautical_area` is 46589 verts / 58890 tris) — the payoff for having a
+  reader that does not depend on the converter.
+- `l505_steinhouse` was the last asset still holding pre-fix corrupt geometry;
+  its FBX crashes the parser too, so it also came in via OBJ.
 
-| mesh | old FBX | new FBX | clean geometry now |
-|---|---|---|---|
-| `1505_rock02` | 36224 B | 36544 B | 658 verts / 1104 tris |
-| `L505_grass` | 44144 B | 41632 B | 715 / 761 |
-| `L505_trees` | 107952 B | 89456 B | 2796 / 3058 |
-| `l505_rock04` | 24128 B | 20256 B | 261 / 438 |
+The four meshes `SkylandersMapBuilder` actually uses (`1505_rock02`,
+`L505_grass`, `L505_trees`, `l505_rock04`) all differed between the old and new
+FBX and are now correct.
 
-(`1505_rock02` was on the corrupt list explicitly — 1 of its 2 meshes bad.) The
-new ones are *smaller* because the old ones carried garbage geometry.
+Ground textures: `BuildLaneGround.py` re-run, so `M_Ground` picks up the
+restaged `Grass_C`/`Dirt_C`/`Cobble_C`.
 
-**To do:** re-import from `D:/SkylandersExtract/fbx_nx9_statics/` via
-`Scripts/import_level_geometry.sh`. At minimum the four above; ideally all 133,
-since 133/133 now convert versus the 33 that are in the project. Remember
-`Interchange.FeatureFlags.Import.FBX 0` and that the editor file-locks
-`.uasset`s, so close it before any git operation touching `Content/`.
+### Two importer bugs fixed on the way
 
-## Ground textures need a re-import
+1. **Forced re-import never converged.** "Skip what already exists" is *also*
+   the crash-resume mechanism, so `SKY_GEO_FORCE=1` made every pass redo all 133
+   files and crash at the same place: 45 passes, 29 minutes, 107 of 133. A
+   forced run now records what it has re-imported in `_reimported.txt`.
+2. **The driver retried permanent failures.** A non-zero commandlet exit does
+   not mean a crash — it also happens when a file simply has no importable mesh.
+   The loop now stops as soon as a pass neither imports nor blacklists anything
+   new (11 seconds instead of spinning).
 
-The three live ground textures were byte-identical to the **nx7 + `repair_tail`**
-output — their bottom ~20 rows were a fabricated mirror, because a 256x256 BC1
-top mip straddles the 32768 boundary and its last rows were another file's data.
-`repair_tail()` existed only to hide that, and is now **off by default**.
-
-`Saved/GroundTex/{Grass_C,Cobble_C,Dirt_C}.png` have been restaged from `nx9`
-with real pixels. **The imported `.uasset`s still hold the old ones** — they need
-a re-import in the editor to take effect.
+Use `--single-group` when generating OBJ for Unreal: its OBJ importer creates
+one static mesh per group, so multi-mesh models otherwise land as `<name>_0`,
+`<name>_1`, ... — 32 stray assets from 4 models.
 
 ## What is left
 

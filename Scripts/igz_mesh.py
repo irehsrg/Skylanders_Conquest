@@ -257,13 +257,23 @@ class MeshReader(object):
         return positions, normals, uvs, tris
 
 
-def write_obj(path, name, meshes_data):
-    """OBJ with one group per mesh. Unreal imports this directly."""
+def write_obj(path, name, meshes_data, single_group=False):
+    """OBJ with one group per mesh. Unreal imports this directly.
+
+    `single_group` emits one group for the whole file instead. Unreal's OBJ
+    importer creates a separate static mesh per group, so a multi-group file
+    lands as `<name>_0`, `<name>_1`, ... rather than one asset -- 32 stray
+    assets from 4 models before this existed. Use it when importing into
+    Unreal; keep per-mesh groups when the split is what you want.
+    """
     with open(path, 'w') as fh:
         fh.write('# %s -- extracted by Scripts/igz_mesh.py\n' % name)
+        if single_group:
+            fh.write('g %s\n' % name)
         vbase = 1
         for n, (positions, normals, uvs, tris) in enumerate(meshes_data):
-            fh.write('g %s_%d\n' % (name, n))
+            if not single_group:
+                fh.write('g %s_%d\n' % (name, n))
             for p in positions:
                 fh.write('v %.6f %.6f %.6f\n' % p)
             for t in uvs:
@@ -321,7 +331,8 @@ def main():
 
     if argv[0] == '--obj':
         out_dir = argv[1]
-        rest = argv[2:]
+        rest = [a for a in argv[2:] if a != '--single-group']
+        single = '--single-group' in argv
         if rest[:1] == ['--glob']:
             files = sorted(globmod.glob(rest[1], recursive=True))
         else:
@@ -346,7 +357,7 @@ def main():
                     continue
                 data = [r.read_mesh(m) for m in good]
                 dest = os.path.join(out_dir, name + '.obj')
-                write_obj(dest, name, data)
+                write_obj(dest, name, data, single)
                 nv = sum(len(d[0]) for d in data)
                 nt = sum(len(d[3]) for d in data)
                 note = '  (dropped %d unreadable)' % dropped if dropped else ''
