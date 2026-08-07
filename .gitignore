@@ -26,3 +26,7 @@ Plugins/**/Intermediate/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Python bytecode from the Scripts/ tooling
+__pycache__/
+*.pyc
