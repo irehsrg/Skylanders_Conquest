@@ -92,6 +92,33 @@ the way the C++ magic-number scanner does. Full format notes are in
   (vertex, index) pairs on 4-byte boundaries. The reader totals them and finds
   the section matching exactly, refusing the file if none does.
 
+## THE GAME'S OWN ASSETS CAME FROM THE CORRUPT TREE
+
+This is the biggest remaining piece of work, and it needs the editor.
+
+Everything currently imported under `Content/Environment/` was built from the
+corrupt extraction. The famous "33 of 91 survived the import" was not Unreal
+being fussy — the other 58 had NaN vertices because the *data* was wrong.
+
+`SkylandersMapBuilder` dresses the out-of-bounds terrain with exactly four
+meshes, and **all four differ between the old and new FBX**:
+
+| mesh | old FBX | new FBX | clean geometry now |
+|---|---|---|---|
+| `1505_rock02` | 36224 B | 36544 B | 658 verts / 1104 tris |
+| `L505_grass` | 44144 B | 41632 B | 715 / 761 |
+| `L505_trees` | 107952 B | 89456 B | 2796 / 3058 |
+| `l505_rock04` | 24128 B | 20256 B | 261 / 438 |
+
+(`1505_rock02` was on the corrupt list explicitly — 1 of its 2 meshes bad.) The
+new ones are *smaller* because the old ones carried garbage geometry.
+
+**To do:** re-import from `D:/SkylandersExtract/fbx_nx9_statics/` via
+`Scripts/import_level_geometry.sh`. At minimum the four above; ideally all 133,
+since 133/133 now convert versus the 33 that are in the project. Remember
+`Interchange.FeatureFlags.Import.FBX 0` and that the editor file-locks
+`.uasset`s, so close it before any git operation touching `Content/`.
+
 ## Ground textures need a re-import
 
 The three live ground textures were byte-identical to the **nx7 + `repair_tail`**
