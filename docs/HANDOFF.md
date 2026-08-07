@@ -1,123 +1,126 @@
-# Handoff — Skylanders Conquest, asset pipeline (2026-08-07)
-
-Paste this into a new chat to pick up where we left off.
-
-Background reading, in order: `docs/ASSET-EXTRACTION.md` (the authority on the
-pipeline), then `Scripts/igz_parse.py`. Everything below is committed to `master`
-(merge `da7757b`); working tree is clean.
-
----
+# Handoff — Skylanders Conquest, asset pipeline (2026-08-07, second pass)
 
 ## The one thing to know
 
-**The archive extractor was silently truncating files.** Its LZMA loop assumed
-every chunk decodes to a full 32 KiB and asked the bundled SevenZip decoder for
-exactly that; chunks are variable, so the decoder threw `Data Error`, wrote
-nothing, and `break`-ed — abandoning the rest of the file at a 32 KiB boundary.
-**75 of 133 level_505 statics were incomplete.** Those *"Data Error but let's
-ignore that"* messages were one lost file each, 372 of them.
+**The asset extractor was corrupting a third of the pak, and that single bug was
+the cause of every open item on the previous handoff.**
 
-That single bug masqueraded as three: "degenerate vertices" on import, "the
-converter infinite-loops on actors" (it was reading past the end of a short
-file), and only 33 of 91 statics importing. Animation data was worst hit —
-`Rat_Melee.hka` was 65594 of 803072 bytes.
+NX pak files are chunked at **1 MiB**, not 32 KiB. Both `igArchiveExtractor` and
+the first `pak_extract.py` assumed 32 KiB, decoded the first 32 KiB of each file
+correctly, then advanced by `9 + csize` — which, because csize covers a whole
+1 MiB chunk, **landed inside the next file** and spliced its data in until the
+byte count reached the declared size.
 
-Fixed by `Scripts/pak_extract.py`. **133/133 complete.** Use it, never the C#
-`extractAll`, for anything that matters.
+Output lengths matched exactly. Nothing reported an error. 807 of 2354 files
+(34%) were silently wrong past their first 32 KiB.
 
----
+The previous handoff ranked four problems and put the vertex attribute schema
+first as "the keystone". All four were the same bug:
 
-## Working pipeline
+| previous diagnosis | actual cause |
+|---|---|
+| "vertex attribute schema undecoded — the keystone" | reading a corrupted file; the schema decoded in an afternoon once the data was right |
+| "actors hang the converter — genuine unbounded-scan bug in `IGZ.cpp`" | the scan was walking through *another file's* data. Converter needs no patch |
+| "512x512 textures decode wrong, size-dependent" | 256x256 fits in one 32 KiB chunk and survived by accident. Texture code was always correct |
+| "statics: 29 of 60 import, converter is the weak link" | corrupt input |
+
+A second, subtler bug hid behind the first: a raw LZMA1 stream has **no
+end-of-stream marker**, so a decoder handed the full remaining byte count runs
+the last byte's trailing bits out into one spurious extra byte. On
+`L505_ferris_wheel` chunk 3 produced 1048577 instead of 1048576, shifting
+everything past 4 MiB by one and turning its last two meshes into NaN — while
+the file's total length still matched exactly. Every chunk is now capped at
+`min(dict_size, remaining)`.
+
+> **A correct output length proved nothing here.** Both bugs produced
+> byte-perfect file sizes. Validate content — exactly one IGZ magic at offset 0,
+> and every declared vertex buffer decoding to unit-length normals.
+
+## Results
+
+| | before | after |
+|---|---|---|
+| files extracted, 0 short | — | **2354 / 2354** (~12 s for the whole pak) |
+| level_505 statics → FBX | 29 / 60 | **133 / 133**, zero timeouts |
+| enemy actors → FBX | 0 (all hung) | **7 / 7** |
+| mesh igz with every normal unit-length | 9 / 133 | **417 / 419** |
+| large igz with foreign data spliced in | 540 / 570 | **0 / 774** |
+| 512x512 textures | broken | all decode |
+
+`L505_ferris_wheel` (4.9 MB) and `L505_interior_mausoleum` (2.6 MB), which never
+finished converting even at a 480 s timeout, now convert in seconds and render
+as recognisable geometry.
+
+## Pipeline
 
 ```bash
-# 1. file table (the C# tool parses this correctly; command added by us)
-igArchiveExtractor.exe dumpTable switch si <pak> table.csv
+# 1. extract  — the C# dumpTable step is GONE; this parses the pak table itself
+python Scripts/pak_extract.py <pak> <outDir> [name-filter]
 
-# 2. extract  (Python; correct)
-python Scripts/pak_extract.py <pak> table.csv <outDir> [name-filter]
-
-# 3a. textures -> PNG
+# 2a. textures -> PNG
 python Scripts/igz_texture.py <outDir> --glob "<dir>/*SH_Grass*"
 
-# 3b. models -> FBX  (still the flawed C# converter)
-JOBS=6 TIMEOUT=120 D:/SkylandersExtract/convert_batch.sh <src> <out> skyl mod
+# 2b. models -> FBX  (C++ converter; now succeeds on everything)
+JOBS=6 TIMEOUT=150 D:/SkylandersExtract/convert_batch.sh <src> <out> skyl mod
 
-# 4. FBX -> Unreal  (crash-resumable; forces the legacy importer)
+# 2c. models -> OBJ  (pure Python, no converter, cannot hang)
+python Scripts/igz_mesh.py --obj <outDir> --glob "<dir>/**/*.igz"
+python Scripts/igz_mesh.py --info <file.igz>
+
+# 3. FBX -> Unreal  (crash-resumable; forces the legacy importer)
 export MSYS_NO_PATHCONV=1 SKY_GEO_DIR=... SKY_GEO_DEST=/Game/...
 ./Scripts/import_level_geometry.sh
 ```
 
-`Scripts/igz_dump.py <file.igz>` prints any IGZ's object graph — the fastest way
-to see what a file actually contains.
+**Good tree is `D:/SkylandersExtract/nx9/`.** Delete `nx4`–`nx8`; they are all
+corrupt, and **nx7 in particular looks healthy and is not** — it passes every
+container check while containing other files' data.
 
-Extracted trees live on `D:\SkylandersExtract\`: **`nx7\` is the good one**
-(pak_extract output). `nx4`/`nx5`/`nx6` are truncated or diagnostic — ignore.
+## New tool: Scripts/igz_mesh.py
 
----
+Reads geometry straight from the object graph in O(objects), so it cannot spin
+the way the C++ magic-number scanner does. Full format notes are in
+`docs/ASSET-EXTRACTION.md`; the short version:
 
-## State of play
+- `igVertexBuffer`: count +0x44, stride +0x58, format pointer +0x10
+- `igIndexBuffer`: count +0x3C, u16 triangle lists
+- `igVertexFormat`: attribute table +0x00, component table +0x10, its byte size
+  +0x0C. Attribute count is `size/4 - 1`; both tables carry a terminator.
+- attribute entries are three u32 — **(type, slot, offset)**. Slot 0 position,
+  1 normal, 2 tangent, 4 RGBA8 colour, 5 half2 UV.
+- buffers live in a section with no pointers to them, in object order as
+  (vertex, index) pairs on 4-byte boundaries. The reader totals them and finds
+  the section matching exactly, refusing the file if none does.
 
-**Done and in the game**
-- Lane reads as a real path: authentic `SH_Grass01_C` off-lane, real
-  `L505_Cobblestone_01__C` on-lane, `4m(1-m)` rim shoulder. Tune via
-  `COBBLE_TILE` / `PATH_HALF_WIDTH` / `RIM_DARKEN`.
-- Out-of-bounds dressed with real ripped rock/tree meshes, hash-scattered so the
-  layout is identical every match.
-- `Scripts/PreviewLaneGround.py` renders the ground offline — **tune there**, one
-  second per iteration instead of a 90-second game relaunch. It mirrors what
-  ships; keep it that way.
+## What is left
 
-**Broken / unfinished, highest value first**
+Nothing from the previous handoff's list remains open. Two genuinely new, small
+items:
 
-1. **Vertex attribute schema — the keystone.** `igz_parse.py` reads the container
-   perfectly but not mesh geometry. The per-buffer attribute table at
-   `igVertexFormat + 0x04` is undecoded; for `L505_bridge` format 0 its raw u32
-   stream is `0, 2, 1, 12, 42, 5, 24, 2, 2, 28, 44, 0, ...`. Best read so far is
-   offset-led triples — F0 has attributes at offsets 0/12/24/28 and F1 inserts an
-   extra at 24, shifting the rest — but it does not reconcile cleanly.
-   Ground truth to validate against: stride **40** with
-   `pos(3xf32) + normal(3xf32) + uv(2xf32)` decodes 636 consecutive vertices with
-   exactly unit-length normals at the start of the data section.
-   Cracking this unlocks actors AND the ~half of statics the converter still
-   times out on, including the Academy towers.
+1. **`Gen_Crate_Debris_10` and `L505_Icing_Gun` don't lay buffers out in object
+   order.** 2 of 419 files. `L505_Icing_Gun` is animated (`CModelAnimation`,
+   strides 140/136 — skinned) and starts `vvvv` rather than alternating; the
+   crate goes bad at its *second* vertex. Both tile their section exactly, so
+   the aggregate check passes and only the per-vertex normal check catches them.
+   The reader drops the bad meshes rather than emitting NaN. Neither model is
+   used by the game.
+2. **The unused meshes are dropped, not recovered.** If those two files are ever
+   wanted, the fix is to find the real per-buffer offset field rather than
+   inferring order — likely in `igModelDrawCallData` or `igGraphicsVertexBuffer`,
+   neither of which is decoded yet.
 
-2. **Actors still hang the converter**, even with complete files (tested
-   `Rat_Melee.igz` at its full 439 KB, 3 min, nothing). Separate bug: unbounded
-   sentinel scans in `IGZ.cpp` 252-274, plus a genuine infinite loop in
-   `GetAnimPath` when the path has no `actors` segment. Blocks all minion/camp
-   work.
+Unchanged from before: the C++ converter is a Visual Studio C++/CLI project and
+the user does not use Visual Studio — but it now needs no patching, so this no
+longer blocks anything.
 
-3. **512x512 textures decode wrong.** 256x256 are perfect. Size-dependent, not a
-   global swizzle. Blocks `SH_Dirt01_C`, `L505_Rock_01_C`.
+## Verified vs inferred
 
-4. **Statics: 29 of 60 import** after re-conversion. The converter remains the
-   weak link even with correct input — see (1).
+Verified by measurement this session: the 1 MiB chunk size and the dict_size
+cap; the 2354/2354, 133/133, 7/7 and 417/419 counts; the section-3 byte
+arithmetic on `L505_bridge` (790376 vertex + 161772 index = 952148 exactly); the
+attribute schema, by decoding and rendering 133 statics; textures, by eye on a
+contact sheet.
 
----
-
-## Content decisions already made
-
-- **Minions are still wrong.** `SkylandersMinion.cpp` points at CrockWarrior and
-  Scorpion — which are **Snap Shot** (Trap Team) and **Scorp** (Swap Force),
-  still playable characters. Committed only because the scale/material/anim
-  wiring is reusable.
-  The rule that failed: screening for the Imaginators Sensei `S6xx_` prefix
-  misses every Trap Team / Swap Force playable. **Root cause: the rip's
-  `Assets/Skylanders/Actors` IS the playable roster** — wrong source for enemies.
-- **Intended replacements**: Chompy (melee) and Spell Punk (ranged) — both
-  confirmed in Imaginators, which has 99 enemies total. **Chomp Chests is Trap
-  Team and NOT in this copy.** Camp suggestions filtered to Imaginators: Slam
-  Clam (gold), Magic Geargolem (blue buff), Fire Spell Punk (red buff),
-  Doomlander (big objective — `Doomlander_Pistol.igz` is already in level_505).
-- **Towers**: `hub_2016.pak` is the Academy. Extracted and converted —
-  `H2016_Tower02`, `TowerRoof05`, `kaostower`, pillars, frontgate — but they fail
-  import as degenerate, pending (1).
-
-## Assets available
-
-- `Saved/SwitchArchives.txt` lists all **5620** paks on the Switch. Regenerate
-  with `Scripts/ListSwitchArchives.ps1` (SD card, or DBI over MTP — the dump sits
-  8 levels down at `SD Card\nxdt_rw_poc\NCA FS\User\Extracted\<title>\Program #0\1\archives`).
-- On disk: `level_505.pak`, `hub_2016.pak`. Notable not-yet-pulled:
-  `driverspellpunk.pak` (standalone Spell Punk actor). Chompies live inside level
-  paks; 14 exist (500–510, 512, 515, 516).
+Inferred, not proven: that slot 2 is *tangent* (it is a 3xf32 that is not
+position or normal, which is what tangent looks like — nothing depends on the
+name); that slot 4 is RGBA8 colour, same reasoning.

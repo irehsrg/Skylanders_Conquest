@@ -1,11 +1,19 @@
 # Skylanders Asset Extraction — Working Pipeline
 
-**Status as of 2026-08-06: the full chain works, end to end, from a legitimately
-owned Switch copy.** One FBX has been produced and verified.
+**Status as of 2026-08-07: the full chain works, end to end, from a legitimately
+owned Switch copy.** 2354/2354 files extract; 133/133 level_505 statics and 7/7
+enemy actors convert to FBX with zero timeouts; all textures decode.
 
-This exists because the extraction tooling did *not* support Imaginators on
-Switch out of the box — a bug we found and patched. That patch is the key piece
-of knowledge in this document; without it nothing downstream works.
+Two things in this document are load-bearing. The first is the `switch si`
+profile patch to `igArchiveExtractor` — without it nothing downstream works. The
+second, and the one that actually cost the most time, is **[THE EXTRACTION WAS
+CORRUPTING FILES](#the-extraction-was-corrupting-files-root-cause-settled-2026-08-07)**:
+NX paks are chunked at 1 MiB, not 32 KiB, and assuming 32 KiB silently spliced
+other files' data into every file over that size while keeping the byte count
+exactly right. Nearly every "separate" asset bug in this project — hanging
+actors, broken 512x512 textures, degenerate statics, the supposedly undecoded
+vertex schema — was that one bug wearing a different hat. Read that section
+before diagnosing anything.
 
 ---
 
@@ -54,15 +62,19 @@ Parallel workers, skips already-converted files, hard per-file timeout.
 
 ### Yield on level_505 Statics (133 igz)
 
-| Outcome | Count |
-|---|---|
-| FBX with real vertex data | **91** |
-| Converter infinite-loops (any game/type combo) | 39 |
-| FBX produced but **zero vertex data** | 13 (deleted) |
+| Outcome | before the extraction fix | now (`nx9`) |
+|---|---|---|
+| FBX with real vertex data | 91 (then 29/60 on retest) | **133 / 133** |
+| Converter infinite-loops | 39 | **0** |
+| FBX produced but zero vertex data | 13 (deleted) | 0 |
 
-- **A per-file timeout is mandatory.** ~30% of these statics send the converter
-  into an infinite loop — confirmed, not slowness: `l505_fence.igz` (96 KB) ran
-  7 minutes under `mod` and produced nothing.
+Enemy actors went from *every one hangs* to **7 / 7**.
+
+- **The infinite loops were not a converter bug.** They were corrupt input - the
+  sentinel scan was walking through another file's data. Given a correct `nx9`
+  extraction the converter terminates on everything, including the 4.9 MB
+  `L505_ferris_wheel` that previously ran forever at a 480 s timeout. Keep the
+  per-file timeout in `convert_batch.sh` as a backstop; nothing hits it now.
 - **`act` is not a rescue for `mod` failures.** It *appears* to work — several
   `mod`-hanging files convert in seconds — but every one of those FBX contains
   **no `Vertices` array**. Always verify with `grep -ac Vertices <fbx>`; hollow
@@ -153,40 +165,29 @@ as the archive one. With these it reads them and reports e.g.
 
 **All three are worth upstreaming**, like the `switch si` profile.
 
-### The texture swizzle is NOT solved - do not redo this ground
-
-Getting *pixels* out still fails. Established facts, so nobody repeats the work:
-
-- The payload is at the **largest section in the header table** (`off`/`size`
-  pairs from 0x18), e.g. offset 2628 size 174760 for `SH_Dirt01_C`.
-- It **is** BC1: 65% of 8-byte blocks have `c0>c1` and 6.5% have `c0==c1`,
-  against 50%/0% for random bytes.
-- 512x512, 8 mips. Payload size is **exactly the UNPADDED mip chain** (174760).
-  Standard GOB-padded Tegra block-linear would be 176128, so the layout is a
-  **size-preserving permutation** - it is not padded block-linear.
-- **Neither existing tool deswizzles NX.** `igArchiveExtractor` has only
-  `DeswizzleWiiU` (GX2); `IGZTEX.cpp` writes a DDS header then copies the bytes
-  raw for Switch formats exactly as for PC. Both were read in full.
-
-Ruled out by experiment: linear at ~600 candidate offsets; Tegra block-linear at
-3 offsets x 6 block_heights; Morton/Z-order (both axis orders); block tiling at
-4x4, 8x8, 16x16, 8x4, 4x8, 32x32.
-
-Untried next steps: port a known-good Tegra deswizzler verbatim (Switch Toolbox)
-rather than hand-rolling the address maths, or ask the Skylanders Reverse
-Engineering Discord.
-
-### TEXTURES ARE LINEAR, NOT SWIZZLED (solved 2026-08-07)
+### TEXTURES ARE LINEAR, NOT SWIZZLED - and 512x512 now work too
 
 `Scripts/igz_texture.py` extracts them. The payload is **plain linear BC1/BC3**
 despite the `dxt1_nx` format name - a straight read gives the image; every
 Tegra block-linear variant gives noise.
 
-The earlier "it must be swizzled" conclusion came from testing `SH_Dirt01_C`
-(512x512), where the padded and unpadded mip-chain sizes differ and the linear
-read is genuinely broken. On a **256x256** they coincide, and the linear read is
-obviously correct. So: **256x256 textures decode perfectly; 512x512 do not yet.**
-Whatever is wrong with the larger ones is size-dependent, not a global swizzle.
+Two wrong explanations were published here before the real one; both are struck
+out for good, because each cost hours:
+
+1. *"It is Tegra block-linear and needs a deswizzler."* No. Ruled out by
+   experiment across ~600 candidate offsets, 3 offsets x 6 block_heights of
+   Tegra block-linear, Morton/Z-order both axis orders, and block tiling at
+   4x4/8x8/16x16/8x4/4x8/32x32. Nothing was swizzled at any point.
+2. *"256x256 work but 512x512 cannot, because the padded and unpadded mip-chain
+   sizes coincide only at 256."* Also no. That reasoning was invented to explain
+   a symptom whose cause was somewhere else entirely.
+
+**The actual cause: the extractor was corrupting every file over 32 KiB.** A
+256x256 BC1 texture fits inside one 32 KiB chunk and so came out intact; a
+512x512 does not. Nothing was ever wrong with the texture code. See *THE
+EXTRACTION WAS CORRUPTING FILES* below. With `nx9`, all 512x512 textures -
+`SH_Dirt01_C`, `SH_Dirt01_N`, `L505_Rock_01_C`, `L505_Rock_01_N`,
+`SH_Grass01_G` - decode correctly.
 
 - dimensions come from `igImage2` at **object + 0x48** (64-bit NX), never guessed
 - BC1 vs BC3 is chosen by which full mip chain matches the declared payload size
@@ -203,61 +204,88 @@ Whatever is wrong with the larger ones is size-dependent, not a global swizzle.
 live ground textures in `M_Ground` (via `Saved/GroundTex/`). The map renders the
 real Skylanders cobbled path through real Skylanders grass.
 
-### THE EXTRACTION WAS TRUNCATING FILES (found + fixed 2026-08-07)
+### THE EXTRACTION WAS CORRUPTING FILES (root cause, settled 2026-08-07)
 
-**This was the root cause of nearly everything downstream.** 75 of 133 level_505
-statics were being written out incomplete, always cut at a multiple of 32768.
+**This one bug caused nearly every "separate" asset problem.** It went through
+two rounds of misdiagnosis, so the history matters:
 
-`igArchiveExtractor`'s LZMA loop assumes every chunk decodes to the full 32 KiB
-`chunkSize` and asks the bundled SevenZip decoder for exactly that many bytes.
-**Chunks are variable** - one real chunk in `l505_yeti_right_Arm.igz` decodes to
-2704 bytes. The decoder runs out of input, throws `Data Error`, writes *nothing*,
-and the loop does `break`, abandoning the rest of the file:
+**Round 1 (wrong): "chunks are variable, the decoder throws, the loop breaks."**
+`igArchiveExtractor` asked its SevenZip decoder for a full 32 KiB per chunk, got
+`Data Error`, and `break`-ed - so files were truncated at a 32 KiB boundary. The
+first `pak_extract.py` "fixed" this by accepting whatever each chunk produced and
+carrying on. Output lengths then matched the declared sizes exactly and it looked
+solved. It was not: it had converted a *truncation* bug into a *corruption* bug.
 
-```csharp
-catch(Exception e) {
-    Console.WriteLine($"{e.Message} but let's ignore that");
-    break;                     // <-- silently truncates the file
-}
-```
+**Round 2 (correct): NX pak files are chunked at 1 MiB, not 32 KiB.**
+Each chunk is a raw LZMA1 stream behind a `u32 compressedSize` + 5 LZMA property
+bytes. The chunk's uncompressed size is the **dictionary size carried in those
+properties** (1 MiB here). Because both readers assumed 32 KiB, they advanced by
+`9 + csize` where csize spans a whole 1 MiB chunk - landing **inside the next
+file** and splicing its data in until the byte count happened to reach `size`.
 
-Those "Data Error but let's ignore that" messages were never harmless. They were
-one lost file each. **372 of them on level_505 alone.**
+Damage on level_505: **807 of 2354 files (34%)**, and **540 of 570** igz over
+32 KiB. Files at or under 32 KiB fit in one chunk and were correct by accident -
+which is exactly why 256x256 textures always worked and 512x512 never did.
 
-Consequences, all of which looked like separate bugs:
-- statics converted from cut-off vertex buffers -> NaN positions -> Unreal
-  rejects them with *"all polygons are degenerate"* / *"infinite value in the data"*
-- the model converter scanned past the end of short files -> the sentinel search
-  never terminates -> apparent "infinite loop on actors"
-- only 33 of 91 statics ever imported
+Everything below was a symptom of this, not a separate bug:
+- "the model converter infinite-loops on actors" - it was scanning through
+  another file's data looking for a sentinel that was not there
+- "512x512 textures decode wrong" - nothing to do with Tegra swizzling or
+  mip-chain padding, both of which were confidently asserted and both wrong
+- "NaN positions / all polygons are degenerate" on import
+- "the vertex attribute schema is undecoded and is the keystone" - the schema
+  was never the blocker
 
-**Fix: `Scripts/pak_extract.py`.** Python's `lzma` returns partial output instead
-of throwing, so the same chunk walk just works. Verified on `l505_yeti_right_Arm`:
-chunks decode to `[32768, 2704, 32768, 27788]` = 96028 = exactly the declared size.
+**Second, subtler bug exposed once the chunk size was right.** A raw LZMA1
+stream carries no end-of-stream marker, so a decoder handed the whole remaining
+byte count runs the trailing bits of the final byte out into **one spurious
+extra byte**. On `L505_ferris_wheel` chunk 3 yielded 1048577 instead of 1048576,
+shifting every byte past the 4 MiB mark by one - enough to turn its last two
+meshes into NaN while the file's total length still matched exactly. Cap each
+chunk at `min(dict_size, remaining)`.
+
+> **The lesson: a correct output length proved nothing here.** Both bugs produced
+> byte-perfect file sizes. Validate *content* - exactly one IGZ magic at offset 0,
+> and every declared vertex buffer decoding to unit-length normals.
+
+**Fix: `Scripts/pak_extract.py`**, which now also parses the pak's file table
+itself. The `dumpTable` round-trip through the C# tool is no longer needed:
 
 ```bash
-# once per pak - the C# tool still parses the file table best:
-igArchiveExtractor.exe dumpTable switch si <pak> <table.csv>     # command added by us
+python Scripts/pak_extract.py <pak> <outDir> [name-filter]
+# a CSV table is still accepted for archive versions it does not know:
 python Scripts/pak_extract.py <pak> <table.csv> <outDir> [name-filter]
 ```
 
 Format notes that matter:
 - chunk header is `u32 compressedSize` + 5 LZMA property bytes, then the data;
-  the next chunk starts at the next **chunkAlignment (32-byte)** boundary.
+  the next chunk starts at the next **chunkAlignment (32-byte)** boundary
 - the compression scheme is the **top byte** of the table's `mode` field
-  (`mode >> 24 == 0x20` for LZMA); the low 24 bits are the chunk-properties offset.
+  (`mode >> 24 == 0x20` for LZMA)
 - NX props byte is `0xAB` -> `lc=0 lp=4 pb=3`, 1 MiB dictionary. `lp=4` means
-  16-byte-aligned data, which fits GPU vertex/texture payloads.
+  16-byte-aligned data, which fits GPU vertex/texture payloads
+- header offsets for the NX layout (version `0x0C`) are in `pak_extract.py`;
+  nametable at `+0x28`, checksums at `+0x38`, 16-byte local headers
 
-**Result: 133/133 complete, 0 truncated** (was 58/133). Sizes jump dramatically -
-`L505_Lighthouse` 32768 -> 639052, `L505_interior_alpine` 196616 -> 4041196.
+**Results, measured:**
 
-**Still broken after the fix:** actor IGZ *still* hang the model converter even
-when complete, so that is a genuinely separate bug (the unbounded sentinel scans
-in `IGZ.cpp` 252-274). Statics improved markedly - files that previously timed
-out or crashed Unreal now convert.
+| | before | after |
+|---|---|---|
+| files extracted, 0 short | - | **2354 / 2354** (~12 s) |
+| statics -> FBX | 29 / 60 | **133 / 133, zero timeouts** |
+| enemy actors -> FBX | 0 (hung) | **7 / 7** |
+| mesh igz with all normals valid | 9 / 133 | **417 / 419** |
+| large igz with foreign data spliced in | 540 / 570 | **0 / 774** |
 
-### Our own IGZ reader (Scripts/igz_parse.py) - WORKS, incomplete
+The C++ converter's "unbounded sentinel scan in `IGZ.cpp` 252-274" **needs no
+patch**. Given correct input it terminates on everything, including the 4.9 MB
+`L505_ferris_wheel` that previously ran forever. Keep the per-file timeout in
+`convert_batch.sh` as a backstop, but nothing hits it now.
+
+**Good tree is `D:/SkylandersExtract/nx9/`. Delete nx4-nx8 - they are all
+corrupt, and nx7 in particular looks healthy and is not.**
+
+### Our own IGZ reader (Scripts/igz_parse.py)
 
 `IgzModelConverter` parses these files by scanning for magic numbers. On NX that
 either spins forever (actors) or yields NaN vertex positions (two thirds of
@@ -285,9 +313,14 @@ Container format, all verified against real files:
   resolving into `descriptors[sec + 1]`.
 - Object header (v9): type index u32 at +0, item count u32 at +8, **fields start
   at +0x14**.
-- **Pointers** use the same `sec`/`offset` split, resolving to
-  `descriptors[sec+1].offset + offset + 8`. The `+8` is verified: vertex-format
-  pointers land exactly on the following object's address.
+- **Pointers** are 8-byte slots. The **high dword** carries the location, using
+  the same `sec`/`offset` split, resolving to
+  `descriptors[sec+1].offset + offset` — **no `+8`**. (An earlier note here
+  claimed a verified `+8`; that came from reading `igVertexBuffer+0x00`, which
+  happens to sit 8 bytes before the object it looked like it pointed at. The
+  no-offset form is what resolves `igVertexBuffer+0x10 -> igVertexFormat`
+  correctly across all 419 mesh files.) The low dword is a tag, `0x80000000`
+  or 0.
 
 What the graph looks like:
 
@@ -297,18 +330,65 @@ What the graph looks like:
 | per draw call | `igVertexBuffer` + `igVertexFormat` + `igIndexBuffer` (+ graphics variants) | same |
 | skeleton | - | `igSkeleton2` + `igSkeletonBoneList` + 71 x `igSkeletonBone` + `CGraphicsSkinInfo` |
 
-Useful field offsets (from object start + 0x14):
-`igVertexBuffer` count at +0x44; `igIndexBuffer` count at +0x3C;
-`igVertexFormat` attribute-table pointer at +0x04, second pointer at +0x14.
+### Scripts/igz_mesh.py - geometry without the converter
 
-**What is still missing: the per-buffer vertex attribute layout.** One concrete
-layout is confirmed - stride **40**, `pos(3xf32) + normal(3xf32) + uv(2xf32)`,
-which decodes with exactly unit-length normals. But formats differ per buffer
-(the four `igVertexFormat`s in `L505_bridge` are not all alike), so the attribute
-descriptor table at `igVertexFormat+0x04` has to be decoded rather than assumed.
-Its raw u32 stream for format 0 is `0, 2, 1, 12, 42, 5, 24, 2, 2, 28, 44, 0, ...`
-- schema not yet worked out. Scanning for stride-40 unit-normal runs finds only
-1608 of the declared 18192 vertices, which is the measure of how much is left.
+The vertex attribute schema **is decoded** (it was never the real blocker - the
+"only 1608 of 18192 vertices decode" measurement recorded here previously was
+reading a corrupted file). `Scripts/igz_mesh.py` reads geometry straight from
+the object graph in O(objects), so it cannot spin the way the C++ scanner does.
+
+```bash
+python Scripts/igz_mesh.py --info <file.igz>
+python Scripts/igz_mesh.py --obj <outDir> --glob "<dir>/**/*.igz"
+```
+
+Field offsets, from object + 0x14:
+
+| object | field | offset |
+|---|---|---|
+| `igVertexBuffer` | vertex count | +0x44 |
+| | stride | +0x58 |
+| | pointer to its `igVertexFormat` | +0x10 |
+| `igIndexBuffer` | index count (u16 triangle lists) | +0x3C |
+| `igVertexFormat` | attribute table pointer | +0x00 |
+| | component table pointer | +0x10 |
+| | component table size **in bytes** | +0x0C |
+
+Attribute count is `component_table_size / 4 - 1`; both tables carry one
+terminator entry. Each attribute table entry is three u32 - **(type, slot,
+offset-within-vertex)** - and an attribute's byte size is the next entry's
+offset minus its own, the last running to the stride.
+
+| slot | meaning | seen as |
+|---|---|---|
+| 0 | position | 3 x f32 |
+| 1 | normal | 3 x f32 |
+| 2 | tangent | 3 x f32 |
+| 4 | colour | RGBA8 (4 bytes) |
+| 5 | UV | half2 (4 bytes) |
+
+**Where the data lives.** Vertex and index buffers sit in a section with *no
+pointers to them* - the loader streams the section into GPU memory in order.
+They appear in object order, interleaved as (vertex, index) pairs, each starting
+on a **4-byte** boundary. For `L505_bridge`:
+
+```
+VB0 2518x40 | IB0 10518x2 | VB1 3629x44 | IB1 15252x2
+VB2 10068x44 | IB2 50454x2 | VB3 1977x44 | IB3 4662x2   = 952148 bytes
+```
+
+which is exactly its last section's size. Usually it *is* the last section, but
+not always - the cloud models keep geometry in a middle one - so the reader
+totals the buffers first and finds the section whose size matches exactly,
+refusing the file if none does.
+
+That aggregate check is necessary but **not sufficient**: it proves the buffers
+fill the section, not that each starts where predicted. So every mesh is also
+checked vertex-by-vertex for unit-length normals and dropped if it fails.
+`Gen_Crate_Debris_10` goes bad at its *second* vertex - a strided sample walked
+straight past it - and `L505_Icing_Gun` (animated, strides 140/136) does not use
+object order at all. Those two are the only known failures: 417 of 419 mesh igz
+decode with every normal valid.
 
 ### What is behind that wall
 

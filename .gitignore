@@ -30,3 +30,7 @@ Thumbs.db
 # Python bytecode from the Scripts/ tooling
 __pycache__/
 *.pyc
+
+# git-lfs hooks written to a literal dev/null path by a shell redirect
+# under Git Bash on Windows; the real hooks live in .git/hooks
+dev/
