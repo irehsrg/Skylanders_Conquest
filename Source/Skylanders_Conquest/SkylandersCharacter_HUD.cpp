@@ -398,7 +398,7 @@ void ASkylandersCharacter::UseAbility1()
 	{
 		// Cooldown scales with rank: at rank 1 = 116%, rank 5 = 100%
 		float CooldownScale = 1.2f - 0.04f * AbilityLevels[0];
-		Ability1_RemainingCooldown = Ability1_Cooldown * CooldownScale;
+		Ability1_RemainingCooldown = Ability1_Cooldown * CooldownScale * GetCooldownMultiplier();
 		UE_LOG(LogTemp, Log, TEXT("Golden Super Charge!"));
 
 		if (AbilitySound)
@@ -461,7 +461,7 @@ void ASkylandersCharacter::UseAbility2()
 	{
 		// Cooldown scales with rank: at rank 1 = 116%, rank 5 = 100%
 		float CooldownScale = 1.2f - 0.04f * AbilityLevels[1];
-		Ability2_RemainingCooldown = Ability2_Cooldown * CooldownScale;
+		Ability2_RemainingCooldown = Ability2_Cooldown * CooldownScale * GetCooldownMultiplier();
 		UE_LOG(LogTemp, Log, TEXT("Pot o' Gold!"));
 
 		if (AbilitySound)
@@ -530,7 +530,7 @@ void ASkylandersCharacter::UseAbility3()
 	{
 		// Cooldown scales with rank: at rank 1 = 116%, rank 5 = 100%
 		float CooldownScale = 1.2f - 0.04f * AbilityLevels[2];
-		Ability3_RemainingCooldown = Ability3_Cooldown * CooldownScale;
+		Ability3_RemainingCooldown = Ability3_Cooldown * CooldownScale * GetCooldownMultiplier();
 		UE_LOG(LogTemp, Log, TEXT("Golden Machine Gun activated! Locked in place."));
 
 		if (AbilitySound)
@@ -580,7 +580,7 @@ void ASkylandersCharacter::UseAbility4()
 	{
 		// Cooldown scales with rank: at rank 1 = 116%, rank 5 = 100%
 		float CooldownScale = 1.2f - 0.04f * AbilityLevels[3];
-		Ability4_RemainingCooldown = Ability4_Cooldown * CooldownScale;
+		Ability4_RemainingCooldown = Ability4_Cooldown * CooldownScale * GetCooldownMultiplier();
 		UE_LOG(LogTemp, Warning, TEXT("YAMATO BLAST charging... Hold still!"));
 
 		if (AbilitySound)

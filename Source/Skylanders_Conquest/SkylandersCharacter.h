@@ -375,6 +375,16 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Stats")
 	float BuffProtections;
 
+	// Innate protections so Penetration has something to bite on before
+	// the target itemizes. Derived from PlayerLevel at read time in
+	// GetEffectiveProtections() rather than accumulated, so death/respawn
+	// level resets can never double-count it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float BaseProtections;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float ProtectionsPerLevel;
+
 	// Movement penalties
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
 	float StrafeSpeedMultiplier; // Speed when strafing (0-1)
@@ -459,7 +469,9 @@ public:
 
 	// Damage and healing
 	UFUNCTION(BlueprintCallable, Category = "Stats")
-	void TakeDamage_Custom(float DamageAmount);
+	// DamageCauser is optional so environment/minion callers compile unchanged;
+	// when given, its (instigator's) item Penetration lowers our protections.
+	void TakeDamage_Custom(float DamageAmount, AActor* DamageCauser = nullptr);
 
 	UFUNCTION(BlueprintCallable, Category = "Stats")
 	void Heal(float HealAmount);
@@ -542,6 +554,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Stats")
 	float GetEffectiveProtections() const;
+
+	// 1 - clamp(ItemBonusStats.CooldownReduction, 0, 0.40); applied once when a cooldown is set
+	float GetCooldownMultiplier() const;
+
+	// Item Penetration of the pawn behind a hit (follows projectile -> instigator); 0 if none
+	static float GetPenetrationOf(const AActor* DamageCauser);
 
 	// Recalculate all item bonus stats from inventory
 	void RecalculateItemBonuses();

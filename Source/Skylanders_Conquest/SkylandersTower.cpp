@@ -402,7 +402,7 @@ void ASkylandersTower::AttackTarget()
 	{
 		if (ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(CurrentTarget))
 		{
-			Player->TakeDamage_Custom(AttackDamage);
+			Player->TakeDamage_Custom(AttackDamage, this);
 		}
 		else if (ASkylandersEnemyGod* AllyGod = Cast<ASkylandersEnemyGod>(CurrentTarget))
 		{

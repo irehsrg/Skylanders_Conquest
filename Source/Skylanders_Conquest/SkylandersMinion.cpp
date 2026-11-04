@@ -562,7 +562,7 @@ void ASkylandersMinion::AttackTarget()
 	ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(CurrentTarget);
 	if (Player)
 	{
-		Player->TakeDamage_Custom(AttackDamage);
+		Player->TakeDamage_Custom(AttackDamage, this);
 		return;
 	}
 

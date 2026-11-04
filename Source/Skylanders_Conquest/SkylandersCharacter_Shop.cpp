@@ -5,6 +5,7 @@
 // Shop open/close, buy/sell, item bonus recalculation, ability leveling.
 
 #include "SkylandersCharacter.h"
+#include "SkylandersSmokeTest.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
@@ -232,6 +233,7 @@ bool ASkylandersCharacter::BuyItem(int32 ItemID)
 	Inventory[EmptySlot] = ItemID;
 
 	RecalculateItemBonuses();
+	SKY_COUNT("item_bought");
 
 	// Play item buy sound
 	if (ItemBuySound)
@@ -334,9 +336,10 @@ void ASkylandersCharacter::RecalculateItemBonuses()
 	// Apply movement speed bonus
 	BaseMaxWalkSpeed = 500.0f + ItemBonusStats.MovementSpeed;
 
-	UE_LOG(LogTemp, Log, TEXT("Item bonuses recalculated: +%.0f Power, +%.1f AS, +%.0f HP, +%.0f MP, +%.0f Prot, +%.0f MS"),
+	UE_LOG(LogTemp, Log, TEXT("Item bonuses recalculated: +%.0f Power, +%.1f AS, +%.0f HP, +%.0f MP, +%.0f Prot, +%.0f MS, +%.0f%% CDR, +%.0f Pen"),
 		ItemBonusStats.Power, ItemBonusStats.AttackSpeed, ItemBonusStats.MaxHealth,
-		ItemBonusStats.MaxMana, ItemBonusStats.Protections, ItemBonusStats.MovementSpeed);
+		ItemBonusStats.MaxMana, ItemBonusStats.Protections, ItemBonusStats.MovementSpeed,
+		ItemBonusStats.CooldownReduction * 100.0f, ItemBonusStats.Penetration);
 }
 
 float ASkylandersCharacter::GetEffectivePower() const
@@ -351,7 +354,14 @@ float ASkylandersCharacter::GetEffectiveAttackSpeed() const
 
 float ASkylandersCharacter::GetEffectiveProtections() const
 {
-	return ItemBonusStats.Protections + BuffProtections;
+	const float LevelProtections = BaseProtections + ProtectionsPerLevel * FMath::Max(PlayerLevel - 1, 0);
+	return LevelProtections + ItemBonusStats.Protections + BuffProtections;
+}
+
+float ASkylandersCharacter::GetCooldownMultiplier() const
+{
+	// CDR is summed uncapped on purchase; the 40% cap lives here so an over-cap build just wastes the excess.
+	return 1.0f - FMath::Clamp(ItemBonusStats.CooldownReduction, 0.0f, 0.40f);
 }
 
 // ========== ABILITY LEVELING ==========

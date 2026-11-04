@@ -425,7 +425,8 @@ void ASkylandersMapBuilder::BuildMap()
 	// GODS: a full 3v3 — the player + 2 AI allies (blue) vs 3 AI enemies (red).
 	// Spawned deferred so Team is set before BeginPlay colors them / sets a base.
 	// ========================================================================
-	auto SpawnGod = [&](FVector Loc, ETowerTeam GodTeam, const FString& Name, const FString& Model)
+	auto SpawnGod = [&](FVector Loc, ETowerTeam GodTeam, const FString& Name, const FString& Model,
+		EGodBuildArchetype Archetype = EGodBuildArchetype::Bruiser)
 	{
 		ASkylandersEnemyGod* God = World->SpawnActorDeferred<ASkylandersEnemyGod>(
 			ASkylandersEnemyGod::StaticClass(), FTransform(FRotator::ZeroRotator, Loc),
@@ -435,18 +436,19 @@ void ASkylandersMapBuilder::BuildMap()
 			God->Team = GodTeam;
 			God->GodName = Name;
 			God->GodModel = Model; // real animated model (Hex / TreeRex), team-ringed
+			God->BuildArchetype = Archetype; // which item list its shopping AI walks
 			God->FinishSpawning(FTransform(FRotator::ZeroRotator, Loc));
 		}
 	};
 
 	// Red team (enemies) near the red base (+X)
-	SpawnGod(FVector(7500, 0, 100), ETowerTeam::Enemy, TEXT("Kaos"), TEXT("KaosSensei"));
-	SpawnGod(FVector(8000, 700, 100), ETowerTeam::Enemy, TEXT("Cynder"), TEXT("Cynder"));
-	SpawnGod(FVector(8000, -700, 100), ETowerTeam::Enemy, TEXT("Chompy Mage"), TEXT("ChompyMage"));
+	SpawnGod(FVector(7500, 0, 100), ETowerTeam::Enemy, TEXT("Kaos"), TEXT("KaosSensei"), EGodBuildArchetype::Assassin);
+	SpawnGod(FVector(8000, 700, 100), ETowerTeam::Enemy, TEXT("Cynder"), TEXT("Cynder"), EGodBuildArchetype::Tank);
+	SpawnGod(FVector(8000, -700, 100), ETowerTeam::Enemy, TEXT("Chompy Mage"), TEXT("ChompyMage"), EGodBuildArchetype::Bruiser);
 
 	// Blue team (AI allies) near the blue base (-X), fighting alongside the player
-	SpawnGod(FVector(-8000, 700, 100), ETowerTeam::Friendly, TEXT("Spyro"), TEXT("Spyro"));
-	SpawnGod(FVector(-8000, -700, 100), ETowerTeam::Friendly, TEXT("Stealth Elf"), TEXT("StealthElf"));
+	SpawnGod(FVector(-8000, 700, 100), ETowerTeam::Friendly, TEXT("Spyro"), TEXT("Spyro"), EGodBuildArchetype::Bruiser);
+	SpawnGod(FVector(-8000, -700, 100), ETowerTeam::Friendly, TEXT("Stealth Elf"), TEXT("StealthElf"), EGodBuildArchetype::Assassin);
 
 	// ========================================================================
 	// INITIAL SPAWN: the GameMode drops the pawn at the .umap PlayerStart, which

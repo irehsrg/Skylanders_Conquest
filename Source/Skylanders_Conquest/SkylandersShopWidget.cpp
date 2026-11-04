@@ -122,6 +122,10 @@ FString USkylandersShopWidget::BuildStatSummary(const FSkylandersItemStats& Stat
 		Parts.Add(FString::Printf(TEXT("+%.0f Prot"), Stats.Protections));
 	if (Stats.MovementSpeed > 0.0f)
 		Parts.Add(FString::Printf(TEXT("+%.0f MoveSpd"), Stats.MovementSpeed));
+	if (Stats.CooldownReduction > 0.0f)
+		Parts.Add(FString::Printf(TEXT("+%.0f%% CDR"), Stats.CooldownReduction * 100.0f));
+	if (Stats.Penetration > 0.0f)
+		Parts.Add(FString::Printf(TEXT("+%.0f Pen"), Stats.Penetration));
 
 	// Join with newlines for card layout
 	FString Result;
@@ -230,7 +234,7 @@ void USkylandersShopWidget::BuildLayout()
 
 		const TArray<FSkylandersItemData>& AllItems = USkylandersItemCatalog::GetAllItems();
 
-		// Build all 12 item cards (will be arranged into grid rows later)
+		// Build one card per catalog item (will be arranged into grid rows later)
 		for (const FSkylandersItemData& Item : AllItems)
 		{
 			// Outer border (card frame)
@@ -319,10 +323,13 @@ void USkylandersShopWidget::BuildLayout()
 			BuySlot->SetVerticalAlignment(VAlign_Center);
 			ItemBuyButtons.Add(BuyBtn);
 
-			// Bind buy delegate
-			FScriptDelegate BuyDelegate;
-			BuyDelegate.BindUFunction(this, FName(*FString::Printf(TEXT("OnBuyItem%d"), Item.ItemID)));
-			BuyBtn->OnClicked.Add(BuyDelegate);
+			// Bind buy delegate through a per-button handler so every catalog item
+			// gets a working button by construction, whatever its ID or the catalog size.
+			USkylandersShopBuyHandler* Handler = NewObject<USkylandersShopBuyHandler>(this);
+			Handler->OwnerWidget = this;
+			Handler->ItemID = Item.ItemID;
+			BuyHandlers.Add(Handler);
+			BuyBtn->OnClicked.AddDynamic(Handler, &USkylandersShopBuyHandler::OnClicked);
 		}
 
 		// Arrange cards into grid rows (3 per row)
@@ -604,18 +611,13 @@ void USkylandersShopWidget::OnBuyItem(int32 ItemID)
 	OwnerCharacter->BuyItem(ItemID);
 }
 
-void USkylandersShopWidget::OnBuyItem1()  { OnBuyItem(1); }
-void USkylandersShopWidget::OnBuyItem2()  { OnBuyItem(2); }
-void USkylandersShopWidget::OnBuyItem3()  { OnBuyItem(3); }
-void USkylandersShopWidget::OnBuyItem4()  { OnBuyItem(4); }
-void USkylandersShopWidget::OnBuyItem5()  { OnBuyItem(5); }
-void USkylandersShopWidget::OnBuyItem6()  { OnBuyItem(6); }
-void USkylandersShopWidget::OnBuyItem7()  { OnBuyItem(7); }
-void USkylandersShopWidget::OnBuyItem8()  { OnBuyItem(8); }
-void USkylandersShopWidget::OnBuyItem9()  { OnBuyItem(9); }
-void USkylandersShopWidget::OnBuyItem10() { OnBuyItem(10); }
-void USkylandersShopWidget::OnBuyItem11() { OnBuyItem(11); }
-void USkylandersShopWidget::OnBuyItem12() { OnBuyItem(12); }
+void USkylandersShopBuyHandler::OnClicked()
+{
+	if (OwnerWidget)
+	{
+		OwnerWidget->OnBuyItem(ItemID);
+	}
+}
 
 // ===== Sell Callbacks =====
 void USkylandersShopWidget::OnSellSlot0() { PlayShopClick(this); if (OwnerCharacter) { OwnerCharacter->SellItem(0); } }

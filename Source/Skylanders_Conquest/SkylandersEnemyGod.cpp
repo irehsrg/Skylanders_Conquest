@@ -115,7 +115,8 @@ ASkylandersEnemyGod::ASkylandersEnemyGod()
 	GodName = TEXT("Enemy God");
 	RespawnDelay = 15.0f;
 	BasePower = 25.0f;
-	Protections = 0.0f;
+	Protections = 10.0f;
+	ProtectionsPerLevel = 1.0f;
 
 	// AI
 	CurrentState = EGodAIState::Laning;
@@ -296,8 +297,9 @@ void ASkylandersEnemyGod::TickPassiveRegen(float DeltaTime)
 
 void ASkylandersEnemyGod::TickPassiveGold(float DeltaTime)
 {
-	// Base: 2 gold/sec + 0.5 per level (scales so the god can keep buying items)
-	float GoldRate = PassiveGoldPerSecond + Level * 0.5f;
+	// Base: 2 gold/sec + 0.5 per level, level term capped at 6. Uncapped, late-game
+	// gods out-earned the player ~2:1 and finished six items while the player had four.
+	float GoldRate = PassiveGoldPerSecond + 0.5f * FMath::Min(Level, 6);
 	PassiveGoldAccumulator += GoldRate * DeltaTime;
 
 	if (PassiveGoldAccumulator >= 1.0f)
@@ -317,7 +319,13 @@ float ASkylandersEnemyGod::GetEffectivePower() const
 
 float ASkylandersEnemyGod::GetEffectiveProtections() const
 {
-	return Protections + ItemBonusStats.Protections;
+	return Protections + ProtectionsPerLevel * FMath::Max(Level - 1, 0) + ItemBonusStats.Protections;
+}
+
+float ASkylandersEnemyGod::GetCooldownMultiplier() const
+{
+	// Same rule as the player: item CDR sums uncapped, the 40% cap is applied here.
+	return 1.0f - FMath::Clamp(ItemBonusStats.CooldownReduction, 0.0f, 0.40f);
 }
 
 // ========== TOWER AWARENESS ==========
@@ -351,15 +359,29 @@ bool ASkylandersEnemyGod::WouldChaseIntoEnemyTower(AActor* Target) const
 
 // ========== ITEM PURCHASING ==========
 
-const TArray<int32>& ASkylandersEnemyGod::GetItemPurchasePriority()
+const TArray<int32>& ASkylandersEnemyGod::GetItemPurchasePriority(EGodBuildArchetype Archetype)
 {
-	// Priority: cheap damage -> boots -> cheap defense -> mid damage -> mid defense -> expensive damage -> expensive defense
-	// 1=Short Sword(500), 10=Winged Boots(450), 6=Skystone Shield(600),
-	// 3=Berserker Gauntlets(800), 4=Vampire Fangs(900), 7=Heart of Skylands(850),
-	// 2=Elemental Blade(1200), 8=Guardian Plate(1100),
-	// 5=Golden Gatling(1800), 9=Portal Master's Armor(1500)
-	static TArray<int32> Priority = { 1, 10, 6, 3, 4, 2, 7, 8, 5, 9 };
-	return Priority;
+	// Each list is ascending in cost (IDs per SkylandersItemCatalog.cpp); the final
+	// six fall out of TryPurchaseItems' "most expensive affordable" rule.
+	// Bruiser: health + power.   500, 650, 950, 1200, 1250, 1900, 2000, 2200, 2300
+	// Short Sword, Healing Elixir, Vampire Fangs, Guardian Plate, Giant's Girdle,
+	// Golden Gatling, Aegis of Life, Bloodthirster, Titan's Bulwark
+	static TArray<int32> Bruiser  = { 1, 26, 4, 11, 28, 6, 14, 8, 13 };
+	// Assassin: power + pen + crit.   450, 500, 650, 900, 1300, 1900, 2200, 2400, 2500
+	// Chompy Fang, Short Sword, Ghost Pirate Cutlass, Berserker Gauntlets, Arkeyan Crossbow,
+	// Golden Gatling, Bloodthirster, Executioner, Traptanium Shard
+	static TArray<int32> Assassin = { 21, 1, 22, 3, 23, 6, 8, 7, 24 };
+	// Tank: prot + health + CDR.   450, 600, 600, 1050, 1200, 1300, 1700, 2200, 2300, 2300
+	// Mabu Hide Cloak, Skystone Shield, Time Twist Hourglass, Sky-Iron Shield, Guardian Plate,
+	// Lifespring Pendant, Portal Master's Armor, Core of Light Bulwark, Titan's Bulwark, Sky-Chi Sigil
+	static TArray<int32> Tank     = { 25, 9, 31, 27, 11, 29, 12, 30, 13, 36 };
+
+	switch (Archetype)
+	{
+	case EGodBuildArchetype::Assassin: return Assassin;
+	case EGodBuildArchetype::Tank:     return Tank;
+	default:                           return Bruiser;
+	}
 }
 
 void ASkylandersEnemyGod::TryPurchaseItems()
@@ -368,49 +390,55 @@ void ASkylandersEnemyGod::TryPurchaseItems()
 	float DistToBase = FVector::Dist(GetActorLocation(), BasePosition);
 	if (DistToBase > 500.0f) return;
 
-	// Count current items
-	int32 OwnedCount = 0;
+	// Find an empty slot first; a full inventory buys nothing
+	int32 EmptySlot = -1;
 	for (int32 i = 0; i < MaxInventorySlots; i++)
 	{
-		if (Inventory[i] != 0) OwnedCount++;
+		if (Inventory[i] == 0) { EmptySlot = i; break; }
 	}
-	if (OwnedCount >= MaxInventorySlots) return; // Full inventory
+	if (EmptySlot < 0) return;
 
-	const TArray<int32>& Priority = GetItemPurchasePriority();
+	const TArray<int32>& Priority = GetItemPurchasePriority(BuildArchetype);
 
+	// Pick the most expensive affordable entry we don't already own. "First
+	// affordable" made a god returning with 1500 gold buy the cheapest starter
+	// over and over, so builds ended as doubled starters.
+	const FSkylandersItemData* Best = nullptr;
 	for (int32 ItemID : Priority)
 	{
 		const FSkylandersItemData* ItemData = USkylandersItemCatalog::FindItem(ItemID);
 		if (!ItemData) continue;
 		if (Gold < ItemData->Cost) continue;
 
-		// Don't buy more than 2 of any single item
+		// One copy per occurrence in the list (an ID listed twice may be bought twice)
+		int32 AllowedCopies = 0;
+		for (int32 Id : Priority)
+		{
+			if (Id == ItemID) AllowedCopies++;
+		}
 		int32 OwnedCountOfThis = 0;
 		for (int32 i = 0; i < MaxInventorySlots; i++)
 		{
 			if (Inventory[i] == ItemID) OwnedCountOfThis++;
 		}
-		if (OwnedCountOfThis >= 2) continue;
+		if (OwnedCountOfThis >= AllowedCopies) continue;
 
-		// Find empty slot
-		int32 EmptySlot = -1;
-		for (int32 i = 0; i < MaxInventorySlots; i++)
+		if (!Best || ItemData->Cost > Best->Cost)
 		{
-			if (Inventory[i] == 0) { EmptySlot = i; break; }
+			Best = ItemData;
 		}
-		if (EmptySlot < 0) break;
-
-		// Purchase
-		Gold -= ItemData->Cost;
-		Inventory[EmptySlot] = ItemID;
-		RecalculateItemBonuses();
-
-		UE_LOG(LogTemp, Warning, TEXT("Enemy God '%s' bought '%s' for %d gold (remaining: %d). Slot %d"),
-			*GodName, *ItemData->ItemName, ItemData->Cost, Gold, EmptySlot);
-
-		// Only buy one item per tick to simulate realistic shopping
-		break;
 	}
+	if (!Best) return;
+
+	// Purchase (one item per tick to simulate realistic shopping)
+	Gold -= Best->Cost;
+	Inventory[EmptySlot] = Best->ItemID;
+	RecalculateItemBonuses();
+	SKY_COUNT("item_bought");
+	SKY_COUNT("god_item_bought");
+
+	UE_LOG(LogTemp, Warning, TEXT("Enemy God '%s' bought '%s' (ID %d) for %d gold (remaining: %d). Slot %d"),
+		*GodName, *Best->ItemName, Best->ItemID, Best->Cost, Gold, EmptySlot);
 }
 
 void ASkylandersEnemyGod::RecalculateItemBonuses()
@@ -432,9 +460,10 @@ void ASkylandersEnemyGod::RecalculateItemBonuses()
 	// Apply movement speed from items
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed + ItemBonusStats.MovementSpeed;
 
-	UE_LOG(LogTemp, Log, TEXT("Enemy God '%s' item bonuses: +%.0f Power, +%.0f HP, +%.0f Protections, +%.0f Speed, +%.0f%% Crit, +%.0f%% Lifesteal"),
+	UE_LOG(LogTemp, Log, TEXT("Enemy God '%s' item bonuses: +%.0f Power, +%.0f HP, +%.0f Protections, +%.0f Speed, +%.0f%% Crit, +%.0f%% Lifesteal, +%.0f%% CDR, +%.0f Pen"),
 		*GodName, ItemBonusStats.Power, ItemBonusStats.MaxHealth, ItemBonusStats.Protections,
-		ItemBonusStats.MovementSpeed, ItemBonusStats.CritChance * 100.0f, ItemBonusStats.Lifesteal * 100.0f);
+		ItemBonusStats.MovementSpeed, ItemBonusStats.CritChance * 100.0f, ItemBonusStats.Lifesteal * 100.0f,
+		ItemBonusStats.CooldownReduction * 100.0f, ItemBonusStats.Penetration);
 }
 
 // ========== AI STATE MACHINE ==========
@@ -943,7 +972,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 		if (AbilityCooldownTimer <= 0.0f && DistToHero <= AttackRange)
 		{
 			UseAbility();
-			AbilityCooldownTimer = 8.0f;
+			AbilityCooldownTimer = 8.0f * GetCooldownMultiplier();
 		}
 
 		break;
@@ -969,7 +998,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 			if (AbilityCooldownTimer <= 0.0f)
 			{
 				UseAbility();
-				AbilityCooldownTimer = 8.0f;
+				AbilityCooldownTimer = 8.0f * GetCooldownMultiplier();
 			}
 		}
 
@@ -1073,11 +1102,11 @@ void ASkylandersEnemyGod::PerformAttack(AActor* Target)
 		// The player's TakeDamage_Custom applies the protections formula itself —
 		// pre-mitigating here would count protections twice. Compute the mitigated
 		// value only for lifesteal. (It also spawns the damage number.)
-		float TargetProtections = PlayerTarget->GetEffectiveProtections();
+		float TargetProtections = FMath::Max(0.0f, PlayerTarget->GetEffectiveProtections() - ItemBonusStats.Penetration);
 		float DamageReduction = TargetProtections / (TargetProtections + 100.0f);
 		float MitigatedDamage = EffectiveDamage * (1.0f - DamageReduction);
 
-		PlayerTarget->TakeDamage_Custom(EffectiveDamage);
+		PlayerTarget->TakeDamage_Custom(EffectiveDamage, this);
 
 		// Lifesteal from items (based on damage actually dealt)
 		if (ItemBonusStats.Lifesteal > 0.0f)
@@ -1094,7 +1123,7 @@ void ASkylandersEnemyGod::PerformAttack(AActor* Target)
 	ASkylandersEnemyGod* GodTarget = Cast<ASkylandersEnemyGod>(Target);
 	if (GodTarget)
 	{
-		float TargetProtections = GodTarget->GetEffectiveProtections();
+		float TargetProtections = FMath::Max(0.0f, GodTarget->GetEffectiveProtections() - ItemBonusStats.Penetration);
 		float DamageReduction = TargetProtections / (TargetProtections + 100.0f);
 		float MitigatedDamage = EffectiveDamage * (1.0f - DamageReduction);
 
@@ -1191,12 +1220,12 @@ void ASkylandersEnemyGod::UseAbility()
 	float TargetProtections = 0.0f;
 	if (ASkylandersCharacter* PlayerHero = Cast<ASkylandersCharacter>(Hero))
 	{
-		TargetProtections = PlayerHero->GetEffectiveProtections();
-		PlayerHero->TakeDamage_Custom(BurstDamage);
+		TargetProtections = FMath::Max(0.0f, PlayerHero->GetEffectiveProtections() - ItemBonusStats.Penetration);
+		PlayerHero->TakeDamage_Custom(BurstDamage, this);
 	}
 	else if (ASkylandersEnemyGod* GodHero = Cast<ASkylandersEnemyGod>(Hero))
 	{
-		TargetProtections = GodHero->GetEffectiveProtections();
+		TargetProtections = FMath::Max(0.0f, GodHero->GetEffectiveProtections() - ItemBonusStats.Penetration);
 		GodHero->TakeDamage_Custom(BurstDamage, this);
 	}
 	float DamageReduction = TargetProtections / (TargetProtections + 100.0f);
@@ -1220,8 +1249,9 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 {
 	if (CurrentState == EGodAIState::Dead) return;
 
-	// Apply protections: DamageReduction = Protections / (Protections + 100)
-	float EffProtections = GetEffectiveProtections();
+	// Apply protections: DamageReduction = Protections / (Protections + 100),
+	// after the attacker's penetration strips them (floor 0).
+	float EffProtections = FMath::Max(0.0f, GetEffectiveProtections() - ASkylandersCharacter::GetPenetrationOf(DamageCauser));
 	float DamageReduction = EffProtections / (EffProtections + 100.0f);
 	float FinalDamage = DamageAmount * (1.0f - DamageReduction);
 

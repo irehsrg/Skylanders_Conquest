@@ -13,11 +13,32 @@ class UVerticalBox;
 class UHorizontalBox;
 class UBorder;
 class UScrollBox;
+class USkylandersShopWidget;
+
+// One per BUY button: UButton::OnClicked carries no payload, so each button binds
+// to its own handler that remembers which catalog item it buys. Replaces a fixed
+// OnBuyItem1..N UFUNCTION fan-out that silently left any item past N unbuyable.
+UCLASS()
+class SKYLANDERS_CONQUEST_API USkylandersShopBuyHandler : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY()
+	USkylandersShopWidget* OwnerWidget = nullptr;
+
+	int32 ItemID = 0;
+
+	UFUNCTION()
+	void OnClicked();
+};
 
 UCLASS()
 class SKYLANDERS_CONQUEST_API USkylandersShopWidget : public UUserWidget
 {
 	GENERATED_BODY()
+
+	friend class USkylandersShopBuyHandler;
 
 public:
 	virtual void NativeOnInitialized() override;
@@ -35,7 +56,7 @@ private:
 	UPROPERTY()
 	UTextBlock* SpawnAreaText;
 
-	// Item card borders (12 items, used for filter show/hide)
+	// Item card borders (one per catalog item, used for filter show/hide)
 	UPROPERTY()
 	TArray<UBorder*> ItemCardBorders;
 
@@ -49,6 +70,11 @@ private:
 	// Buy buttons per card (to disable when can't afford or inventory full)
 	UPROPERTY()
 	TArray<UButton*> ItemBuyButtons;
+
+	// Click handlers bound to ItemBuyButtons (parallel array). Held here because a
+	// delegate binding is weak; without this reference GC would collect them.
+	UPROPERTY()
+	TArray<USkylandersShopBuyHandler*> BuyHandlers;
 
 	// Inventory slot texts (6)
 	UPROPERTY()
@@ -101,20 +127,6 @@ private:
 
 	// Buy item by ID
 	void OnBuyItem(int32 ItemID);
-
-	// Buy handlers (12 items)
-	UFUNCTION() void OnBuyItem1();
-	UFUNCTION() void OnBuyItem2();
-	UFUNCTION() void OnBuyItem3();
-	UFUNCTION() void OnBuyItem4();
-	UFUNCTION() void OnBuyItem5();
-	UFUNCTION() void OnBuyItem6();
-	UFUNCTION() void OnBuyItem7();
-	UFUNCTION() void OnBuyItem8();
-	UFUNCTION() void OnBuyItem9();
-	UFUNCTION() void OnBuyItem10();
-	UFUNCTION() void OnBuyItem11();
-	UFUNCTION() void OnBuyItem12();
 
 	// Sell handlers (6 slots)
 	UFUNCTION() void OnSellSlot0();

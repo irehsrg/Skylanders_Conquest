@@ -146,7 +146,7 @@ void ASkylandersHexCharacter::UseAbility1()
 	if (UseMana(Ability1_ManaCost))
 	{
 		float CooldownScale = 1.2f - 0.04f * AbilityLevels[0];
-		Ability1_RemainingCooldown = Ability1_Cooldown * CooldownScale;
+		Ability1_RemainingCooldown = Ability1_Cooldown * CooldownScale * GetCooldownMultiplier();
 
 		if (AbilitySound) UGameplayStatics::PlaySoundAtLocation(this, AbilitySound, GetActorLocation());
 		PlayAnimOnSlot(Ability1Anim, 1.2f);
@@ -188,7 +188,7 @@ void ASkylandersHexCharacter::UseAbility2()
 	if (UseMana(Ability2_ManaCost))
 	{
 		float CooldownScale = 1.2f - 0.04f * AbilityLevels[1];
-		Ability2_RemainingCooldown = Ability2_Cooldown * CooldownScale;
+		Ability2_RemainingCooldown = Ability2_Cooldown * CooldownScale * GetCooldownMultiplier();
 
 		if (AbilitySound) UGameplayStatics::PlaySoundAtLocation(this, AbilitySound, GetActorLocation());
 		PlayAnimOnSlot(Ability2Anim, 1.2f);
@@ -236,7 +236,7 @@ void ASkylandersHexCharacter::UseAbility3()
 	if (UseMana(Ability3_ManaCost))
 	{
 		float CooldownScale = 1.2f - 0.04f * AbilityLevels[2];
-		Ability3_RemainingCooldown = Ability3_Cooldown * CooldownScale;
+		Ability3_RemainingCooldown = Ability3_Cooldown * CooldownScale * GetCooldownMultiplier();
 
 		if (AbilitySound) UGameplayStatics::PlaySoundAtLocation(this, AbilitySound, GetActorLocation());
 		PlayAnimOnSlot(RainOfSkullsAnim, 1.0f);
@@ -275,7 +275,7 @@ void ASkylandersHexCharacter::UseAbility4()
 	if (UseMana(Ability4_ManaCost))
 	{
 		float CooldownScale = 1.2f - 0.04f * AbilityLevels[3];
-		Ability4_RemainingCooldown = Ability4_Cooldown * CooldownScale;
+		Ability4_RemainingCooldown = Ability4_Cooldown * CooldownScale * GetCooldownMultiplier();
 
 		if (AbilitySound) UGameplayStatics::PlaySoundAtLocation(this, AbilitySound, GetActorLocation());
 		PlayAnimOnSlot(YamatoAnim, 1.0f);

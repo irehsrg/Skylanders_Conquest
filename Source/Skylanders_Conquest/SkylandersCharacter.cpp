@@ -205,6 +205,8 @@ ASkylandersCharacter::ASkylandersCharacter()
 	Coins = 0;
 	TotalGoldEarned = 0;
 	BuffProtections = 0.0f;
+	BaseProtections = 10.0f;
+	ProtectionsPerLevel = 1.0f;
 
 	// XP
 	CurrentXP = 0.0f;

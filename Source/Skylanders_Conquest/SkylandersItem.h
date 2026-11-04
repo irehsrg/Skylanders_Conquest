@@ -41,6 +41,12 @@ struct FSkylandersItemStats
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float MovementSpeed = 0.0f; // Bonus units/sec
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float CooldownReduction = 0.0f; // 0.0 - 1.0; sum of items, clamped to 0.40 where used
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float Penetration = 0.0f; // Flat; subtracted from target protections before reduction (floor 0)
+
 	// Add two stats together (for combining item bonuses)
 	FSkylandersItemStats operator+(const FSkylandersItemStats& Other) const
 	{
@@ -55,6 +61,8 @@ struct FSkylandersItemStats
 		Result.Protections = Protections + Other.Protections;
 		Result.Lifesteal = Lifesteal + Other.Lifesteal;
 		Result.MovementSpeed = MovementSpeed + Other.MovementSpeed;
+		Result.CooldownReduction = CooldownReduction + Other.CooldownReduction;
+		Result.Penetration = Penetration + Other.Penetration;
 		return Result;
 	}
 };

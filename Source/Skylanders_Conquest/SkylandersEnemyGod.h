@@ -26,6 +26,15 @@ enum class EGodAIState : uint8
 	Dead         // Waiting to respawn
 };
 
+// Which item purchase list the god's shopping AI walks (see GetItemPurchasePriority).
+UENUM(BlueprintType)
+enum class EGodBuildArchetype : uint8
+{
+	Bruiser,     // Health + power
+	Assassin,    // Power + penetration + crit
+	Tank         // Protections + health + CDR
+};
+
 UCLASS()
 class SKYLANDERS_CONQUEST_API ASkylandersEnemyGod : public ACharacter
 {
@@ -96,8 +105,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float BasePower;
 
+	// Base protections at level 1. The per-level term is added at read time in
+	// GetEffectiveProtections() (not accumulated here), so level-ups never mutate
+	// stored stats and Penetration has something to bite on before items.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
 	float Protections;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stats")
+	float ProtectionsPerLevel;
 
 	// ========== TEAM ==========
 
@@ -127,6 +142,10 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "AI")
 	EGodAIState CurrentState;
+
+	// Item build this god shops for. Set by the map builder before FinishSpawning.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+	EGodBuildArchetype BuildArchetype = EGodBuildArchetype::Bruiser;
 
 	// ========== INVENTORY & GOLD ==========
 
@@ -182,6 +201,9 @@ public:
 	/** Get effective protections including item bonuses */
 	float GetEffectiveProtections() const;
 
+	/** 1 - clamp(item CDR, 0, 0.40); applied once when the ability timer is set */
+	float GetCooldownMultiplier() const;
+
 private:
 	// Internal timers
 	float AttackTimer;
@@ -226,8 +248,9 @@ private:
 	void TryPurchaseItems();
 	void RecalculateItemBonuses();
 
-	// Priority list of items for the AI to buy (damage first, then defense)
-	static const TArray<int32>& GetItemPurchasePriority();
+	// Purchase list for an archetype, ascending in cost. TryPurchaseItems buys the
+	// most expensive affordable entry not yet owned (one copy per list occurrence).
+	static const TArray<int32>& GetItemPurchasePriority(EGodBuildArchetype Archetype);
 
 	// Cached references
 	ASkylandersCharacter* CachedPlayer;

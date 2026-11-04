@@ -120,7 +120,7 @@ void ASkylandersSpawnArea::Tick(float DeltaTime)
 				ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(Actor);
 				if (Player && Player->CurrentHealth > 0.0f)
 				{
-					Player->TakeDamage_Custom(PulseDamage);
+					Player->TakeDamage_Custom(PulseDamage, this);
 				}
 
 				ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);

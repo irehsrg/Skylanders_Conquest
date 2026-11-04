@@ -5,6 +5,7 @@
 // Damage, healing, mana, gold, XP/levels, death and respawn.
 
 #include "SkylandersCharacter.h"
+#include "SkylandersEnemyGod.h"
 #include "SkylandersSmokeTest.h"
 #include "SkylandersHitFlash.h"
 #include "SkylandersCameraShake.h"
@@ -73,7 +74,18 @@
 
 // ========== DAMAGE AND HEALING ==========
 
-void ASkylandersCharacter::TakeDamage_Custom(float DamageAmount)
+float ASkylandersCharacter::GetPenetrationOf(const AActor* DamageCauser)
+{
+	if (!DamageCauser) return 0.0f;
+	// Projectiles and AoEs pass themselves as the causer with the shooter as instigator,
+	// same chain the kill-credit code follows.
+	const AActor* Src = DamageCauser->GetInstigator() ? static_cast<const AActor*>(DamageCauser->GetInstigator()) : DamageCauser;
+	if (const ASkylandersCharacter* C = Cast<ASkylandersCharacter>(Src)) return C->ItemBonusStats.Penetration;
+	if (const ASkylandersEnemyGod* G = Cast<ASkylandersEnemyGod>(Src)) return G->ItemBonusStats.Penetration;
+	return 0.0f;
+}
+
+void ASkylandersCharacter::TakeDamage_Custom(float DamageAmount, AActor* DamageCauser)
 {
 	// Cancel recall if channeling
 	if (bIsRecalling) CancelRecall();
@@ -85,7 +97,8 @@ void ASkylandersCharacter::TakeDamage_Custom(float DamageAmount)
 
 	// Apply protections: damage reduction formula (like SMITE)
 	// Reduction = Protections / (Protections + 100)
-	float Prots = GetEffectiveProtections();
+	// Attacker penetration strips protections first (floor 0: pen never adds damage).
+	float Prots = FMath::Max(0.0f, GetEffectiveProtections() - GetPenetrationOf(DamageCauser));
 	float DamageReduction = Prots / (Prots + 100.0f);
 	float FinalDamage = DamageAmount * (1.0f - DamageReduction);
 

@@ -247,7 +247,7 @@ void ASkylandersEnemy::UpdateAI(float DeltaTime)
 		if (AttackTimer <= 0.0f)
 		{
 			AttackTimer = AttackCooldown;
-			Player->TakeDamage_Custom(AttackDamage);
+			Player->TakeDamage_Custom(AttackDamage, this);
 			UE_LOG(LogTemp, Log, TEXT("Enemy '%s' attacks player for %.0f damage!"), *EnemyName, AttackDamage);
 		}
 		break;

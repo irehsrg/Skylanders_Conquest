@@ -348,7 +348,7 @@ void ASkylandersBuffCamp::UpdateAI(float DeltaTime)
 			ASkylandersCharacter* PlayerTarget = Cast<ASkylandersCharacter>(AggroTarget);
 			if (PlayerTarget)
 			{
-				PlayerTarget->TakeDamage_Custom(AttackDamage);
+				PlayerTarget->TakeDamage_Custom(AttackDamage, this);
 				AttackTimer = AttackCooldown;
 
 				// Debug attack line (orange)

@@ -216,6 +216,13 @@ TArray<FString> USkylandersSmokeTestSubsystem::EvaluateInvariants() const
 		Require(C(TEXT("camera_shake")) >= 1, TEXT("no camera shake fired"));
 		Require(C(TEXT("sound_play")) >= 1, TEXT("no sound played"));
 	}
+	if (DurationSeconds >= 180.0f)
+	{
+		// Gods only shop at base and leave it with 0 gold, so the first purchase
+		// waits for a death/retreat; the earliest deaths land ~105 s and respawn
+		// ~20 s later, so a 120 s run cannot see one. By 180 s one must have bought.
+		Require(C(TEXT("god_item_bought")) >= 1, TEXT("no AI god bought an item"));
+	}
 	Require(Last.PlayerLevel >= 3, FString::Printf(TEXT("player level %d < 3"), Last.PlayerLevel));
 	Require(Last.PlayerCoins > 0, TEXT("player never earned gold"));
 	Require(ErrorSink.ErrorCount == 0, FString::Printf(TEXT("%d error(s) logged"), ErrorSink.ErrorCount));
