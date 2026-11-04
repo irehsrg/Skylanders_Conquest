@@ -168,6 +168,10 @@ void ASkylandersEnemyGod::BeginPlay()
 
 	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
 
+	// SMITE-style starting gold, same as the player: gods spawn inside the
+	// 500-unit shopping radius, so the first UpdateAI buys a starter item.
+	Gold = ASkylandersCharacter::StartingGold;
+
 	// Load health bar widget
 	UClass* WidgetClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/UserInterface/WBP_EnemyHealthBar.WBP_EnemyHealthBar_C"));
 	if (WidgetClass && HealthBarComp)

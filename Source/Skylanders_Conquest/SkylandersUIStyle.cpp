@@ -76,4 +76,16 @@ namespace SkylandersUI
 	{
 		return Btn ? Cast<UTextBlock>(Btn->GetChildAt(0)) : nullptr;
 	}
+
+	FSlateBrush RoundedBrush(FLinearColor Fill, float Radius, FLinearColor Outline, float OutlineWidth)
+	{
+		FSlateBrush Brush;
+		Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
+		Brush.TintColor = FSlateColor(Fill);
+		Brush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+		Brush.OutlineSettings.CornerRadii = FVector4(Radius, Radius, Radius, Radius);
+		Brush.OutlineSettings.Color = FSlateColor(Outline);
+		Brush.OutlineSettings.Width = OutlineWidth;
+		return Brush;
+	}
 }

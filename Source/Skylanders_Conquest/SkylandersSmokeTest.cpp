@@ -215,13 +215,10 @@ TArray<FString> USkylandersSmokeTestSubsystem::EvaluateInvariants() const
 		Require(C(TEXT("player_damage")) >= 1, TEXT("player never took damage"));
 		Require(C(TEXT("camera_shake")) >= 1, TEXT("no camera shake fired"));
 		Require(C(TEXT("sound_play")) >= 1, TEXT("no sound played"));
-	}
-	if (DurationSeconds >= 180.0f)
-	{
-		// Gods only shop at base and leave it with 0 gold, so the first purchase
-		// waits for a death/retreat; the earliest deaths land ~105 s and respawn
-		// ~20 s later, so a 120 s run cannot see one. By 180 s one must have bought.
+		// Everyone spawns with starting gold and shops at the fountain, so by
+		// 90 s the player bot and at least one god have each bought a starter.
 		Require(C(TEXT("god_item_bought")) >= 1, TEXT("no AI god bought an item"));
+		Require(C(TEXT("item_bought")) >= 2, FString::Printf(TEXT("item_bought=%d, expected player + god starters"), C(TEXT("item_bought"))));
 	}
 	Require(Last.PlayerLevel >= 3, FString::Printf(TEXT("player level %d < 3"), Last.PlayerLevel));
 	Require(Last.PlayerCoins > 0, TEXT("player never earned gold"));

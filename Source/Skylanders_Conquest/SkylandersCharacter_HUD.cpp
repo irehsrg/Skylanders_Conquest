@@ -46,6 +46,7 @@
 #include "SkylandersGameSettings.h"
 #include "SkylandersKillFeedWidget.h"
 #include "SkylandersMatchStatusWidget.h"
+#include "SkylandersMainHUDWidget.h"
 #include "SkylandersTelemetry.h"
 #include "Sound/SoundBase.h"
 #include "DrawDebugHelpers.h"
@@ -160,6 +161,27 @@ void ASkylandersCharacter::FlushHUD()
 	LastHUD.Coins = Coins;
 	LastHUD.Inventory = Inventory;
 
+	// C++ HUD: typed setters, no widget-name lookups
+	if (NativeHUD)
+	{
+		NativeHUD->SetVitals(CurrentHealth, EffectiveMaxHP, CurrentMana, EffectiveMaxMP, PlayerLevel, XPPercent, Coins);
+
+		TArray<FString> ItemNames;
+		ItemNames.SetNum(MaxInventorySlots);
+		for (int32 i = 0; i < MaxInventorySlots && i < Inventory.Num(); i++)
+		{
+			if (Inventory[i] <= 0) continue;
+			if (const FSkylandersItemData* Item = USkylandersItemCatalog::FindItem(Inventory[i]))
+			{
+				ItemNames[i] = Item->ItemName;
+			}
+		}
+		NativeHUD->SetItems(ItemNames);
+		return;
+	}
+
+	// ---- Blueprint HUD override: write its variables and named widgets ----
+
 	if (!bHUDPropsResolved)
 	{
 		for (int32 i = 0; i < UE_ARRAY_COUNT(HUDValuePropNames); i++)
@@ -251,6 +273,18 @@ void ASkylandersCharacter::FlushHUD()
 
 void ASkylandersCharacter::ApplyCharacterHUDArt()
 {
+	if (NativeHUD)
+	{
+		TArray<UTexture2D*> Icons;
+		for (int32 i = 0; i < 4; i++)
+		{
+			Icons.Add(AbilityIconTextures[i]);
+		}
+		NativeHUD->SetAbilityArt(Icons, PortraitTexture);
+		return;
+	}
+
+	// Blueprint HUD override: swap the images it names AbilityIcon1-4 / portrait
 	if (!MainHUDWidget || !MainHUDWidget->WidgetTree) return;
 
 	const FName IconNames[4] = {
@@ -332,6 +366,22 @@ void ASkylandersCharacter::UpdateCooldowns(float DeltaTime)
 
 void ASkylandersCharacter::UpdateCooldownUI()
 {
+	if (NativeHUD)
+	{
+		// Every frame: the widget skips slots whose seconds/rank did not change,
+		// and rank-ups (F1-F4) show up here without a separate notification.
+		const float Remaining[4] = {
+			Ability1_RemainingCooldown, Ability2_RemainingCooldown,
+			Ability3_RemainingCooldown, Ability4_RemainingCooldown
+		};
+		for (int32 i = 0; i < 4; i++)
+		{
+			NativeHUD->SetCooldown(i, Remaining[i], Remaining[i] <= 0.0f, AbilityLevels[i]);
+		}
+		return;
+	}
+
+	// ---- Blueprint HUD override: CooldownOverlay1-4 / CoolDownText1-4 by name ----
 	if (!MainHUDWidget) return;
 
 	// Cache widget references once

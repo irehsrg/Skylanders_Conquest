@@ -44,6 +44,7 @@
 #include "SkylandersSimpleAnimInstance.h"
 #include "SkylandersInventoryWidget.h"
 #include "SkylandersItemHUDWidget.h"
+#include "SkylandersMainHUDWidget.h"
 #include "SkylandersMinimapWidget.h"
 #include "SkylandersScoreboardWidget.h"
 #include "SkylandersPauseMenuWidget.h"
@@ -321,6 +322,7 @@ ASkylandersCharacter::ASkylandersCharacter()
 	ShopWidget = nullptr;
 	InventoryHUDWidget = nullptr;
 	ItemHUDWidget = nullptr;
+	NativeHUD = nullptr;
 	PauseMenuWidget = nullptr;
 
 	// Recall
@@ -433,6 +435,12 @@ void ASkylandersCharacter::BeginPlay()
 	// 3 ability points to spend (one per level)
 	AbilityPoints = 3;
 
+	// SMITE-style starting gold so the opening fountain visit buys a starter
+	// item. Written directly (not AddCoins) because the HUD does not exist yet;
+	// it still counts as income for the team-economy total.
+	Coins = StartingGold;
+	TotalGoldEarned = StartingGold;
+
 	// Reset ability levels
 	for (int32 i = 0; i < 4; i++)
 	{
@@ -499,10 +507,45 @@ void ASkylandersCharacter::BeginPlay()
 		HighlightMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/VFX/M_Highlight.M_Highlight"));
 	}
 
-	// HUD/shop/projectile fallbacks for characters without Blueprint class
+	// Trigger Happy's HUD art used to be baked into WBP_MainHUD; the C++ HUD
+	// needs it as data. Only fills slots a subclass left empty (Hex/Tree Rex
+	// set theirs in their constructors). LoadObject rather than
+	// ConstructorHelpers so a missing asset is a quiet log, never a crash.
+	{
+		static const TCHAR* const DefaultIconPaths[4] = {
+			// The ability 1 asset really is named with a trailing underscore
+			TEXT("/Game/Characters/TriggerHappy/Images/Trigger_Happy_.Trigger_Happy_"),
+			TEXT("/Game/Characters/TriggerHappy/Images/Trigger_Happy_pot.Trigger_Happy_pot"),
+			TEXT("/Game/Characters/TriggerHappy/Images/Trigger_Happy_minigun.Trigger_Happy_minigun"),
+			TEXT("/Game/Characters/TriggerHappy/Images/Trigger_Happy_golden_yamato.Trigger_Happy_golden_yamato")
+		};
+		auto LoadHUDTexture = [](const TCHAR* Path) -> UTexture2D*
+		{
+			UTexture2D* Tex = LoadObject<UTexture2D>(nullptr, Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+			if (!Tex)
+			{
+				UE_LOG(LogTemp, Verbose, TEXT("HUD art not found: %s"), Path);
+			}
+			return Tex;
+		};
+		for (int32 i = 0; i < 4; i++)
+		{
+			if (!AbilityIconTextures[i]) AbilityIconTextures[i] = LoadHUDTexture(DefaultIconPaths[i]);
+		}
+		if (!PortraitTexture)
+		{
+			PortraitTexture = LoadHUDTexture(TEXT("/Game/Characters/TriggerHappy/Images/trigger_happy_pfp.trigger_happy_pfp"));
+		}
+	}
+
+	// HUD: the C++ widget unless a Blueprint other than the legacy WBP_MainHUD
+	// was explicitly assigned (character Blueprints still carry WBP_MainHUD as
+	// their class default, which now just means "the standard HUD").
+	const bool bBlueprintHUD = MainHUDClass
+		&& MainHUDClass->GetPathName() != TEXT("/Game/UserInterface/WBP_MainHUD.WBP_MainHUD_C");
+
+	// Shop/projectile fallbacks for characters without Blueprint class
 	// defaults (widgets are only needed from BeginPlay onward)
-	if (!MainHUDClass)
-		MainHUDClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/UserInterface/WBP_MainHUD.WBP_MainHUD_C"));
 	if (!ShopWidgetClass)
 		ShopWidgetClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/UserInterface/WBP_Shop.WBP_Shop_C"));
 	if (!ProjectileClass)
@@ -534,14 +577,25 @@ void ASkylandersCharacter::BeginPlay()
 		}
 
 		// Create HUD
-		if (MainHUDClass)
+		if (bBlueprintHUD)
 		{
 			MainHUDWidget = CreateWidget<UUserWidget>(PlayerController, MainHUDClass);
-			if (MainHUDWidget)
-			{
-				MainHUDWidget->AddToViewport();
-				UE_LOG(LogTemp, Log, TEXT("HUD Created Successfully"));
+		}
+		else
+		{
+			NativeHUD = CreateWidget<USkylandersMainHUDWidget>(PlayerController, USkylandersMainHUDWidget::StaticClass());
+			MainHUDWidget = NativeHUD;
+		}
 
+		if (MainHUDWidget)
+		{
+			MainHUDWidget->AddToViewport();
+			UE_LOG(LogTemp, Log, TEXT("HUD created (%s)"), NativeHUD ? TEXT("C++") : *MainHUDClass->GetName());
+
+			// The C++ HUD draws the six item slots itself; a Blueprint HUD
+			// has none, so it keeps the two standalone item widgets.
+			if (!NativeHUD)
+			{
 				// Create inventory overlay
 				CreateInventoryHUD();
 
@@ -552,66 +606,62 @@ void ASkylandersCharacter::BeginPlay()
 					ItemHUDWidget->AddToViewport(5);
 					UE_LOG(LogTemp, Log, TEXT("Item HUD created (bottom-center, 6 slots)"));
 				}
-
-				// Create minimap
-				MinimapWidget = CreateWidget<USkylandersMinimapWidget>(PlayerController, USkylandersMinimapWidget::StaticClass());
-				if (MinimapWidget)
-				{
-					MinimapWidget->AddToViewport(3);
-					UE_LOG(LogTemp, Log, TEXT("Minimap created (top-right)"));
-				}
-
-				// Create scoreboard (hidden by default, Tab to show)
-				ScoreboardWidget = CreateWidget<USkylandersScoreboardWidget>(PlayerController, USkylandersScoreboardWidget::StaticClass());
-				if (ScoreboardWidget)
-				{
-					ScoreboardWidget->AddToViewport(25);
-					ScoreboardWidget->SetVisibility(ESlateVisibility::Collapsed);
-					UE_LOG(LogTemp, Log, TEXT("Scoreboard created (Tab to show)"));
-				}
-
-				// Kill feed (top-right, auto-expiring entries)
-				if (USkylandersKillFeedWidget* Feed = CreateWidget<USkylandersKillFeedWidget>(PlayerController, USkylandersKillFeedWidget::StaticClass()))
-				{
-					Feed->AddToViewport(6);
-				}
-
-				// Announcer banner (FIRST BLOOD, kills, structures, countdown)
-				if (USkylandersAnnouncerWidget* Announcer = CreateWidget<USkylandersAnnouncerWidget>(PlayerController, USkylandersAnnouncerWidget::StaticClass()))
-				{
-					Announcer->AddToViewport(7);
-				}
-
-				// Match status bar (team gold + timer, top-center)
-				if (USkylandersMatchStatusWidget* Status = CreateWidget<USkylandersMatchStatusWidget>(PlayerController, USkylandersMatchStatusWidget::StaticClass()))
-				{
-					Status->AddToViewport(6);
-				}
-
-				// Initial HUD update + per-character icon/portrait swap
-				UpdateHUD();
-				ApplyCharacterHUDArt();
-
-				// Load and display crosshair widget
-				UClass* CrosshairClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/UserInterface/CrosshairWidget.CrosshairWidget_C"));
-				if (CrosshairClass)
-				{
-					UUserWidget* Crosshair = CreateWidget<UUserWidget>(PlayerController, CrosshairClass);
-					if (Crosshair)
-					{
-						Crosshair->AddToViewport(10);
-						UE_LOG(LogTemp, Log, TEXT("Crosshair widget added"));
-					}
-				}
 			}
-			else
+
+			// Create minimap
+			MinimapWidget = CreateWidget<USkylandersMinimapWidget>(PlayerController, USkylandersMinimapWidget::StaticClass());
+			if (MinimapWidget)
 			{
-				UE_LOG(LogTemp, Error, TEXT("Failed to create HUD widget!"));
+				MinimapWidget->AddToViewport(3);
+				UE_LOG(LogTemp, Log, TEXT("Minimap created (top-right)"));
+			}
+
+			// Create scoreboard (hidden by default, Tab to show)
+			ScoreboardWidget = CreateWidget<USkylandersScoreboardWidget>(PlayerController, USkylandersScoreboardWidget::StaticClass());
+			if (ScoreboardWidget)
+			{
+				ScoreboardWidget->AddToViewport(25);
+				ScoreboardWidget->SetVisibility(ESlateVisibility::Collapsed);
+				UE_LOG(LogTemp, Log, TEXT("Scoreboard created (Tab to show)"));
+			}
+
+			// Kill feed (top-right, auto-expiring entries)
+			if (USkylandersKillFeedWidget* Feed = CreateWidget<USkylandersKillFeedWidget>(PlayerController, USkylandersKillFeedWidget::StaticClass()))
+			{
+				Feed->AddToViewport(6);
+			}
+
+			// Announcer banner (FIRST BLOOD, kills, structures, countdown)
+			if (USkylandersAnnouncerWidget* Announcer = CreateWidget<USkylandersAnnouncerWidget>(PlayerController, USkylandersAnnouncerWidget::StaticClass()))
+			{
+				Announcer->AddToViewport(7);
+			}
+
+			// Match status bar (team gold + timer, top-center)
+			if (USkylandersMatchStatusWidget* Status = CreateWidget<USkylandersMatchStatusWidget>(PlayerController, USkylandersMatchStatusWidget::StaticClass()))
+			{
+				Status->AddToViewport(6);
+			}
+
+			// Initial HUD update + per-character icon/portrait swap
+			UpdateHUD();
+			ApplyCharacterHUDArt();
+
+			// Load and display crosshair widget
+			UClass* CrosshairClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/UserInterface/CrosshairWidget.CrosshairWidget_C"));
+			if (CrosshairClass)
+			{
+				UUserWidget* Crosshair = CreateWidget<UUserWidget>(PlayerController, CrosshairClass);
+				if (Crosshair)
+				{
+					Crosshair->AddToViewport(10);
+					UE_LOG(LogTemp, Log, TEXT("Crosshair widget added"));
+				}
 			}
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("MainHUDClass not set! Assign WBP_MainHUD in blueprint."));
+			UE_LOG(LogTemp, Error, TEXT("Failed to create HUD widget!"));
 		}
 	}
 

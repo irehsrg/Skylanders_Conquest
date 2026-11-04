@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Types/SlateEnums.h"
+#include "Styling/SlateBrush.h"
 
 class UButton;
 class UTextBlock;
@@ -36,4 +37,11 @@ namespace SkylandersUI
 
 	/** The label inside a button built by MakeButton; use it to retitle a button at runtime. */
 	UTextBlock* GetButtonLabel(UButton* Btn);
+
+	/**
+	 * Solid rounded rect (optionally outlined) with no texture: the same brush
+	 * MakeButton uses, for panels, bar tracks, badges and slot frames.
+	 */
+	FSlateBrush RoundedBrush(FLinearColor Fill, float Radius,
+		FLinearColor Outline = FLinearColor::Transparent, float OutlineWidth = 0.0f);
 }

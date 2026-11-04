@@ -135,6 +135,9 @@ public:
 
 	static const int32 MaxInventorySlots = 6;
 
+	// Gold every hero (player and AI gods) spawns with, enough for one starter item
+	static constexpr int32 StartingGold = 500;
+
 	// Inventory: stores ItemIDs (0 = empty slot)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
 	TArray<int32> Inventory;
@@ -299,20 +302,27 @@ public:
 
 	// ========== HUD ==========
 
-	// Per-character HUD art. Null entries keep whatever the HUD Blueprint has
-	// baked in (Trigger Happy's icons); Hex/Tree Rex set these in their
-	// constructors and the HUD swaps at match start.
+	// Per-character HUD art. Hex/Tree Rex set these in their constructors;
+	// entries still null at BeginPlay get Trigger Happy's art (the base kit).
 	UPROPERTY(EditAnywhere, Category = "UI")
 	UTexture2D* AbilityIconTextures[4];
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
 	UTexture2D* PortraitTexture;
 
+	// Optional Blueprint HUD override. Left empty (or pointing at the legacy
+	// WBP_MainHUD) the C++ USkylandersMainHUDWidget is used; any other class is
+	// honored through the old widget-name lookups.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
 	TSubclassOf<UUserWidget> MainHUDClass;
 
+	// Whichever HUD is on screen (the C++ HUD or a Blueprint override)
 	UPROPERTY(BlueprintReadOnly, Category = "UI")
 	UUserWidget* MainHUDWidget;
+
+	// Set when MainHUDWidget is the C++ HUD; null for a Blueprint override
+	UPROPERTY()
+	class USkylandersMainHUDWidget* NativeHUD;
 
 	// ========== INVENTORY HUD ==========
 

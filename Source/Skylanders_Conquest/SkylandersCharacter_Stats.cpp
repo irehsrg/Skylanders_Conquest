@@ -198,8 +198,9 @@ void ASkylandersCharacter::AddCoins(int32 Amount)
 	UE_LOG(LogTemp, Verbose, TEXT("Coins added: %d | Total: %d"), Amount, Coins);
 	UpdateHUD();
 
-	// Update coin display in HUD
-	if (MainHUDWidget)
+	// A Blueprint HUD override keeps its own coin accumulator event; the C++
+	// HUD just shows Coins from FlushHUD.
+	if (MainHUDWidget && !NativeHUD)
 	{
 		UFunction* AddCoinsFunc = MainHUDWidget->FindFunction(FName("AddCoins"));
 		if (AddCoinsFunc)
