@@ -48,6 +48,8 @@
 #include "SkylandersPauseMenuWidget.h"
 #include "SkylandersGameSettings.h"
 #include "SkylandersKillFeedWidget.h"
+#include "SkylandersAnnouncerWidget.h"
+#include "SkylandersSoundLibrary.h"
 #include "SkylandersMatchStatusWidget.h"
 #include "SkylandersTelemetry.h"
 #include "Sound/SoundBase.h"
@@ -256,6 +258,13 @@ void ASkylandersCharacter::Die()
 
 	// Kill feed: player death
 	USkylandersKillFeedWidget::Post(this, TEXT("You were slain"), FLinearColor(1.0f, 0.25f, 0.25f));
+	// The player is a god too, so dying first is first blood. No kill sting on
+	// our own death banner: DeathSound already plays below.
+	if (USkylandersAnnouncerWidget::ClaimFirstBlood(this))
+	{
+		USkylandersAnnouncerWidget::Announce(this, TEXT("FIRST BLOOD"), FLinearColor(1.0f, 0.8f, 0.2f), 2.2f, TEXT("kill"));
+	}
+	USkylandersAnnouncerWidget::Announce(this, TEXT("YOU HAVE BEEN SLAIN"), FLinearColor(1.0f, 0.2f, 0.2f));
 
 	if (USkylandersTelemetrySubsystem* Tele = USkylandersTelemetrySubsystem::Get(this))
 	{
@@ -330,6 +339,7 @@ void ASkylandersCharacter::Respawn()
 
 	// Kill feed: player respawn
 	USkylandersKillFeedWidget::Post(this, TEXT("You have respawned"), FLinearColor(0.4f, 1.0f, 0.5f));
+	SkylandersSound::Play2D(this, TEXT("respawn"));
 
 	// Restore health and mana to effective max (base + items)
 	CurrentHealth = MaxHealth + ItemBonusStats.MaxHealth;

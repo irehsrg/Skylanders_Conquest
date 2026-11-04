@@ -15,7 +15,17 @@
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "SkylandersActorRegistry.h"
+#include "SkylandersSoundLibrary.h"
 #include "Engine/World.h"
+
+// Hit confirm for the player's shots (crits and big hits get the heavy one).
+// Only player-fired projectiles: this class is the player's auto attack.
+static void PlayProjectileHitSound(const ASkylandersProjectile* Proj, const AActor* Target)
+{
+	const APawn* Shooter = Proj->GetInstigator();
+	if (!Cast<ASkylandersCharacter>(Shooter) || !Target) return;
+	SkylandersSound::PlayHit(Shooter, Target->GetActorLocation(), Proj->bIsCrit || Proj->Damage >= 80.0f);
+}
 
 ASkylandersProjectile::ASkylandersProjectile()
 {
@@ -114,6 +124,7 @@ void ASkylandersProjectile::OnHit(UPrimitiveComponent* HitComp, AActor* OtherAct
 	{
 		BuffCamp->TakeDamage_Custom(Damage, this);
 		ApplyLifesteal();
+		PlayProjectileHitSound(this, BuffCamp);
 	}
 
 	// Hit a wall/ground/other blocking object — destroy
@@ -136,6 +147,7 @@ void ASkylandersProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActo
 		if (Minion->Team == ETowerTeam::Friendly || Minion->bDead) return; // Fly through friendly minions
 		Minion->TakeDamage_Custom(Damage, this);
 		ApplyLifesteal();
+		PlayProjectileHitSound(this, Minion);
 		CleaveNearby(OtherActor->GetActorLocation(), OtherActor);
 		Destroy();
 		return;
@@ -147,6 +159,7 @@ void ASkylandersProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActo
 	{
 		Enemy->TakeDamage_Custom(Damage, this);
 		ApplyLifesteal();
+		PlayProjectileHitSound(this, Enemy);
 		CleaveNearby(OtherActor->GetActorLocation(), OtherActor);
 		Destroy();
 		return;
@@ -158,6 +171,7 @@ void ASkylandersProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActo
 	{
 		EnemyGod->TakeDamage_Custom(Damage, this);
 		ApplyLifesteal();
+		PlayProjectileHitSound(this, EnemyGod);
 		CleaveNearby(OtherActor->GetActorLocation(), OtherActor);
 		Destroy();
 		return;
@@ -183,6 +197,7 @@ void ASkylandersProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActo
 				{
 					Tower->TakeDamage_Custom(Damage, this);
 					ApplyLifesteal();
+					PlayProjectileHitSound(this, Tower);
 				}
 			}
 		}
@@ -205,6 +220,7 @@ void ASkylandersProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActo
 				{
 					Titan->TakeDamage_Custom(Damage, this);
 					ApplyLifesteal();
+					PlayProjectileHitSound(this, Titan);
 				}
 			}
 		}

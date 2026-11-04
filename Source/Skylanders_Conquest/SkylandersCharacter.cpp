@@ -49,6 +49,8 @@
 #include "SkylandersPauseMenuWidget.h"
 #include "SkylandersGameSettings.h"
 #include "SkylandersKillFeedWidget.h"
+#include "SkylandersAnnouncerWidget.h"
+#include "SkylandersSoundLibrary.h"
 #include "SkylandersMatchStatusWidget.h"
 #include "SkylandersTelemetry.h"
 #include "Sound/SoundBase.h"
@@ -385,6 +387,13 @@ void ASkylandersCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Default SFX for any sound slot the Blueprint left empty (assigned sounds win)
+	if (!AttackSound) AttackSound = SkylandersSound::Get(TEXT("hit_light"));
+	if (!AbilitySound) AbilitySound = SkylandersSound::Get(TEXT("ability_cast"));
+	if (!DeathSound) DeathSound = SkylandersSound::Get(TEXT("death"));
+	if (!LevelUpSound) LevelUpSound = SkylandersSound::Get(TEXT("levelup"));
+	if (!ItemBuySound) ItemBuySound = SkylandersSound::Get(TEXT("buy_item"));
+
 	// Push saved volume/sensitivity into the engine for this session.
 	if (USkylandersGameSettings* Prefs = USkylandersGameSettings::Get())
 	{
@@ -564,6 +573,12 @@ void ASkylandersCharacter::BeginPlay()
 					Feed->AddToViewport(6);
 				}
 
+				// Announcer banner (FIRST BLOOD, kills, structures, countdown)
+				if (USkylandersAnnouncerWidget* Announcer = CreateWidget<USkylandersAnnouncerWidget>(PlayerController, USkylandersAnnouncerWidget::StaticClass()))
+				{
+					Announcer->AddToViewport(7);
+				}
+
 				// Match status bar (team gold + timer, top-center)
 				if (USkylandersMatchStatusWidget* Status = CreateWidget<USkylandersMatchStatusWidget>(PlayerController, USkylandersMatchStatusWidget::StaticClass()))
 				{
@@ -594,6 +609,24 @@ void ASkylandersCharacter::BeginPlay()
 		else
 		{
 			UE_LOG(LogTemp, Warning, TEXT("MainHUDClass not set! Assign WBP_MainHUD in blueprint."));
+		}
+	}
+
+	// 3-2-1-FIGHT countdown. Presentation only: gameplay is already live, the
+	// banner just marks the start of the match.
+	{
+		static const TCHAR* const Steps[] = { TEXT("3"), TEXT("2"), TEXT("1"), TEXT("FIGHT!") };
+		for (int32 i = 0; i < UE_ARRAY_COUNT(Steps); i++)
+		{
+			const bool bFight = (i == UE_ARRAY_COUNT(Steps) - 1);
+			const FString Text = Steps[i];
+			FTimerHandle Handle;
+			GetWorldTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(this, [this, Text, bFight]()
+			{
+				// Digits hold under a second so each one clears before the next
+				USkylandersAnnouncerWidget::Announce(this, Text,
+					bFight ? FLinearColor(1.0f, 0.85f, 0.2f) : FLinearColor::White, bFight ? 1.5f : 0.9f);
+			}), 1.0f + i, false);
 		}
 	}
 
@@ -904,6 +937,7 @@ void ASkylandersCharacter::TickYamatoCharge(float DeltaTime)
 				YamatoRange, 0.3f, ScaledYamatoDmg, 0.3f);
 			UE_LOG(LogTemp, Warning, TEXT("YAMATO BLAST hit %d targets! Damage: %.0f, Range: %.0f"), HitCount, ScaledYamatoDmg, YamatoRange);
 			USkylandersCameraShakeLibrary::Shake(this, true, 1.0f);
+			SkylandersSound::PlayAt(this, TEXT("ability_ult"), GetActorLocation());
 
 			if (HitCount > 0)
 			{

@@ -2,6 +2,7 @@
 
 #include "SkylandersBuffCamp.h"
 #include "SkylandersSmokeTest.h"
+#include "SkylandersSoundLibrary.h"
 #include "SkylandersHitFlash.h"
 #include "SkylandersSimpleAnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -105,6 +106,9 @@ void ASkylandersBuffCamp::BeginPlay()
 	{
 		Registry->Register(this);
 	}
+
+	// Default SFX for any sound slot the Blueprint left empty (assigned sounds win)
+	if (!DeathSound) DeathSound = SkylandersSound::Get(TEXT("hit_heavy"));
 
 	// Save spawn location as home
 	HomeLocation = GetActorLocation();

@@ -546,6 +546,24 @@ public:
 	// Recalculate all item bonus stats from inventory
 	void RecalculateItemBonuses();
 
+	// ========== SMOKE-TEST BOT ==========
+
+	// Scripted, deterministic player driver. Exists only for the headless smoke
+	// test (USkylandersSmokeTestSubsystem calls it every frame on player 0) so a
+	// run exercises shooting, abilities, damage taken and leveling; a no-op
+	// unless the smoke test is running. See SkylandersCharacter_Bot.cpp.
+	void DriveAsBot(float DeltaTime);
+
+protected:
+	// Bot state (only touched by DriveAsBot)
+	float BotElapsed = 0.0f;
+	int32 BotPendingRelease = -1;   // ability pressed last tick, released this tick
+	bool bBotRetreating = false;
+	TArray<FVector> BotPath;        // nav path points toward the current goal
+	FVector BotPathGoal = FVector::ZeroVector;
+	float BotRepathTimer = 0.0f;
+	float BotNextCastTime = 0.0f;   // throttles cast attempts that get refused
+
 protected:
 	// Input callbacks
 	void Move(const FInputActionValue& Value);

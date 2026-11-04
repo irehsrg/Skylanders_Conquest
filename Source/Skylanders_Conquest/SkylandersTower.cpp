@@ -2,8 +2,11 @@
 
 #include "SkylandersTower.h"
 #include "SkylandersSmokeTest.h"
+#include "SkylandersSoundLibrary.h"
 #include "SkylandersHitFlash.h"
 #include "SkylandersKillFeedWidget.h"
+#include "SkylandersAnnouncerWidget.h"
+#include "SkylandersTitan.h"
 #include "SkylandersTelemetry.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersEnemy.h"
@@ -92,6 +95,11 @@ void ASkylandersTower::BeginPlay()
 	{
 		Registry->Register(this);
 	}
+
+	// Default SFX for any sound slot the Blueprint left empty (assigned sounds win)
+	if (!AttackSound) AttackSound = SkylandersSound::Get(TEXT("tower_shot"));
+	if (!DestroySound) DestroySound = SkylandersSound::Get(TEXT("hit_heavy"));
+	if (!PhoenixRespawnSound) PhoenixRespawnSound = SkylandersSound::Get(TEXT("respawn"));
 
 	// All towers overlap with WorldDynamic (projectiles) — damage handled via OnOverlap
 	// Player (Pawn channel) is still blocked, so characters can't walk through towers
@@ -483,6 +491,27 @@ void ASkylandersTower::Die()
 	if (DestroySound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, DestroySound, GetActorLocation());
+	}
+
+	// Announcer: banner in the owning team's color (blue ours, red theirs)
+	const FLinearColor TeamColor = (Team == ETowerTeam::Friendly)
+		? FLinearColor(0.35f, 0.6f, 1.0f) : FLinearColor(1.0f, 0.35f, 0.3f);
+	USkylandersAnnouncerWidget::Announce(this, bIsPhoenix ? TEXT("PHOENIX DESTROYED") : TEXT("TOWER DESTROYED"), TeamColor);
+
+	// This structure was the last thing shielding the enemy titan
+	if (Team == ETowerTeam::Enemy)
+	{
+		TArray<AActor*> Titans;
+		USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersTitan::StaticClass(), Titans);
+		for (AActor* A : Titans)
+		{
+			ASkylandersTitan* Titan = Cast<ASkylandersTitan>(A);
+			if (Titan && Titan->Team == ETowerTeam::Enemy && Titan->ProtectingTower == this && !Titan->bDead)
+			{
+				USkylandersAnnouncerWidget::Announce(this, TEXT("ENEMY TITAN VULNERABLE"), FLinearColor(1.0f, 0.8f, 0.2f));
+				break;
+			}
+		}
 	}
 
 	// Reward player if enemy tower

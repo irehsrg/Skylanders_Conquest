@@ -2,6 +2,7 @@
 
 #include "SkylandersTitan.h"
 #include "SkylandersSmokeTest.h"
+#include "SkylandersSoundLibrary.h"
 #include "SkylandersHitFlash.h"
 #include "SkylandersTelemetry.h"
 #include "SkylandersCharacter.h"
@@ -89,6 +90,10 @@ void ASkylandersTitan::BeginPlay()
 	{
 		Registry->Register(this);
 	}
+
+	// Default SFX for any sound slot the Blueprint left empty (assigned sounds win)
+	if (!AttackSound) AttackSound = SkylandersSound::Get(TEXT("tower_shot"));
+	if (!DestroySound) DestroySound = SkylandersSound::Get(TEXT("ability_ult"));
 
 	// All titans overlap with WorldDynamic (projectiles) — damage handled via OnOverlap
 	// Player (Pawn channel) is still blocked

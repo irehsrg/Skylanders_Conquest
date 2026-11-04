@@ -17,6 +17,7 @@
 #include "Components/Spacer.h"
 #include "Components/ScrollBox.h"
 #include "Blueprint/WidgetTree.h"
+#include "SkylandersSoundLibrary.h"
 
 // Running counter for unique widget names
 static int32 GShopWidgetCounter = 0;
@@ -582,15 +583,23 @@ void USkylandersShopWidget::UpdateBuyButtons()
 	}
 }
 
+// Every shop button routes through one of the callbacks below; each plays the
+// UI click so the shop feels responsive even when a purchase is refused.
+static void PlayShopClick(const UObject* Widget)
+{
+	SkylandersSound::Play2D(Widget, TEXT("ui_click"));
+}
+
 // ===== Filter Callbacks =====
-void USkylandersShopWidget::OnFilterAll()     { CurrentFilter = -1; ApplyFilter(); }
-void USkylandersShopWidget::OnFilterOffense() { CurrentFilter = 0;  ApplyFilter(); }
-void USkylandersShopWidget::OnFilterDefense() { CurrentFilter = 1;  ApplyFilter(); }
-void USkylandersShopWidget::OnFilterUtility() { CurrentFilter = 2;  ApplyFilter(); }
+void USkylandersShopWidget::OnFilterAll()     { PlayShopClick(this); CurrentFilter = -1; ApplyFilter(); }
+void USkylandersShopWidget::OnFilterOffense() { PlayShopClick(this); CurrentFilter = 0;  ApplyFilter(); }
+void USkylandersShopWidget::OnFilterDefense() { PlayShopClick(this); CurrentFilter = 1;  ApplyFilter(); }
+void USkylandersShopWidget::OnFilterUtility() { PlayShopClick(this); CurrentFilter = 2;  ApplyFilter(); }
 
 // ===== Buy Callbacks =====
 void USkylandersShopWidget::OnBuyItem(int32 ItemID)
 {
+	PlayShopClick(this);
 	if (!OwnerCharacter) return;
 	OwnerCharacter->BuyItem(ItemID);
 }
@@ -609,9 +618,9 @@ void USkylandersShopWidget::OnBuyItem11() { OnBuyItem(11); }
 void USkylandersShopWidget::OnBuyItem12() { OnBuyItem(12); }
 
 // ===== Sell Callbacks =====
-void USkylandersShopWidget::OnSellSlot0() { if (OwnerCharacter) { OwnerCharacter->SellItem(0); } }
-void USkylandersShopWidget::OnSellSlot1() { if (OwnerCharacter) { OwnerCharacter->SellItem(1); } }
-void USkylandersShopWidget::OnSellSlot2() { if (OwnerCharacter) { OwnerCharacter->SellItem(2); } }
-void USkylandersShopWidget::OnSellSlot3() { if (OwnerCharacter) { OwnerCharacter->SellItem(3); } }
-void USkylandersShopWidget::OnSellSlot4() { if (OwnerCharacter) { OwnerCharacter->SellItem(4); } }
-void USkylandersShopWidget::OnSellSlot5() { if (OwnerCharacter) { OwnerCharacter->SellItem(5); } }
+void USkylandersShopWidget::OnSellSlot0() { PlayShopClick(this); if (OwnerCharacter) { OwnerCharacter->SellItem(0); } }
+void USkylandersShopWidget::OnSellSlot1() { PlayShopClick(this); if (OwnerCharacter) { OwnerCharacter->SellItem(1); } }
+void USkylandersShopWidget::OnSellSlot2() { PlayShopClick(this); if (OwnerCharacter) { OwnerCharacter->SellItem(2); } }
+void USkylandersShopWidget::OnSellSlot3() { PlayShopClick(this); if (OwnerCharacter) { OwnerCharacter->SellItem(3); } }
+void USkylandersShopWidget::OnSellSlot4() { PlayShopClick(this); if (OwnerCharacter) { OwnerCharacter->SellItem(4); } }
+void USkylandersShopWidget::OnSellSlot5() { PlayShopClick(this); if (OwnerCharacter) { OwnerCharacter->SellItem(5); } }

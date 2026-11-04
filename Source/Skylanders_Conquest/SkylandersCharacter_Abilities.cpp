@@ -49,6 +49,7 @@
 #include "SkylandersCameraShake.h"
 #include "SkylandersMatchStatusWidget.h"
 #include "SkylandersTelemetry.h"
+#include "SkylandersSoundLibrary.h"
 #include "Sound/SoundBase.h"
 #include "DrawDebugHelpers.h"
 #include "Components/StaticMeshComponent.h"
@@ -203,6 +204,10 @@ void ASkylandersCharacter::FireProjectile()
 	AttackSlowRemainingTime = AttackSlowDuration;
 
 	AActor* Proj = GetWorld()->SpawnActor<AActor>(ProjectileClass, MuzzleLoc, SpawnRotation, SpawnParams);
+	if (Proj)
+	{
+		SKY_COUNT("player_shot");
+	}
 	if (ASkylandersProjectile* SkyProj = Cast<ASkylandersProjectile>(Proj))
 	{
 		float FinalDmg = GetEffectivePower();
@@ -247,6 +252,7 @@ void ASkylandersCharacter::StartRecall()
 	GetCharacterMovement()->Velocity = FVector::ZeroVector;
 
 	UE_LOG(LogTemp, Log, TEXT("Recall started! Channeling for %.1f seconds..."), RecallChannelTime);
+	SkylandersSound::PlayAt(this, TEXT("recall"), GetActorLocation());
 
 	if (GEngine)
 	{
@@ -370,6 +376,13 @@ static void ApplyDamageToTarget(AActor* Target, float Damage, AActor* Causer)
 	{
 		God->TakeDamage_Custom(Damage, Causer);
 	}
+	else
+	{
+		return;
+	}
+	// Every kit helper funnels through here, so this is the one place ability
+	// hits get an audible confirm (throttled per caster inside PlayHit).
+	SkylandersSound::PlayHit(Causer, Target->GetActorLocation(), Damage >= 80.0f);
 }
 
 // Collects every living enemy-side target (jungle enemies, enemy minions, buff camps, enemy gods)

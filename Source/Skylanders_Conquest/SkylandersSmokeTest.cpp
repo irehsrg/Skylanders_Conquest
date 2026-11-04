@@ -105,6 +105,13 @@ bool USkylandersSmokeTestSubsystem::Tick(float DeltaTime)
 
 	Elapsed += DeltaTime;
 	SinceSample += DeltaTime;
+
+	// Nobody is at the keyboard: a scripted bot plays the player so combat,
+	// abilities and leveling actually get exercised (see SkylandersCharacter_Bot.cpp).
+	if (ASkylandersCharacter* P = Cast<ASkylandersCharacter>(UGameplayStatics::GetPlayerPawn(World, 0)))
+	{
+		P->DriveAsBot(DeltaTime);
+	}
 	if (SinceSample >= 1.0f)
 	{
 		SinceSample = 0.0f;
@@ -201,6 +208,13 @@ TArray<FString> USkylandersSmokeTestSubsystem::EvaluateInvariants() const
 		Require(C(TEXT("minion_death")) >= 1, TEXT("no minion died: waves never fought"));
 		Require(C(TEXT("god_damage")) >= 1, TEXT("no god took damage: heroes never fought"));
 		Require(C(TEXT("hit_flash")) >= 1, TEXT("no hit flash fired"));
+		// The player bot must have actually played: shot, cast, been hit, and
+		// the feedback layers (shake, sound) must have fired.
+		Require(C(TEXT("player_shot")) >= 1, TEXT("player bot never fired a shot"));
+		Require(C(TEXT("player_ability")) >= 1, TEXT("player bot never cast an ability"));
+		Require(C(TEXT("player_damage")) >= 1, TEXT("player never took damage"));
+		Require(C(TEXT("camera_shake")) >= 1, TEXT("no camera shake fired"));
+		Require(C(TEXT("sound_play")) >= 1, TEXT("no sound played"));
 	}
 	Require(Last.PlayerLevel >= 3, FString::Printf(TEXT("player level %d < 3"), Last.PlayerLevel));
 	Require(Last.PlayerCoins > 0, TEXT("player never earned gold"));

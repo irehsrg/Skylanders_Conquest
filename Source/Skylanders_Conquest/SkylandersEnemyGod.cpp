@@ -2,8 +2,10 @@
 
 #include "SkylandersEnemyGod.h"
 #include "SkylandersSmokeTest.h"
+#include "SkylandersSoundLibrary.h"
 #include "SkylandersHitFlash.h"
 #include "SkylandersKillFeedWidget.h"
+#include "SkylandersAnnouncerWidget.h"
 #include "SkylandersTelemetry.h"
 #include "SkylandersSimpleAnimInstance.h"
 #include "Engine/SkeletalMesh.h"
@@ -151,6 +153,11 @@ void ASkylandersEnemyGod::BeginPlay()
 	{
 		Registry->Register(this);
 	}
+
+	// Default SFX for any sound slot the Blueprint left empty (assigned sounds win)
+	if (!AttackSound) AttackSound = SkylandersSound::Get(TEXT("hit_light"));
+	if (!AbilitySound) AbilitySound = SkylandersSound::Get(TEXT("ability_cast"));
+	if (!DeathSound) DeathSound = SkylandersSound::Get(TEXT("death"));
 
 	BasePosition = GetActorLocation(); // Use placed position as base, fallback to (4500,0,0)
 	if (BasePosition.IsNearlyZero())
@@ -1340,6 +1347,11 @@ void ASkylandersEnemyGod::Die()
 		UGameplayStatics::PlaySoundAtLocation(this, DeathSound, GetActorLocation());
 	}
 
+	if (USkylandersAnnouncerWidget::ClaimFirstBlood(this))
+	{
+		USkylandersAnnouncerWidget::Announce(this, TEXT("FIRST BLOOD"), FLinearColor(1.0f, 0.8f, 0.2f), 2.2f, TEXT("kill"));
+	}
+
 	// An ally god (or the player) killing a red god is a kill for whoever landed
 	// the blow — the player's KDA and gold shouldn't absorb their teammates' work.
 	// A god killing the player, or a red god killing a blue one, pays that god.
@@ -1375,6 +1387,10 @@ void ASkylandersEnemyGod::Die()
 			}
 			USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("You slew %s"), *GodName),
 				FLinearColor(0.3f, 1.0f, 0.4f));
+			// The banner carries the kill sting (and plays it directly when no
+			// announcer is on screen), so there is exactly one kill sound.
+			USkylandersAnnouncerWidget::Announce(this, FString::Printf(TEXT("%s SLAIN"), *GodName.ToUpper()),
+				FLinearColor(0.3f, 1.0f, 0.4f), 2.2f, TEXT("kill"));
 		}
 	}
 	else
