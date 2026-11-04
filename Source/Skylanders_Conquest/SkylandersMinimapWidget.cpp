@@ -6,6 +6,7 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Blueprint/WidgetTree.h"
 #include "Kismet/GameplayStatics.h"
+#include "SkylandersActorRegistry.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersMinion.h"
 #include "SkylandersEnemy.h"
@@ -106,7 +107,7 @@ void USkylandersMinimapWidget::NativeTick(const FGeometry& MyGeometry, float InD
 
 	// Enemy God (red, large)
 	TArray<AActor*> AllGods;
-	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersEnemyGod::StaticClass(), AllGods);
+	USkylandersActorRegistry::GetAllActorsOfClass(World, ASkylandersEnemyGod::StaticClass(), AllGods);
 	for (AActor* A : AllGods)
 	{
 		ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(A);
@@ -118,7 +119,7 @@ void USkylandersMinimapWidget::NativeTick(const FGeometry& MyGeometry, float InD
 
 	// Towers (medium squares)
 	TArray<AActor*> AllTowers;
-	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersTower::StaticClass(), AllTowers);
+	USkylandersActorRegistry::GetAllActorsOfClass(World, ASkylandersTower::StaticClass(), AllTowers);
 	for (AActor* A : AllTowers)
 	{
 		ASkylandersTower* T = Cast<ASkylandersTower>(A);
@@ -132,7 +133,7 @@ void USkylandersMinimapWidget::NativeTick(const FGeometry& MyGeometry, float InD
 
 	// Titans (large squares)
 	TArray<AActor*> AllTitans;
-	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersTitan::StaticClass(), AllTitans);
+	USkylandersActorRegistry::GetAllActorsOfClass(World, ASkylandersTitan::StaticClass(), AllTitans);
 	for (AActor* A : AllTitans)
 	{
 		ASkylandersTitan* T = Cast<ASkylandersTitan>(A);
@@ -146,7 +147,7 @@ void USkylandersMinimapWidget::NativeTick(const FGeometry& MyGeometry, float InD
 
 	// Minions (small dots)
 	TArray<AActor*> AllMinions;
-	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersMinion::StaticClass(), AllMinions);
+	USkylandersActorRegistry::GetAllActorsOfClass(World, ASkylandersMinion::StaticClass(), AllMinions);
 	for (AActor* A : AllMinions)
 	{
 		ASkylandersMinion* M = Cast<ASkylandersMinion>(A);
@@ -160,7 +161,7 @@ void USkylandersMinimapWidget::NativeTick(const FGeometry& MyGeometry, float InD
 
 	// Buff camps (yellow, medium)
 	TArray<AActor*> AllBuffs;
-	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersBuffCamp::StaticClass(), AllBuffs);
+	USkylandersActorRegistry::GetAllActorsOfClass(World, ASkylandersBuffCamp::StaticClass(), AllBuffs);
 	for (AActor* A : AllBuffs)
 	{
 		ASkylandersBuffCamp* B = Cast<ASkylandersBuffCamp>(A);

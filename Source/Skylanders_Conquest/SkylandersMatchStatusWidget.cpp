@@ -11,6 +11,7 @@
 #include "Components/Border.h"
 #include "Blueprint/WidgetTree.h"
 #include "Kismet/GameplayStatics.h"
+#include "SkylandersActorRegistry.h"
 #include "Fonts/SlateFontInfo.h"
 
 static UTextBlock* MakeStatusText(UWidgetTree* Tree, int32 Size, FLinearColor Color)
@@ -88,7 +89,7 @@ void USkylandersMatchStatusWidget::NativeTick(const FGeometry& MyGeometry, float
 	{
 		int32 RedGold = 0;
 		TArray<AActor*> Gods;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), Gods);
+		USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), Gods);
 		for (AActor* A : Gods)
 		{
 			if (ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(A))

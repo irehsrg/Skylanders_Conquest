@@ -6,6 +6,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "SkylandersActorRegistry.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Misc/DateTime.h"
@@ -156,7 +157,7 @@ bool USkylandersTelemetrySubsystem::Snapshot(float /*DeltaTime*/)
 	if (!World || World->GetTimeSeconds() < 0.5f) return true;
 
 	TArray<AActor*> Gods;
-	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersEnemyGod::StaticClass(), Gods);
+	USkylandersActorRegistry::GetAllActorsOfClass(World, ASkylandersEnemyGod::StaticClass(), Gods);
 	if (Gods.Num() == 0) return true; // not in a match
 
 	for (AActor* A : Gods)

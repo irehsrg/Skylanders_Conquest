@@ -15,6 +15,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Kismet/GameplayStatics.h"
+#include "SkylandersActorRegistry.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 
@@ -85,6 +86,10 @@ ASkylandersTower::ASkylandersTower()
 void ASkylandersTower::BeginPlay()
 {
 	Super::BeginPlay();
+	if (USkylandersActorRegistry* Registry = USkylandersActorRegistry::Get(this))
+	{
+		Registry->Register(this);
+	}
 
 	// All towers overlap with WorldDynamic (projectiles) — damage handled via OnOverlap
 	// Player (Pawn channel) is still blocked, so characters can't walk through towers
@@ -223,7 +228,7 @@ void ASkylandersTower::FindTarget()
 
 		// Check enemy minions first
 		TArray<AActor*> AllMinions;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
+		USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
 		for (AActor* Actor : AllMinions)
 		{
 			ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
@@ -241,7 +246,7 @@ void ASkylandersTower::FindTarget()
 
 		// Then jungle enemies
 		TArray<AActor*> AllEnemies;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemy::StaticClass(), AllEnemies);
+		USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersEnemy::StaticClass(), AllEnemies);
 		for (AActor* Actor : AllEnemies)
 		{
 			ASkylandersEnemy* Enemy = Cast<ASkylandersEnemy>(Actor);
@@ -260,7 +265,7 @@ void ASkylandersTower::FindTarget()
 		if (!CurrentTarget)
 		{
 			TArray<AActor*> AllGods;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllGods);
+			USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllGods);
 			for (AActor* Actor : AllGods)
 			{
 				ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Actor);
@@ -303,7 +308,7 @@ void ASkylandersTower::FindTarget()
 
 		// Normal priority: friendly minions first
 		TArray<AActor*> AllMinions;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
+		USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
 		for (AActor* Actor : AllMinions)
 		{
 			ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
@@ -333,7 +338,7 @@ void ASkylandersTower::FindTarget()
 		}
 
 		TArray<AActor*> AllGods;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllGods);
+		USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllGods);
 		for (AActor* Actor : AllGods)
 		{
 			ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Actor);
@@ -606,4 +611,13 @@ void ASkylandersTower::UpdateHealthBar()
 
 	FString HealthStr = FString::Printf(TEXT("%.0f/%.0f"), CurrentHealth, MaxHealth);
 	CachedHealthText->SetText(FText::FromString(HealthStr));
+}
+
+void ASkylandersTower::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (USkylandersActorRegistry* Registry = USkylandersActorRegistry::Get(this))
+	{
+		Registry->Unregister(this);
+	}
+	Super::EndPlay(EndPlayReason);
 }

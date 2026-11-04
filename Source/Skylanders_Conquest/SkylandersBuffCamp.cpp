@@ -16,6 +16,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Kismet/GameplayStatics.h"
+#include "SkylandersActorRegistry.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "DrawDebugHelpers.h"
@@ -98,6 +99,10 @@ ASkylandersBuffCamp::ASkylandersBuffCamp()
 void ASkylandersBuffCamp::BeginPlay()
 {
 	Super::BeginPlay();
+	if (USkylandersActorRegistry* Registry = USkylandersActorRegistry::Get(this))
+	{
+		Registry->Register(this);
+	}
 
 	// Save spawn location as home
 	HomeLocation = GetActorLocation();
@@ -651,4 +656,13 @@ void ASkylandersBuffCamp::UpdateHealthBar()
 	// Health text
 	FString HealthStr = FString::Printf(TEXT("%.0f/%.0f"), CurrentHealth, MaxHealth);
 	CachedHealthText->SetText(FText::FromString(HealthStr));
+}
+
+void ASkylandersBuffCamp::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (USkylandersActorRegistry* Registry = USkylandersActorRegistry::Get(this))
+	{
+		Registry->Unregister(this);
+	}
+	Super::EndPlay(EndPlayReason);
 }

@@ -34,3 +34,6 @@ __pycache__/
 # git-lfs hooks written to a literal dev/null path by a shell redirect
 # under Git Bash on Windows; the real hooks live in .git/hooks
 dev/
+
+# Local asset rip (pulled from the extraction pipeline, never committed)
+Content/Skylanders-Models/

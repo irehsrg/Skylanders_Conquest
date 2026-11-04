@@ -16,6 +16,7 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "SkylandersActorRegistry.h"
 
 ASkylandersAoEExplosion::ASkylandersAoEExplosion()
 {
@@ -126,7 +127,7 @@ void ASkylandersAoEExplosion::Detonate()
 
 	// Find all enemies in radius
 	TArray<AActor*> AllEnemies;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemy::StaticClass(), AllEnemies);
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersEnemy::StaticClass(), AllEnemies);
 
 	for (AActor* Actor : AllEnemies)
 	{
@@ -155,7 +156,7 @@ void ASkylandersAoEExplosion::Detonate()
 
 	// Also damage enemy minions in radius
 	TArray<AActor*> AllMinions;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
 
 	for (AActor* Actor : AllMinions)
 	{
@@ -176,7 +177,7 @@ void ASkylandersAoEExplosion::Detonate()
 
 	// Also damage buff camps in radius
 	TArray<AActor*> AllBuffCamps;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersBuffCamp::StaticClass(), AllBuffCamps);
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersBuffCamp::StaticClass(), AllBuffCamps);
 
 	for (AActor* Actor : AllBuffCamps)
 	{
@@ -197,7 +198,7 @@ void ASkylandersAoEExplosion::Detonate()
 
 	// Also damage enemy gods in radius
 	TArray<AActor*> AllEnemyGods;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllEnemyGods);
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllEnemyGods);
 
 	for (AActor* Actor : AllEnemyGods)
 	{

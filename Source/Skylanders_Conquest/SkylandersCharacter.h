@@ -683,6 +683,15 @@ protected:
 	// MeshPath e.g. "/Engine/BasicShapes/Sphere". Returns the actor (for manual scaling).
 	AActor* SpawnColoredMeshVFX(const TCHAR* MeshPath, const FVector& Location, const FRotator& Rotation, const FVector& Scale, const FLinearColor& Color, float Lifespan);
 
+	// Tick phases, called in order from Tick() (see SkylandersCharacter.cpp)
+	void TickRegenAndIncome(float DeltaTime);
+	void TickRecall(float DeltaTime);
+	void TickRespawnCountdown(float DeltaTime);
+	void TickMachineGun(float DeltaTime);
+	void TickYamatoCharge(float DeltaTime);
+	void TickMovementSpeed();
+	void TickFountainHealing(float DeltaTime);
+
 	// Respawn timer
 	FTimerHandle RespawnTimerHandle;
 

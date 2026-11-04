@@ -25,6 +25,7 @@
 #include "AIController.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "SkylandersActorRegistry.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -144,6 +145,10 @@ ASkylandersEnemyGod::ASkylandersEnemyGod()
 void ASkylandersEnemyGod::BeginPlay()
 {
 	Super::BeginPlay();
+	if (USkylandersActorRegistry* Registry = USkylandersActorRegistry::Get(this))
+	{
+		Registry->Register(this);
+	}
 
 	BasePosition = GetActorLocation(); // Use placed position as base, fallback to (4500,0,0)
 	if (BasePosition.IsNearlyZero())
@@ -312,7 +317,7 @@ bool ASkylandersEnemyGod::IsPositionUnderEnemyTower(const FVector& Position) con
 {
 	// Towers of the opposing team — this god should not dive into these.
 	TArray<AActor*> AllTowers;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
 
 	for (AActor* TowerActor : AllTowers)
 	{
@@ -439,7 +444,7 @@ ASkylandersMinion* ASkylandersEnemyGod::FindNearestEnemyMinion(float SearchRadiu
 {
 	// Find the nearest opposing-team minion to attack
 	TArray<AActor*> AllMinions;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
 
 	ASkylandersMinion* Nearest = nullptr;
 	float NearestDist = (SearchRadius > 0.0f) ? SearchRadius : AttackRange;
@@ -496,7 +501,7 @@ AActor* ASkylandersEnemyGod::FindEnemyHero()
 
 	// Opposing gods
 	TArray<AActor*> AllGods;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllGods);
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllGods);
 	for (AActor* Actor : AllGods)
 	{
 		ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Actor);
@@ -657,7 +662,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 	{
 		int32 Cover = 0;
 		TArray<AActor*> Ms;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), Ms);
+		USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), Ms);
 		for (AActor* A : Ms)
 		{
 			ASkylandersMinion* M = Cast<ASkylandersMinion>(A);
@@ -687,7 +692,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 		// Frontmost own-team minion along the push direction, for cover checks. A
 		// higher (X * LaneSign) is more advanced toward the foe base.
 		TArray<AActor*> AllMinions;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
+		USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
 		float OwnFrontX = GetActorLocation().X;
 		bool bHasOwnMinions = false;
 		int32 OwnMinionsNearby = 0;
@@ -749,7 +754,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 			float NearestStructureDist = 99999.0f;
 
 			TArray<AActor*> AllTowers;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
+			USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
 			for (AActor* TowerActor : AllTowers)
 			{
 				ASkylandersTower* Tower = Cast<ASkylandersTower>(TowerActor);
@@ -765,7 +770,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 			}
 
 			TArray<AActor*> AllTitans;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTitan::StaticClass(), AllTitans);
+			USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersTitan::StaticClass(), AllTitans);
 			for (AActor* TitanActor : AllTitans)
 			{
 				ASkylandersTitan* Titan = Cast<ASkylandersTitan>(TitanActor);
@@ -1276,7 +1281,7 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 			// not a hardcoded red team — otherwise hitting a blue ally would call
 			// red structures onto you.
 			TArray<AActor*> AllTowers;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
+			USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
 			for (AActor* TowerActor : AllTowers)
 			{
 				ASkylandersTower* Tower = Cast<ASkylandersTower>(TowerActor);
@@ -1288,7 +1293,7 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 
 			// Nearby minions of this god's team aggro the attacker
 			TArray<AActor*> AllMinions;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
+			USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
 			for (AActor* MinionActor : AllMinions)
 			{
 				ASkylandersMinion* Minion = Cast<ASkylandersMinion>(MinionActor);
@@ -1472,4 +1477,13 @@ void ASkylandersEnemyGod::UpdateHealthBar()
 
 	FString HealthStr = FString::Printf(TEXT("%.0f/%.0f"), CurrentHealth, EffMaxHealth);
 	CachedHealthText->SetText(FText::FromString(HealthStr));
+}
+
+void ASkylandersEnemyGod::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (USkylandersActorRegistry* Registry = USkylandersActorRegistry::Get(this))
+	{
+		Registry->Unregister(this);
+	}
+	Super::EndPlay(EndPlayReason);
 }

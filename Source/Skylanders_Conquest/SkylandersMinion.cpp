@@ -20,6 +20,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Kismet/GameplayStatics.h"
+#include "SkylandersActorRegistry.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 
@@ -103,6 +104,10 @@ ASkylandersMinion::ASkylandersMinion()
 void ASkylandersMinion::BeginPlay()
 {
 	Super::BeginPlay();
+	if (USkylandersActorRegistry* Registry = USkylandersActorRegistry::Get(this))
+	{
+		Registry->Register(this);
+	}
 
 	// Friendly minions: player and projectiles pass through
 	if (Team == ETowerTeam::Friendly)
@@ -410,7 +415,7 @@ void ASkylandersMinion::FindTarget()
 	// Priority 1: Enemy minions (within aggro range)
 	float ClosestDist = AggroRange;
 	TArray<AActor*> AllMinions;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
 
 	for (AActor* Actor : AllMinions)
 	{
@@ -449,7 +454,7 @@ void ASkylandersMinion::FindTarget()
 		}
 
 		TArray<AActor*> AllGods;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllGods);
+		USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllGods);
 		for (AActor* Actor : AllGods)
 		{
 			if (IsOpposingHero(Actor))
@@ -474,7 +479,7 @@ void ASkylandersMinion::FindTarget()
 	// Only target vulnerable towers (protecting tower must be destroyed first)
 	float ClosestStructDist = 99999.0f;
 	TArray<AActor*> AllTowers;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
 
 	for (AActor* Actor : AllTowers)
 	{
@@ -493,7 +498,7 @@ void ASkylandersMinion::FindTarget()
 
 	// Priority 4: Enemy titan (no range limit, but only if vulnerable - protecting tower must be destroyed)
 	TArray<AActor*> AllTitans;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersTitan::StaticClass(), AllTitans);
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersTitan::StaticClass(), AllTitans);
 
 	for (AActor* Actor : AllTitans)
 	{
@@ -590,7 +595,7 @@ void ASkylandersMinion::TakeDamage_Custom(float DamageAmount, AActor* DamageCaus
 		// Check if we're currently engaged with enemy minions - if so, don't switch to the hero
 		bool bFightingMinions = false;
 		TArray<AActor*> NearbyMinions;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), NearbyMinions);
+		USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), NearbyMinions);
 		for (AActor* Actor : NearbyMinions)
 		{
 			ASkylandersMinion* OtherMinion = Cast<ASkylandersMinion>(Actor);
@@ -761,4 +766,13 @@ void ASkylandersMinion::UpdateHealthBar()
 		? FLinearColor(0.15f, 0.85f, 0.2f)   // green (your team)
 		: FLinearColor(0.9f, 0.15f, 0.15f);  // red (enemy)
 	CachedHealthBar->SetFillColorAndOpacity(BarColor);
+}
+
+void ASkylandersMinion::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (USkylandersActorRegistry* Registry = USkylandersActorRegistry::Get(this))
+	{
+		Registry->Unregister(this);
+	}
+	Super::EndPlay(EndPlayReason);
 }

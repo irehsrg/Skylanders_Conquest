@@ -9,6 +9,7 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Blueprint/WidgetTree.h"
 #include "Kismet/GameplayStatics.h"
+#include "SkylandersActorRegistry.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersEnemyGod.h"
 #include "SkylandersItemCatalog.h"
@@ -145,7 +146,7 @@ void USkylandersScoreboardWidget::NativeTick(const FGeometry& MyGeometry, float 
 
 	// Update enemy god stats
 	TArray<AActor*> AllGods;
-	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersEnemyGod::StaticClass(), AllGods);
+	USkylandersActorRegistry::GetAllActorsOfClass(World, ASkylandersEnemyGod::StaticClass(), AllGods);
 	if (AllGods.Num() > 0)
 	{
 		ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(AllGods[0]);

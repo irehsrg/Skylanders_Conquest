@@ -59,7 +59,9 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 ## Tier 4 — Heavy infrastructure *(optional given "won't get legs")*
 - [ ] **Networking** — real multiplayer 3v3 (replication, server authority, lag
   comp). Largest single item; only worth it if people will actually play together.
-- [ ] **Performance** — optimize once there's enough on screen to stress it.
+- [~] **Performance** — the per-actor-per-tick `GetAllActorsOfClass` scans are
+  gone (`USkylandersActorRegistry`, Nov 2026). Further work waits until there's
+  enough on screen to stress it.
 
 ---
 
@@ -83,5 +85,5 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 ## Known bugs / debt
 - Buff camp damage was flagged as not registering earlier; user reports camps are
   now killable — re-verify the full kill→buff loop when we touch Tier 1 economy.
-- One Hex animation (`drive_modswap_pose02`) showed as deleted in the working
-  tree; restore if it was accidental.
+- ~~One Hex animation (`drive_modswap_pose02`) showed as deleted in the working
+  tree~~ — present and tracked; resolved.

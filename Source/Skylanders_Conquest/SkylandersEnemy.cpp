@@ -14,6 +14,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "SkylandersActorRegistry.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -88,6 +89,10 @@ ASkylandersEnemy::ASkylandersEnemy()
 void ASkylandersEnemy::BeginPlay()
 {
 	Super::BeginPlay();
+	if (USkylandersActorRegistry* Registry = USkylandersActorRegistry::Get(this))
+	{
+		Registry->Register(this);
+	}
 
 	SpawnLocation = GetActorLocation();
 	SpawnRotation = GetActorRotation();
@@ -327,7 +332,7 @@ void ASkylandersEnemy::TakeDamage_Custom(float DamageAmount, AActor* DamageCause
 		{
 			// SMITE minion aggro rule: nearby enemy minions aggro the player
 			TArray<AActor*> AllMinions;
-			UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
+			USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
 			for (AActor* MinionActor : AllMinions)
 			{
 				ASkylandersMinion* Minion = Cast<ASkylandersMinion>(MinionActor);
@@ -442,4 +447,13 @@ void ASkylandersEnemy::UpdateHealthBar()
 		EnemyWidget->SetHealth(CurrentHealth, MaxHealth);
 		EnemyWidget->SetEnemyName(EnemyName);
 	}
+}
+
+void ASkylandersEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (USkylandersActorRegistry* Registry = USkylandersActorRegistry::Get(this))
+	{
+		Registry->Unregister(this);
+	}
+	Super::EndPlay(EndPlayReason);
 }

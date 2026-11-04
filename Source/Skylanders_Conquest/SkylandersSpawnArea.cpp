@@ -9,6 +9,7 @@
 #include "SkylandersTower.h"
 #include "Engine/Engine.h"
 #include "Kismet/GameplayStatics.h"
+#include "SkylandersActorRegistry.h"
 #include "DrawDebugHelpers.h"
 
 ASkylandersSpawnArea::ASkylandersSpawnArea()
@@ -52,6 +53,10 @@ ASkylandersSpawnArea::ASkylandersSpawnArea()
 void ASkylandersSpawnArea::BeginPlay()
 {
 	Super::BeginPlay();
+	if (USkylandersActorRegistry* Registry = USkylandersActorRegistry::Get(this))
+	{
+		Registry->Register(this);
+	}
 
 	// Update sphere radius in case it was changed in editor
 	SpawnZone->SetSphereRadius(SpawnRadius);
@@ -173,4 +178,13 @@ void ASkylandersSpawnArea::OnPlayerExitSpawn(UPrimitiveComponent* OverlappedComp
 		Player->bIsInSpawnArea = false;
 		UE_LOG(LogTemp, Log, TEXT("Player left spawn area - shopping disabled"));
 	}
+}
+
+void ASkylandersSpawnArea::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (USkylandersActorRegistry* Registry = USkylandersActorRegistry::Get(this))
+	{
+		Registry->Unregister(this);
+	}
+	Super::EndPlay(EndPlayReason);
 }

@@ -14,6 +14,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "SkylandersActorRegistry.h"
 #include "Engine/World.h"
 
 ASkylandersProjectile::ASkylandersProjectile()
@@ -243,7 +244,7 @@ void ASkylandersProjectile::CleaveNearby(const FVector& ImpactPoint, AActor* Pri
 
 	TArray<AActor*> Found;
 
-	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersMinion::StaticClass(), Found);
+	USkylandersActorRegistry::GetAllActorsOfClass(World, ASkylandersMinion::StaticClass(), Found);
 	for (AActor* A : Found)
 	{
 		ASkylandersMinion* M = Cast<ASkylandersMinion>(A);
@@ -252,7 +253,7 @@ void ASkylandersProjectile::CleaveNearby(const FVector& ImpactPoint, AActor* Pri
 	}
 
 	Found.Reset();
-	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersEnemy::StaticClass(), Found);
+	USkylandersActorRegistry::GetAllActorsOfClass(World, ASkylandersEnemy::StaticClass(), Found);
 	for (AActor* A : Found)
 	{
 		ASkylandersEnemy* E = Cast<ASkylandersEnemy>(A);
@@ -261,7 +262,7 @@ void ASkylandersProjectile::CleaveNearby(const FVector& ImpactPoint, AActor* Pri
 	}
 
 	Found.Reset();
-	UGameplayStatics::GetAllActorsOfClass(World, ASkylandersEnemyGod::StaticClass(), Found);
+	USkylandersActorRegistry::GetAllActorsOfClass(World, ASkylandersEnemyGod::StaticClass(), Found);
 	for (AActor* A : Found)
 	{
 		ASkylandersEnemyGod* G = Cast<ASkylandersEnemyGod>(A);
