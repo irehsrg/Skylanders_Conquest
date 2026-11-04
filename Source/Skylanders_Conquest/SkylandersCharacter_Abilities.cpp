@@ -45,6 +45,8 @@
 #include "SkylandersPauseMenuWidget.h"
 #include "SkylandersGameSettings.h"
 #include "SkylandersKillFeedWidget.h"
+#include "SkylandersSmokeTest.h"
+#include "SkylandersCameraShake.h"
 #include "SkylandersMatchStatusWidget.h"
 #include "SkylandersTelemetry.h"
 #include "Sound/SoundBase.h"
@@ -519,13 +521,34 @@ void ASkylandersCharacter::CastAbilityByIndex(int32 Index)
 		}
 	}
 
+	// Every ability starts its cooldown when it really fires, so a cooldown that
+	// went from ready to running means the cast happened (not a rejected press).
+	auto Cooldown = [this](int32 i) -> float
+	{
+		switch (i)
+		{
+		case 0: return Ability1_RemainingCooldown;
+		case 1: return Ability2_RemainingCooldown;
+		case 2: return Ability3_RemainingCooldown;
+		case 3: return Ability4_RemainingCooldown;
+		default: return 0.0f;
+		}
+	};
+	const bool bWasReady = Cooldown(Index) <= 0.0f;
+
 	switch (Index)
 	{
 	case 0: UseAbility1(); break;
 	case 1: UseAbility2(); break;
 	case 2: UseAbility3(); break;
 	case 3: UseAbility4(); break;
-	default: break;
+	default: return;
+	}
+
+	if (bWasReady && Cooldown(Index) > 0.0f)
+	{
+		SKY_COUNT("player_ability");
+		USkylandersCameraShakeLibrary::Shake(this, false, 0.6f);
 	}
 }
 

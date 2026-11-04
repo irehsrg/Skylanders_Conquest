@@ -5,6 +5,9 @@
 // Damage, healing, mana, gold, XP/levels, death and respawn.
 
 #include "SkylandersCharacter.h"
+#include "SkylandersSmokeTest.h"
+#include "SkylandersHitFlash.h"
+#include "SkylandersCameraShake.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
@@ -86,6 +89,11 @@ void ASkylandersCharacter::TakeDamage_Custom(float DamageAmount)
 
 	float EffectiveMaxHP = MaxHealth + ItemBonusStats.MaxHealth;
 	CurrentHealth = FMath::Clamp(CurrentHealth - FinalDamage, 0.0f, EffectiveMaxHP);
+	USkylandersHitFlashComponent::Flash(this, FLinearColor(3.0f, 0.6f, 0.5f, 1.0f));
+	SKY_COUNT("player_damage");
+	// Shake scales with the share of max HP lost: a quarter of the bar is a full light shake.
+	USkylandersCameraShakeLibrary::Shake(this, false,
+		FMath::Clamp(EffectiveMaxHP > 0.0f ? FinalDamage / EffectiveMaxHP * 4.0f : 1.0f, 0.3f, 1.0f));
 
 	// Spawn red damage number above player
 	FVector NumberLoc = GetActorLocation() + FVector(0.0f, 0.0f, 80.0f);
@@ -242,6 +250,8 @@ void ASkylandersCharacter::LevelUp()
 void ASkylandersCharacter::Die()
 {
 	Deaths++;
+	SKY_COUNT("player_death");
+	USkylandersCameraShakeLibrary::Shake(this, true, 0.8f);
 	UE_LOG(LogTemp, Warning, TEXT("Player Died! Deaths: %d"), Deaths);
 
 	// Kill feed: player death
@@ -319,10 +329,7 @@ void ASkylandersCharacter::Respawn()
 	UE_LOG(LogTemp, Log, TEXT("Respawning player..."));
 
 	// Kill feed: player respawn
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(107, 3.0f, FColor::Green, TEXT("You have respawned!"));
-	}
+	USkylandersKillFeedWidget::Post(this, TEXT("You have respawned"), FLinearColor(0.4f, 1.0f, 0.5f));
 
 	// Restore health and mana to effective max (base + items)
 	CurrentHealth = MaxHealth + ItemBonusStats.MaxHealth;

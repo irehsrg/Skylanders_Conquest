@@ -8,6 +8,7 @@
 //   SkylandersCharacter_Shop.cpp       shop, items, ability leveling
 //   SkylandersCharacter_Abilities.cpp  targeting, firing, recall, kit helpers, aiming
 #include "SkylandersCharacter.h"
+#include "SkylandersCameraShake.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
@@ -902,6 +903,7 @@ void ASkylandersCharacter::TickYamatoCharge(float DeltaTime)
 			int32 HitCount = DamageEnemiesInCone(GetActorLocation(), GetActorForwardVector(),
 				YamatoRange, 0.3f, ScaledYamatoDmg, 0.3f);
 			UE_LOG(LogTemp, Warning, TEXT("YAMATO BLAST hit %d targets! Damage: %.0f, Range: %.0f"), HitCount, ScaledYamatoDmg, YamatoRange);
+			USkylandersCameraShakeLibrary::Shake(this, true, 1.0f);
 
 			if (HitCount > 0)
 			{

@@ -1,6 +1,8 @@
 // Skylanders Conquest - Minion Implementation
 
 #include "SkylandersMinion.h"
+#include "SkylandersSmokeTest.h"
+#include "SkylandersHitFlash.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimSequenceBase.h"
 #include "Engine/SkeletalMesh.h"
@@ -108,6 +110,7 @@ void ASkylandersMinion::BeginPlay()
 	{
 		Registry->Register(this);
 	}
+	SKY_COUNT("minion_spawn");
 
 	// Friendly minions: player and projectiles pass through
 	if (Team == ETowerTeam::Friendly)
@@ -576,6 +579,7 @@ void ASkylandersMinion::TakeDamage_Custom(float DamageAmount, AActor* DamageCaus
 	if (bDead) return;
 
 	CurrentHealth = FMath::Clamp(CurrentHealth - DamageAmount, 0.0f, MaxHealth);
+	USkylandersHitFlashComponent::Flash(this);
 
 	// Resolve the pawn behind the hit (projectiles pass themselves as the causer
 	// and their shooter as the instigator) so Die() can pay the real killer.
@@ -678,6 +682,7 @@ void ASkylandersMinion::TakeDamage_Custom(float DamageAmount, AActor* DamageCaus
 void ASkylandersMinion::Die()
 {
 	bDead = true;
+	SKY_COUNT("minion_death");
 
 	// Credit the hero who landed the killing blow. An AI god farming the wave used
 	// to bank the gold and creep score into the *player's* account and earn nothing

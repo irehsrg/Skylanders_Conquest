@@ -1,6 +1,8 @@
 // Skylanders Conquest - Titan Implementation
 
 #include "SkylandersTitan.h"
+#include "SkylandersSmokeTest.h"
+#include "SkylandersHitFlash.h"
 #include "SkylandersTelemetry.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersEnemy.h"
@@ -347,6 +349,8 @@ void ASkylandersTitan::TakeDamage_Custom(float DamageAmount, AActor* DamageCause
 	}
 
 	CurrentHealth = FMath::Clamp(CurrentHealth - DamageAmount, 0.0f, MaxHealth);
+	USkylandersHitFlashComponent::Flash(this);
+	SKY_COUNT("structure_damage");
 
 	// Spawn damage number
 	FVector NumberLoc = GetActorLocation() + FVector(0.0f, 0.0f, 350.0f);

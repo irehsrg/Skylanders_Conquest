@@ -1,6 +1,8 @@
 // Skylanders Conquest - Tower Implementation
 
 #include "SkylandersTower.h"
+#include "SkylandersSmokeTest.h"
+#include "SkylandersHitFlash.h"
 #include "SkylandersKillFeedWidget.h"
 #include "SkylandersTelemetry.h"
 #include "SkylandersCharacter.h"
@@ -441,6 +443,8 @@ void ASkylandersTower::TakeDamage_Custom(float DamageAmount, AActor* DamageCause
 	}
 
 	CurrentHealth = FMath::Clamp(CurrentHealth - DamageAmount, 0.0f, MaxHealth);
+	USkylandersHitFlashComponent::Flash(this);
+	SKY_COUNT("structure_damage");
 
 	// Spawn damage number
 	FVector NumberLoc = GetActorLocation() + FVector(0.0f, 0.0f, 300.0f);

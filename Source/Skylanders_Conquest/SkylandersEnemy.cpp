@@ -1,6 +1,8 @@
 // Skylanders Conquest - Enemy with AI Implementation
 
 #include "SkylandersEnemy.h"
+#include "SkylandersSmokeTest.h"
+#include "SkylandersHitFlash.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersTower.h"
 #include "SkylandersMinion.h"
@@ -291,6 +293,7 @@ void ASkylandersEnemy::TakeDamage_Custom(float DamageAmount, AActor* DamageCause
 	if (CurrentHealth <= 0.0f) return;
 
 	CurrentHealth = FMath::Clamp(CurrentHealth - DamageAmount, 0.0f, MaxHealth);
+	USkylandersHitFlashComponent::Flash(this);
 
 	// Spawn floating damage number
 	FVector NumberLoc = GetActorLocation() + FVector(0.0f, 0.0f, 80.0f);

@@ -1,6 +1,8 @@
 // Skylanders Conquest - Jungle Buff Camp Implementation
 
 #include "SkylandersBuffCamp.h"
+#include "SkylandersSmokeTest.h"
+#include "SkylandersHitFlash.h"
 #include "SkylandersSimpleAnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
@@ -422,6 +424,7 @@ void ASkylandersBuffCamp::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 	}
 
 	CurrentHealth = FMath::Clamp(CurrentHealth - DamageAmount, 0.0f, MaxHealth);
+	USkylandersHitFlashComponent::Flash(this);
 
 	// Spawn floating damage number
 	FVector NumberLoc = GetActorLocation() + FVector(0.0f, 0.0f, 100.0f);

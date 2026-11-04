@@ -21,6 +21,8 @@ public class Skylanders_Conquest : ModuleRules
 			"NavigationSystem"   // runtime NavMesh over the procedural map
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] {
+			"EngineCameras"      // UWaveOscillatorCameraShakePattern for code-defined camera shakes
+		});
 	}
 }

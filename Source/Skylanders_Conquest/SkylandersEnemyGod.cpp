@@ -1,6 +1,8 @@
 // Skylanders Conquest - AI-Controlled Enemy God Implementation
 
 #include "SkylandersEnemyGod.h"
+#include "SkylandersSmokeTest.h"
+#include "SkylandersHitFlash.h"
 #include "SkylandersKillFeedWidget.h"
 #include "SkylandersTelemetry.h"
 #include "SkylandersSimpleAnimInstance.h"
@@ -1132,6 +1134,8 @@ void ASkylandersEnemyGod::UseAbility()
 	float DistToHero = FVector::Dist(GetActorLocation(), Hero->GetActorLocation());
 	if (DistToHero > AttackRange) return;
 
+	SKY_COUNT("god_ability");
+
 	if (USkylandersTelemetrySubsystem* Tele = USkylandersTelemetrySubsystem::Get(this))
 	{
 		Tele->LogAbility(GodName, Team == ETowerTeam::Enemy ? TEXT("red") : TEXT("blue"), TEXT("burst"), GetActorLocation());
@@ -1216,6 +1220,8 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 
 	float EffMaxHealth = MaxHealth + ItemBonusStats.MaxHealth;
 	CurrentHealth = FMath::Clamp(CurrentHealth - FinalDamage, 0.0f, EffMaxHealth);
+	USkylandersHitFlashComponent::Flash(this);
+	SKY_COUNT("god_damage");
 
 	// Remember the pawn behind the hit (projectiles pass themselves as the causer
 	// and their shooter as the instigator) so Die() can credit the real killer.
@@ -1320,6 +1326,7 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 
 void ASkylandersEnemyGod::Die()
 {
+	SKY_COUNT("god_death");
 	UE_LOG(LogTemp, Warning, TEXT("Enemy God '%s' has been slain! Level %d"), *GodName, Level);
 
 	if (USkylandersTelemetrySubsystem* Tele = USkylandersTelemetrySubsystem::Get(this))
