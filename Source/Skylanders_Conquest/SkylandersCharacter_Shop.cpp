@@ -179,10 +179,7 @@ bool ASkylandersCharacter::BuyItem(int32 ItemID)
 	if (!bIsInSpawnArea)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Cannot buy items outside spawn area!"));
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Must be in spawn area to buy!"));
-		}
+		USkylandersKillFeedWidget::Post(this, TEXT("Must be in spawn area to buy!"), FLinearColor(1.0f, 0.4f, 0.35f));
 		return false;
 	}
 
@@ -198,11 +195,7 @@ bool ASkylandersCharacter::BuyItem(int32 ItemID)
 	if (Coins < Item->Cost)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Not enough gold! Need %d, have %d"), Item->Cost, Coins);
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red,
-				FString::Printf(TEXT("Not enough gold! Need %d"), Item->Cost));
-		}
+		USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("Not enough gold! Need %d"), Item->Cost), FLinearColor(1.0f, 0.4f, 0.35f));
 		return false;
 	}
 
@@ -220,10 +213,7 @@ bool ASkylandersCharacter::BuyItem(int32 ItemID)
 	if (EmptySlot < 0)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Inventory full! Cannot buy %s"), *Item->ItemName);
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Inventory full!"));
-		}
+		USkylandersKillFeedWidget::Post(this, TEXT("Inventory full!"), FLinearColor(1.0f, 0.4f, 0.35f));
 		return false;
 	}
 
@@ -244,11 +234,7 @@ bool ASkylandersCharacter::BuyItem(int32 ItemID)
 	UE_LOG(LogTemp, Log, TEXT("Bought %s for %d gold (slot %d). Gold remaining: %d"),
 		*Item->ItemName, Item->Cost, EmptySlot, Coins);
 
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green,
-			FString::Printf(TEXT("Bought %s!"), *Item->ItemName));
-	}
+	USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("Bought %s!"), *Item->ItemName), FLinearColor(0.4f, 1.0f, 0.5f));
 
 	UpdateHUD();
 	return true;
@@ -260,10 +246,7 @@ bool ASkylandersCharacter::SellItem(int32 SlotIndex)
 	if (!bIsInSpawnArea)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Cannot sell items outside spawn area!"));
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Must be in spawn area to sell!"));
-		}
+		USkylandersKillFeedWidget::Post(this, TEXT("Must be in spawn area to sell!"), FLinearColor(1.0f, 0.4f, 0.35f));
 		return false;
 	}
 
@@ -297,11 +280,7 @@ bool ASkylandersCharacter::SellItem(int32 SlotIndex)
 
 	UE_LOG(LogTemp, Log, TEXT("Sold %s for %d gold. Gold: %d"), *ItemName, SellPrice, Coins);
 
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow,
-			FString::Printf(TEXT("Sold %s for %d gold"), *ItemName, SellPrice));
-	}
+	USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("Sold %s for %d gold"), *ItemName, SellPrice), FLinearColor(1.0f, 0.85f, 0.2f));
 
 	UpdateHUD();
 	return true;
@@ -370,20 +349,18 @@ void ASkylandersCharacter::LevelUpAbility(int32 AbilityIndex)
 {
 	if (!CanLevelAbility(AbilityIndex))
 	{
-		if (GEngine)
+		const FLinearColor ErrorColor(1.0f, 0.4f, 0.35f);
+		if (AbilityPoints <= 0)
 		{
-			if (AbilityPoints <= 0)
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("No skill points available!"));
-			}
-			else if (AbilityIndex >= 0 && AbilityIndex < 4 && AbilityLevels[AbilityIndex] >= MaxAbilityRank)
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Ability already at max rank!"));
-			}
-			else if (AbilityIndex == 3)
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Ultimate not available at this level!"));
-			}
+			USkylandersKillFeedWidget::Post(this, TEXT("No skill points available"), ErrorColor);
+		}
+		else if (AbilityIndex >= 0 && AbilityIndex < 4 && AbilityLevels[AbilityIndex] >= MaxAbilityRank)
+		{
+			USkylandersKillFeedWidget::Post(this, TEXT("Ability already at max rank"), ErrorColor);
+		}
+		else if (AbilityIndex == 3)
+		{
+			USkylandersKillFeedWidget::Post(this, TEXT("Ultimate not available at this level"), ErrorColor);
 		}
 		return;
 	}
@@ -391,13 +368,9 @@ void ASkylandersCharacter::LevelUpAbility(int32 AbilityIndex)
 	AbilityLevels[AbilityIndex]++;
 	AbilityPoints--;
 
-	// Show on-screen feedback (AbilityNames member — set per character)
-	if (GEngine)
-	{
-		FString Msg = FString::Printf(TEXT("%s leveled to Rank %d! (%d points remaining)"),
-			*AbilityNames[AbilityIndex], AbilityLevels[AbilityIndex], AbilityPoints);
-		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, Msg);
-	}
+	// Feedback in the kill feed (AbilityNames member — set per character)
+	USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("%s rank %d (%d points left)"),
+		*AbilityNames[AbilityIndex], AbilityLevels[AbilityIndex], AbilityPoints), FLinearColor(1.0f, 0.85f, 0.2f));
 
 	UE_LOG(LogTemp, Log, TEXT("Ability %d (%s) leveled to rank %d. Points remaining: %d"),
 		AbilityIndex, *AbilityNames[AbilityIndex], AbilityLevels[AbilityIndex], AbilityPoints);

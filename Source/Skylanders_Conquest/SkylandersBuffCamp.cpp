@@ -363,7 +363,7 @@ void ASkylandersBuffCamp::UpdateAI(float DeltaTime)
 					2.0f
 				);
 
-				UE_LOG(LogTemp, Log, TEXT("Buff Camp '%s' attacked player for %.0f damage!"), *CampName, AttackDamage);
+				UE_LOG(LogTemp, Verbose, TEXT("Buff Camp '%s' attacked player for %.0f damage!"), *CampName, AttackDamage);
 			}
 		}
 	}
@@ -477,13 +477,6 @@ void ASkylandersBuffCamp::Die()
 		UGameplayStatics::PlaySoundAtLocation(this, DeathSound, GetActorLocation());
 	}
 
-	// Kill feed: buff camp slain
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(103, 4.0f, FColor::Yellow,
-			FString::Printf(TEXT("You have slain %s!"), *CampName));
-	}
-
 	// Reward killing player with XP and coins, and apply buff
 	ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(BuffedPlayer);
 	if (Player)
@@ -505,11 +498,7 @@ void ASkylandersBuffCamp::Die()
 				Player->BaseMaxWalkSpeed - AppliedSpeedBonus, Player->BaseMaxWalkSpeed, BuffDuration);
 
 			// Kill feed: buff acquired
-			if (GEngine)
-			{
-				GEngine->AddOnScreenDebugMessage(104, 5.0f, FColor::Yellow,
-					FString::Printf(TEXT("You gained Speed buff! +30%% movement speed for %.0fs"), BuffDuration));
-			}
+			USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("You gained Speed buff! +30%% movement speed for %.0fs"), BuffDuration), FLinearColor(1.0f, 0.85f, 0.2f));
 		}
 		else if (BuffType == EBuffType::Mana)
 		{
@@ -521,11 +510,7 @@ void ASkylandersBuffCamp::Die()
 				AppliedManaRegenBonus, Player->ManaRegenRate, BuffDuration);
 
 			// Kill feed: buff acquired
-			if (GEngine)
-			{
-				GEngine->AddOnScreenDebugMessage(104, 5.0f, FColor::Yellow,
-					FString::Printf(TEXT("You gained Mana buff! +100%% mana regen for %.0fs"), BuffDuration));
-			}
+			USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("You gained Mana buff! +100%% mana regen for %.0fs"), BuffDuration), FLinearColor(1.0f, 0.85f, 0.2f));
 		}
 		else if (BuffType == EBuffType::Damage)
 		{
@@ -537,12 +522,8 @@ void ASkylandersBuffCamp::Die()
 				Player->BasePower - AppliedPowerBonus, Player->BasePower, BuffDuration);
 
 			// Kill feed: buff acquired
-			if (GEngine)
-			{
-				GEngine->AddOnScreenDebugMessage(104, 5.0f, FColor::Yellow,
-					FString::Printf(TEXT("You gained Damage buff! +%.0f%% damage for %.0fs"),
-						(BuffDamageMultiplier - 1.0f) * 100.0f, BuffDuration));
-			}
+			USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("You gained Damage buff! +%.0f%% damage for %.0fs"),
+				(BuffDamageMultiplier - 1.0f) * 100.0f, BuffDuration), FLinearColor(1.0f, 0.85f, 0.2f));
 		}
 		// BuffType::None = XP/Gold only, no buff to apply
 
@@ -572,19 +553,19 @@ void ASkylandersBuffCamp::RemoveBuff()
 				500.0f + Player->ItemBonusStats.MovementSpeed);
 			Player->GetCharacterMovement()->MaxWalkSpeed = Player->BaseMaxWalkSpeed;
 			UE_LOG(LogTemp, Log, TEXT("Speed Buff expired! BaseMaxWalkSpeed now %.1f"), Player->BaseMaxWalkSpeed);
-			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Red, TEXT("Speed Buff Expired!"));
+			USkylandersKillFeedWidget::Post(this, TEXT("Speed Buff Expired!"), FLinearColor(1.0f, 0.4f, 0.35f));
 		}
 		else if (BuffType == EBuffType::Mana)
 		{
 			Player->ManaRegenRate = FMath::Max(Player->ManaRegenRate - AppliedManaRegenBonus, 0.0f);
 			UE_LOG(LogTemp, Log, TEXT("Mana Buff expired! ManaRegen now %.1f"), Player->ManaRegenRate);
-			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Red, TEXT("Blue Buff Expired!"));
+			USkylandersKillFeedWidget::Post(this, TEXT("Blue Buff Expired!"), FLinearColor(1.0f, 0.4f, 0.35f));
 		}
 		else if (BuffType == EBuffType::Damage)
 		{
 			Player->BasePower = FMath::Max(Player->BasePower - AppliedPowerBonus, 0.0f);
 			UE_LOG(LogTemp, Log, TEXT("Damage Buff expired! BasePower now %.1f"), Player->BasePower);
-			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Red, TEXT("Damage Buff Expired!"));
+			USkylandersKillFeedWidget::Post(this, TEXT("Damage Buff Expired!"), FLinearColor(1.0f, 0.4f, 0.35f));
 		}
 		// BuffType::None has no buff to remove
 	}

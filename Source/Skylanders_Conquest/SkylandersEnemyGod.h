@@ -166,6 +166,27 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item Stats")
 	FSkylandersItemStats ItemBonusStats;
 
+	// ========== SCOREBOARD (K / D / A, CS) ==========
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
+	int32 Kills = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
+	int32 Deaths = 0;
+
+	// Damaged an opposing hero within the assist window of its death without
+	// landing the kill
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
+	int32 Assists = 0;
+
+	// Minions this god was paid for (last hits)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
+	int32 CreepScore = 0;
+
+	// Opposing heroes that hit this god recently -> world time of their last hit
+	// (resolved through the instigator chain). Die() grants assists from it.
+	TMap<TWeakObjectPtr<AActor>, float> RecentHeroDamagers;
+
 	// ========== AUDIO ==========
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")

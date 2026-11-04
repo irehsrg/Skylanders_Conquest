@@ -712,7 +712,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 		if (Cover < 3)
 		{
 			CurrentState = EGodAIState::Retreating;
-			UE_LOG(LogTemp, Log, TEXT("God '%s' backing off an enemy tower (cover %d)"), *GodName, Cover);
+			UE_LOG(LogTemp, Verbose, TEXT("God '%s' backing off an enemy tower (cover %d)"), *GodName, Cover);
 			return;
 		}
 	}
@@ -875,7 +875,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 				if (DistToHero <= AggroRange * 0.7f || bFoeVulnerable)
 				{
 					CurrentState = EGodAIState::Fighting;
-					UE_LOG(LogTemp, Log, TEXT("God '%s' engages a hero! Distance: %.0f, FoeHP: %.0f%%"),
+					UE_LOG(LogTemp, Verbose, TEXT("God '%s' engages a hero! Distance: %.0f, FoeHP: %.0f%%"),
 						*GodName, DistToHero, FoeHealthPct * 100.0f);
 				}
 			}
@@ -889,7 +889,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 		if (!bHeroAlive)
 		{
 			CurrentState = EGodAIState::Laning;
-			UE_LOG(LogTemp, Log, TEXT("God '%s' returns to laning - no hero."), *GodName);
+			UE_LOG(LogTemp, Verbose, TEXT("God '%s' returns to laning - no hero."), *GodName);
 			break;
 		}
 
@@ -897,7 +897,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 		if (DistToHero > 1500.0f)
 		{
 			CurrentState = EGodAIState::Laning;
-			UE_LOG(LogTemp, Log, TEXT("God '%s' lost aggro, returning to lane."), *GodName);
+			UE_LOG(LogTemp, Verbose, TEXT("God '%s' lost aggro, returning to lane."), *GodName);
 			break;
 		}
 
@@ -923,7 +923,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 			else
 			{
 				CurrentState = EGodAIState::Laning;
-				UE_LOG(LogTemp, Log, TEXT("God '%s' disengaging - hero is under tower."), *GodName);
+				UE_LOG(LogTemp, Verbose, TEXT("God '%s' disengaging - hero is under tower."), *GodName);
 				break;
 			}
 		}
@@ -1011,7 +1011,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 			{
 				GetCharacterMovement()->MaxWalkSpeed = MoveSpeed + ItemBonusStats.MovementSpeed;
 				CurrentState = EGodAIState::Laning;
-				UE_LOG(LogTemp, Log, TEXT("Enemy God '%s' recovered, returning to lane. HP: %.0f/%.0f"),
+				UE_LOG(LogTemp, Verbose, TEXT("Enemy God '%s' recovered, returning to lane. HP: %.0f/%.0f"),
 					*GodName, CurrentHealth, EffMaxHealth);
 				break;
 			}
@@ -1239,7 +1239,7 @@ void ASkylandersEnemyGod::UseAbility()
 		CurrentHealth = FMath::Min(CurrentHealth + HealAmount, EffMaxHP);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("Enemy God '%s' used ability! Burst: %.0f, After protections: %.0f"),
+	UE_LOG(LogTemp, Verbose, TEXT("Enemy God '%s' used ability! Burst: %.0f, After protections: %.0f"),
 		*GodName, BurstDamage, MitigatedDamage);
 }
 
@@ -1268,6 +1268,16 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 		if (CauserPawn)
 		{
 			LastDamageCauser = CauserPawn;
+		}
+
+		// Opposing heroes only: a same-team hit or a minion/tower is never an assist
+		AActor* Hero = ASkylandersCharacter::ResolveDamageHero(DamageCauser);
+		const bool bOpposingHero = Cast<ASkylandersCharacter>(Hero)
+			? (Team == ETowerTeam::Enemy)
+			: (Cast<ASkylandersEnemyGod>(Hero) && Cast<ASkylandersEnemyGod>(Hero)->Team != Team);
+		if (bOpposingHero)
+		{
+			RecentHeroDamagers.Add(Hero, GetWorld()->GetTimeSeconds());
 		}
 	}
 
@@ -1305,7 +1315,7 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 		if (bHeroAttacker && !WouldChaseIntoEnemyTower(LastDamageCauser))
 		{
 			CurrentState = EGodAIState::Fighting;
-			UE_LOG(LogTemp, Log, TEXT("God '%s' aggro'd by damage!"), *GodName);
+			UE_LOG(LogTemp, Verbose, TEXT("God '%s' aggro'd by damage!"), *GodName);
 		}
 	}
 
@@ -1364,6 +1374,7 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 void ASkylandersEnemyGod::Die()
 {
 	SKY_COUNT("god_death");
+	Deaths++;
 	UE_LOG(LogTemp, Warning, TEXT("Enemy God '%s' has been slain! Level %d"), *GodName, Level);
 
 	if (USkylandersTelemetrySubsystem* Tele = USkylandersTelemetrySubsystem::Get(this))
@@ -1393,6 +1404,41 @@ void ASkylandersEnemyGod::Die()
 	if (KillerGod)
 	{
 		KillerGod->Gold += CoinReward;
+		KillerGod->Kills++;
+	}
+
+	// Whoever is credited with the kill below: the killer god, else (for a red
+	// god) the player, who takes credit for minion/tower/fountain finishes too.
+	ASkylandersCharacter* Player = FindPlayer();
+	AActor* KillCredit = KillerGod ? static_cast<AActor*>(KillerGod)
+		: (Team == ETowerTeam::Enemy ? static_cast<AActor*>(Player) : nullptr);
+
+	// Assists: every opposing hero that hit this god inside the window and
+	// didn't get the kill earns half the bounty (the player also half the XP).
+	{
+		const float Now = GetWorld()->GetTimeSeconds();
+		for (const TPair<TWeakObjectPtr<AActor>, float>& Hit : RecentHeroDamagers)
+		{
+			AActor* Hero = Hit.Key.Get();
+			if (!Hero || Hero == KillCredit || Now - Hit.Value > ASkylandersCharacter::AssistWindowSeconds) continue;
+
+			if (ASkylandersCharacter* AssistPlayer = Cast<ASkylandersCharacter>(Hero))
+			{
+				AssistPlayer->Assists++;
+				AssistPlayer->AddCoins(CoinReward / 2);
+				AssistPlayer->AddXP(XPReward * 0.5f);
+				USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("Assist: %s"), *GodName),
+					FLinearColor(0.5f, 0.9f, 1.0f));
+				SKY_COUNT("assist");
+			}
+			else if (ASkylandersEnemyGod* AssistGod = Cast<ASkylandersEnemyGod>(Hero))
+			{
+				AssistGod->Assists++;
+				AssistGod->Gold += CoinReward / 2;
+				SKY_COUNT("assist");
+			}
+		}
+		RecentHeroDamagers.Reset();
 	}
 
 	// Only an enemy-team god rewards the player / posts the "you slew" feed. An
@@ -1407,7 +1453,6 @@ void ASkylandersEnemyGod::Die()
 		}
 		else
 		{
-			ASkylandersCharacter* Player = FindPlayer();
 			if (Player)
 			{
 				Player->AddXP(XPReward);
@@ -1433,8 +1478,11 @@ void ASkylandersEnemyGod::Die()
 	SetActorHiddenInGame(true);
 	SetActorEnableCollision(false);
 
-	// Respawn delay scales with level: 15s + Level * 2s
-	float ActualRespawnDelay = RespawnDelay + Level * 2.0f;
+	// Respawn delay scales with level and match length (SMITE-like):
+	// 15s + Level * 2s + 1.5s per full match minute, capped at 45s. Match time is
+	// world time, the same clock telemetry stamps events with.
+	const float MatchMinutes = FMath::FloorToFloat(GetWorld()->GetTimeSeconds() / 60.0f);
+	float ActualRespawnDelay = FMath::Min(RespawnDelay + Level * 2.0f + MatchMinutes * 1.5f, 45.0f);
 	UE_LOG(LogTemp, Log, TEXT("Enemy God '%s' will respawn in %.0f seconds."), *GodName, ActualRespawnDelay);
 
 	GetWorld()->GetTimerManager().SetTimer(RespawnTimerHandle, this, &ASkylandersEnemyGod::RespawnGod, ActualRespawnDelay, false);
@@ -1453,6 +1501,7 @@ void ASkylandersEnemyGod::RespawnGod()
 	AttackTimer = 0.0f;
 	AbilityCooldownTimer = 8.0f;
 	LastDamageCauser = nullptr; // Don't let last life's killer credit this one's death
+	RecentHeroDamagers.Reset();
 
 	// Restore visibility and collision
 	SetActorHiddenInGame(false);

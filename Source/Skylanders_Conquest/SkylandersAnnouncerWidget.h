@@ -4,6 +4,9 @@
 // Built entirely in C++ like the kill feed: one large outlined TextBlock at
 // 50%/22% of the screen, collapsed while idle. Messages queue (max 3 pending)
 // and play one at a time: fade in over 0.15 s, hold, collapse.
+//
+// A second, smaller status line sits under the banner for persistent state
+// ("Respawning in 7...", "Recalling... 3s"): SetStatus shows it until ClearStatus.
 
 #pragma once
 
@@ -30,6 +33,11 @@ public:
 	// True exactly once per match world: the caller gets to post "FIRST BLOOD".
 	static bool ClaimFirstBlood(const UObject* WorldContext);
 
+	// Persistent status line under the banner, shown until ClearStatus. Cheap to
+	// call every frame: the widget is cached and unchanged text is not re-set.
+	static void SetStatus(UObject* WorldContext, const FString& Text, FLinearColor Color);
+	static void ClearStatus(UObject* WorldContext);
+
 private:
 	struct FEntry
 	{
@@ -43,8 +51,17 @@ private:
 	void ShowNext();
 	void Step();
 
+	// The on-screen announcer for WorldContext's world (cached; null if none)
+	static USkylandersAnnouncerWidget* Find(UObject* WorldContext);
+
 	UPROPERTY()
 	UTextBlock* BannerText;
+
+	UPROPERTY()
+	UTextBlock* StatusText;
+
+	FString ShownStatus;
+	FLinearColor ShownStatusColor = FLinearColor::Transparent;
 
 	TArray<FEntry> Pending;
 	bool bShowing = false;

@@ -1,6 +1,7 @@
 // Skylanders Conquest - Spawn Area Implementation
 
 #include "SkylandersSpawnArea.h"
+#include "SkylandersKillFeedWidget.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "SkylandersCharacter.h"
@@ -160,10 +161,7 @@ void ASkylandersSpawnArea::OnPlayerEnterSpawn(UPrimitiveComponent* OverlappedCom
 		Player->bIsInSpawnArea = true;
 		UE_LOG(LogTemp, Log, TEXT("Player entered spawn area - shopping enabled"));
 
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Cyan, TEXT("Entered Spawn Area - Press B to Shop"));
-		}
+		USkylandersKillFeedWidget::Post(this, TEXT("Entered Spawn Area - Press B to Shop"), FLinearColor(0.4f, 0.85f, 1.0f));
 	}
 }
 

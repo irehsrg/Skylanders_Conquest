@@ -21,6 +21,7 @@ class USoundBase;
 class UTexture2D;
 class UMaterialInterface;
 struct FInputActionValue;
+class FProperty;
 
 UCLASS()
 class SKYLANDERS_CONQUEST_API ASkylandersCharacter : public ACharacter
@@ -198,6 +199,26 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
 	int32 CreepScore;
+
+	// Damaged an enemy god within AssistWindowSeconds of its death without
+	// landing the kill (see ASkylandersEnemyGod::Die)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
+	int32 Assists;
+
+	// Opposing heroes (red gods) that hit us recently -> world time of their last
+	// hit. Resolved through the instigator chain like the gods' LastDamageCauser,
+	// so a projectile credits its shooter. Read and cleared by Die() for assists.
+	TMap<TWeakObjectPtr<AActor>, float> RecentHeroDamagers;
+
+	// Pawn behind the most recent hit (any source); Die() credits it as the killer
+	TWeakObjectPtr<AActor> LastDamageCauser;
+
+	// Kill/assist window shared by the player and the gods
+	static constexpr float AssistWindowSeconds = 10.0f;
+
+	// The hero (player or god) behind a hit: follows projectile/AoE -> instigator.
+	// Null when the hit came from a minion, tower, camp or the environment.
+	static AActor* ResolveDamageHero(AActor* DamageCauser);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Stats")
 	float GameElapsedTime;
@@ -501,9 +522,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Stats")
 	void Respawn();
 
-	// HUD updates
+	// HUD updates. Cheap: only marks the HUD dirty; the widget writes happen
+	// once per frame in FlushHUD() at the end of Tick (regen calls this every frame).
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void UpdateHUD();
+
+	// Writes the HUD widgets if UpdateHUD() marked them dirty since the last flush
+	void FlushHUD();
 
 	// Swaps the HUD's ability icons/portrait to this character's art (if set)
 	void ApplyCharacterHUDArt();
@@ -603,6 +628,12 @@ protected:
 	bool bCooldownWidgetsCached;
 	UWidget* CooldownOverlay[4];
 	UWidget* CooldownText[4];
+	// Font/outline/color are applied once per text widget, not every tick
+	bool bCooldownTextStyled[4] = { false, false, false, false };
+	// Last whole-second value shown per slot (0 = hidden) so unchanged frames skip SetText
+	int32 LastCooldownSeconds[4] = { -1, -1, -1, -1 };
+	// Every cooldown was 0 last call: nothing to do until one starts
+	bool bCooldownsIdle = false;
 
 	// Cached HUD widget lookups (UpdateHUD runs every frame during regen;
 	// avoid re-searching the widget tree each call)
@@ -614,6 +645,24 @@ protected:
 	UWidget* CachedLevelText;
 	class UProgressBar* CachedXPBar;
 	UWidget* CachedCoinText;
+
+	// Set by UpdateHUD(), consumed by FlushHUD()
+	bool bHUDDirty = false;
+
+	// The HUD Blueprint's own float/double variables ("Current Health", ...),
+	// looked up by name once instead of on every write. Null = name not present.
+	bool bHUDPropsResolved = false;
+	FProperty* HUDValueProps[8] = {};
+
+	// What the last flush wrote; a flush whose displayed values are unchanged
+	// (sub-1-HP regen ticks) skips the widget writes entirely.
+	struct FHUDSnapshot
+	{
+		float HP = -1.0f, MaxHP = -1.0f, MP = -1.0f, MaxMP = -1.0f, XPPct = -1.0f;
+		int32 Level = -1, Coins = INT32_MIN;
+		TArray<int32> Inventory;
+	};
+	FHUDSnapshot LastHUD;
 
 	// Ability leveling key handlers
 	void Debug_LevelAbility1();

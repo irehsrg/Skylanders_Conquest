@@ -68,25 +68,32 @@
 
 // ========== HUD UPDATES ==========
 
-// Helper to set a float property on the widget by name
-static void SetWidgetFloatProperty(UUserWidget* Widget, const FName& PropName, float Value)
+// Names of the HUD Blueprint's own variables its bindings read. Both spellings
+// exist across HUD revisions; whichever the class has gets written.
+static const TCHAR* const HUDValuePropNames[8] = {
+	TEXT("Current Health"), TEXT("Max Health"), TEXT("CurrentHealth"), TEXT("MaxHealth"),
+	TEXT("Current Mana"), TEXT("Max Mana"), TEXT("CurrentMana"), TEXT("MaxMana")
+};
+
+// Resolves a HUD variable to a float or double property (UE5 Blueprint floats
+// are usually doubles). Anything else counts as missing.
+static FProperty* FindHUDValueProperty(UUserWidget* Widget, const TCHAR* Name)
 {
-	if (!Widget) return;
-	FProperty* Prop = Widget->GetClass()->FindPropertyByName(PropName);
-	if (Prop)
+	FProperty* Prop = Widget->GetClass()->FindPropertyByName(FName(Name));
+	return (CastField<FFloatProperty>(Prop) || CastField<FDoubleProperty>(Prop)) ? Prop : nullptr;
+}
+
+// Writes a property resolved by FindHUDValueProperty
+static void SetWidgetFloatProperty(UUserWidget* Widget, FProperty* Prop, float Value)
+{
+	if (!Widget || !Prop) return;
+	if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Prop))
 	{
-		FFloatProperty* FloatProp = CastField<FFloatProperty>(Prop);
-		if (FloatProp)
-		{
-			FloatProp->SetPropertyValue_InContainer(Widget, Value);
-			return;
-		}
-		// Try double (UE5 often uses double for Blueprint floats)
-		FDoubleProperty* DoubleProp = CastField<FDoubleProperty>(Prop);
-		if (DoubleProp)
-		{
-			DoubleProp->SetPropertyValue_InContainer(Widget, (double)Value);
-		}
+		FloatProp->SetPropertyValue_InContainer(Widget, Value);
+	}
+	else if (FDoubleProperty* DoubleProp = CastField<FDoubleProperty>(Prop))
+	{
+		DoubleProp->SetPropertyValue_InContainer(Widget, (double)Value);
 	}
 }
 
@@ -107,10 +114,18 @@ static void SetWidgetText(UWidget* Widget, const FText& Text)
 
 void ASkylandersCharacter::UpdateHUD()
 {
-	if (!MainHUDWidget)
+	// Callers (regen, damage, gold, XP, shop...) fire many times per frame;
+	// the actual widget writes are batched into one FlushHUD() at the end of Tick.
+	bHUDDirty = true;
+}
+
+void ASkylandersCharacter::FlushHUD()
+{
+	if (!bHUDDirty || !MainHUDWidget)
 	{
 		return;
 	}
+	bHUDDirty = false;
 
 	// Safety check
 	if (MaxHealth <= 0.0f) MaxHealth = 100.0f;
@@ -125,15 +140,44 @@ void ASkylandersCharacter::UpdateHUD()
 	float RoundedMaxHP = FMath::FloorToFloat(EffectiveMaxHP);
 	float RoundedMP = FMath::FloorToFloat(CurrentMana);
 	float RoundedMaxMP = FMath::FloorToFloat(EffectiveMaxMP);
+	float XPPercent = (XPToNextLevel > 0.0f) ? (CurrentXP / XPToNextLevel) : 0.0f;
 
-	SetWidgetFloatProperty(MainHUDWidget, FName("Current Health"), RoundedHP);
-	SetWidgetFloatProperty(MainHUDWidget, FName("Max Health"), RoundedMaxHP);
-	SetWidgetFloatProperty(MainHUDWidget, FName("CurrentHealth"), RoundedHP);
-	SetWidgetFloatProperty(MainHUDWidget, FName("MaxHealth"), RoundedMaxHP);
-	SetWidgetFloatProperty(MainHUDWidget, FName("Current Mana"), RoundedMP);
-	SetWidgetFloatProperty(MainHUDWidget, FName("Max Mana"), RoundedMaxMP);
-	SetWidgetFloatProperty(MainHUDWidget, FName("CurrentMana"), RoundedMP);
-	SetWidgetFloatProperty(MainHUDWidget, FName("MaxMana"), RoundedMaxMP);
+	// Regen marks the HUD dirty every frame but usually moves HP/mana by a
+	// fraction of a point; nothing visible changes until a whole number ticks over.
+	if (RoundedHP == LastHUD.HP && RoundedMaxHP == LastHUD.MaxHP
+		&& RoundedMP == LastHUD.MP && RoundedMaxMP == LastHUD.MaxMP
+		&& XPPercent == LastHUD.XPPct && PlayerLevel == LastHUD.Level
+		&& Coins == LastHUD.Coins && Inventory == LastHUD.Inventory)
+	{
+		return;
+	}
+	LastHUD.HP = RoundedHP;
+	LastHUD.MaxHP = RoundedMaxHP;
+	LastHUD.MP = RoundedMP;
+	LastHUD.MaxMP = RoundedMaxMP;
+	LastHUD.XPPct = XPPercent;
+	LastHUD.Level = PlayerLevel;
+	LastHUD.Coins = Coins;
+	LastHUD.Inventory = Inventory;
+
+	if (!bHUDPropsResolved)
+	{
+		for (int32 i = 0; i < UE_ARRAY_COUNT(HUDValuePropNames); i++)
+		{
+			HUDValueProps[i] = FindHUDValueProperty(MainHUDWidget, HUDValuePropNames[i]);
+		}
+		bHUDPropsResolved = true;
+	}
+
+	// Same order as HUDValuePropNames
+	const float PropValues[8] = {
+		RoundedHP, RoundedMaxHP, RoundedHP, RoundedMaxHP,
+		RoundedMP, RoundedMaxMP, RoundedMP, RoundedMaxMP
+	};
+	for (int32 i = 0; i < UE_ARRAY_COUNT(PropValues); i++)
+	{
+		SetWidgetFloatProperty(MainHUDWidget, HUDValueProps[i], PropValues[i]);
+	}
 
 	// Cache widget-tree lookups once — UpdateHUD runs every frame during regen
 	if (!bHUDRefsCached && MainHUDWidget->WidgetTree)
@@ -173,7 +217,6 @@ void ASkylandersCharacter::UpdateHUD()
 	// XP Bar
 	if (CachedXPBar)
 	{
-		float XPPercent = (XPToNextLevel > 0.0f) ? (CurrentXP / XPToNextLevel) : 0.0f;
 		CachedXPBar->SetPercent(XPPercent);
 	}
 
@@ -339,28 +382,47 @@ void ASkylandersCharacter::UpdateCooldownUI()
 		Ability3_RemainingCooldown, Ability4_RemainingCooldown
 	};
 
+	// Runs every tick: when nothing is cooling down and nothing was last time,
+	// the overlays are already hidden and there is no work at all.
+	const bool bAllReady = Cooldowns[0] <= 0.0f && Cooldowns[1] <= 0.0f && Cooldowns[2] <= 0.0f && Cooldowns[3] <= 0.0f;
+	if (bAllReady && bCooldownsIdle) return;
+	bCooldownsIdle = bAllReady;
+
 	for (int32 i = 0; i < 4; i++)
 	{
 		if (!CooldownOverlay[i] || !CooldownText[i]) continue;
 
-		if (Cooldowns[i] > 0.0f)
-		{
-			// On cooldown - show dark overlay and countdown text
-			CooldownOverlay[i]->SetVisibility(ESlateVisibility::HitTestInvisible);
-			CooldownOverlay[i]->SetRenderOpacity(0.85f);
-			CooldownText[i]->SetVisibility(ESlateVisibility::HitTestInvisible);
+		// Whole seconds shown on the slot; 0 = ready (hidden)
+		const int32 SecondsLeft = (Cooldowns[i] > 0.0f) ? FMath::CeilToInt(Cooldowns[i]) : 0;
+		if (SecondsLeft == LastCooldownSeconds[i]) continue;
+		const bool bWasShown = LastCooldownSeconds[i] > 0;
+		LastCooldownSeconds[i] = SecondsLeft;
 
-			// Big gold countdown number with black outline, centered
-			int32 SecondsLeft = FMath::CeilToInt(Cooldowns[i]);
-			if (UTextBlock* TB = Cast<UTextBlock>(CooldownText[i]))
+		if (SecondsLeft > 0)
+		{
+			// Big gold countdown number with black outline, centered. Styling
+			// survives hide/show, so it only needs applying the first time.
+			if (!bCooldownTextStyled[i])
 			{
-				FSlateFontInfo Font = TB->GetFont();
-				Font.Size = 28;
-				Font.OutlineSettings.OutlineSize = 2;
-				Font.OutlineSettings.OutlineColor = FLinearColor::Black;
-				TB->SetFont(Font);
-				TB->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.85f, 0.0f, 1.0f))); // Gold
-				TB->SetJustification(ETextJustify::Center);
+				if (UTextBlock* TB = Cast<UTextBlock>(CooldownText[i]))
+				{
+					FSlateFontInfo Font = TB->GetFont();
+					Font.Size = 28;
+					Font.OutlineSettings.OutlineSize = 2;
+					Font.OutlineSettings.OutlineColor = FLinearColor::Black;
+					TB->SetFont(Font);
+					TB->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.85f, 0.0f, 1.0f))); // Gold
+					TB->SetJustification(ETextJustify::Center);
+				}
+				bCooldownTextStyled[i] = true;
+			}
+
+			if (!bWasShown)
+			{
+				// On cooldown - show dark overlay and countdown text
+				CooldownOverlay[i]->SetVisibility(ESlateVisibility::HitTestInvisible);
+				CooldownOverlay[i]->SetRenderOpacity(0.85f);
+				CooldownText[i]->SetVisibility(ESlateVisibility::HitTestInvisible);
 			}
 			SetWidgetText(CooldownText[i], FText::FromString(FString::Printf(TEXT("%d"), SecondsLeft)));
 		}
@@ -379,7 +441,7 @@ void ASkylandersCharacter::UseAbility1()
 	// Not learned yet
 	if (AbilityLevels[0] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("%s not learned! Press F1 to level it."), *AbilityNames[0]));
+		USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("%s not learned! Press F1 to level it."), *AbilityNames[0]), FLinearColor(1.0f, 0.4f, 0.35f));
 		return;
 	}
 
@@ -442,7 +504,7 @@ void ASkylandersCharacter::UseAbility2()
 	// Not learned yet
 	if (AbilityLevels[1] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("%s not learned! Press F2 to level it."), *AbilityNames[1]));
+		USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("%s not learned! Press F2 to level it."), *AbilityNames[1]), FLinearColor(1.0f, 0.4f, 0.35f));
 		return;
 	}
 
@@ -500,7 +562,7 @@ void ASkylandersCharacter::UseAbility3()
 	// Not learned yet
 	if (AbilityLevels[2] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("%s not learned! Press F3 to level it."), *AbilityNames[2]));
+		USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("%s not learned! Press F3 to level it."), *AbilityNames[2]), FLinearColor(1.0f, 0.4f, 0.35f));
 		return;
 	}
 
@@ -555,7 +617,7 @@ void ASkylandersCharacter::UseAbility4()
 	// Not learned yet
 	if (AbilityLevels[3] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("%s not learned! Press F4 to level it (requires level 5)."), *AbilityNames[3]));
+		USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("%s not learned! Press F4 to level it (requires level 5)."), *AbilityNames[3]), FLinearColor(1.0f, 0.4f, 0.35f));
 		return;
 	}
 

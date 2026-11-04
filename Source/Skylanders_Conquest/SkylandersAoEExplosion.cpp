@@ -141,7 +141,7 @@ void ASkylandersAoEExplosion::Detonate()
 				float DamageFalloff = 1.0f - (Distance / ExplosionRadius) * 0.5f;
 				float FinalDamage = DamageAmount * DamageFalloff;
 				Enemy->TakeDamage_Custom(FinalDamage, GetInstigator());
-				UE_LOG(LogTemp, Log, TEXT("AoE hit enemy '%s' for %.0f damage (%.0f%% falloff)"),
+				UE_LOG(LogTemp, Verbose, TEXT("AoE hit enemy '%s' for %.0f damage (%.0f%% falloff)"),
 					*Enemy->EnemyName, FinalDamage, DamageFalloff * 100.0f);
 
 				// Give coins to instigator
@@ -169,7 +169,7 @@ void ASkylandersAoEExplosion::Detonate()
 				float DamageFalloff = 1.0f - (Distance / ExplosionRadius) * 0.5f;
 				float FinalDamage = DamageAmount * DamageFalloff;
 				Minion->TakeDamage_Custom(FinalDamage, GetInstigator());
-				UE_LOG(LogTemp, Log, TEXT("AoE hit minion for %.0f damage (%.0f%% falloff)"),
+				UE_LOG(LogTemp, Verbose, TEXT("AoE hit minion for %.0f damage (%.0f%% falloff)"),
 					FinalDamage, DamageFalloff * 100.0f);
 			}
 		}
@@ -190,7 +190,7 @@ void ASkylandersAoEExplosion::Detonate()
 				float DamageFalloff = 1.0f - (Distance / ExplosionRadius) * 0.5f;
 				float FinalDamage = DamageAmount * DamageFalloff;
 				BuffCamp->TakeDamage_Custom(FinalDamage, GetInstigator());
-				UE_LOG(LogTemp, Log, TEXT("AoE hit buff camp '%s' for %.0f damage (%.0f%% falloff)"),
+				UE_LOG(LogTemp, Verbose, TEXT("AoE hit buff camp '%s' for %.0f damage (%.0f%% falloff)"),
 					*BuffCamp->CampName, FinalDamage, DamageFalloff * 100.0f);
 			}
 		}
@@ -211,7 +211,7 @@ void ASkylandersAoEExplosion::Detonate()
 				float DamageFalloff = 1.0f - (Distance / ExplosionRadius) * 0.5f;
 				float FinalDamage = DamageAmount * DamageFalloff;
 				EnemyGod->TakeDamage_Custom(FinalDamage, GetInstigator());
-				UE_LOG(LogTemp, Log, TEXT("AoE hit enemy god '%s' for %.0f damage (%.0f%% falloff)"),
+				UE_LOG(LogTemp, Verbose, TEXT("AoE hit enemy god '%s' for %.0f damage (%.0f%% falloff)"),
 					*EnemyGod->GodName, FinalDamage, DamageFalloff * 100.0f);
 			}
 		}

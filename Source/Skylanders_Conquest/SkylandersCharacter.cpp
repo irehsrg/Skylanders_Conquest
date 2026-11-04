@@ -334,6 +334,7 @@ ASkylandersCharacter::ASkylandersCharacter()
 	Kills = 0;
 	Deaths = 0;
 	CreepScore = 0;
+	Assists = 0;
 	GameElapsedTime = 0.0f;
 	MinimapWidget = nullptr;
 	ScoreboardWidget = nullptr;
@@ -633,11 +634,14 @@ void ASkylandersCharacter::BeginPlay()
 	}
 
 	// Show skill point notification (player starts at level 3 with 3 points)
-	if (GEngine && AbilityPoints > 0)
+	if (AbilityPoints > 0)
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Yellow,
-			FString::Printf(TEXT("Level %d - %d SKILL POINTS AVAILABLE! (F1-F4 to level abilities)"), PlayerLevel, AbilityPoints));
+		USkylandersKillFeedWidget::Post(this,
+			FString::Printf(TEXT("%d skill points: F1-F4 to level abilities"), AbilityPoints), FLinearColor(1.0f, 0.85f, 0.2f));
 	}
+
+	// Widgets exist now; show the starting stats without waiting for the first Tick
+	FlushHUD();
 }
 
 void ASkylandersCharacter::Tick(float DeltaTime)
@@ -671,6 +675,9 @@ void ASkylandersCharacter::Tick(float DeltaTime)
 	TickYamatoCharge(DeltaTime);
 	TickMovementSpeed();
 	TickFountainHealing(DeltaTime);
+
+	// Last: every phase above only marks the HUD dirty; write it once per frame
+	FlushHUD();
 }
 
 // ========== TICK PHASES ==========
@@ -730,12 +737,11 @@ void ASkylandersCharacter::TickRecall(float DeltaTime)
 				RecallIndicator->SetVisibility(true);
 			}
 
-			// On-screen countdown
-			if (GEngine)
+			// Countdown under the announcer banner (SetStatus skips unchanged text)
 			{
-				int32 SecondsLeft = FMath::CeilToInt(RecallRemainingTime);
-				GEngine->AddOnScreenDebugMessage(200, 0.1f, FColor::Cyan,
-					FString::Printf(TEXT("Recalling... %ds"), SecondsLeft));
+				int32 SecondsLeft = FMath::Max(FMath::CeilToInt(RecallRemainingTime), 0);
+				USkylandersAnnouncerWidget::SetStatus(this,
+					FString::Printf(TEXT("Recalling... %ds"), SecondsLeft), FLinearColor(0.3f, 0.85f, 1.0f));
 			}
 
 			if (RecallRemainingTime <= 0.0f)
@@ -756,12 +762,10 @@ void ASkylandersCharacter::TickRespawnCountdown(float DeltaTime)
 	if (CurrentHealth <= 0.0f && DeathRespawnTimeRemaining > 0.0f)
 	{
 		DeathRespawnTimeRemaining -= DeltaTime;
-		if (GEngine)
-		{
-			int32 SecondsLeft = FMath::CeilToInt(FMath::Max(DeathRespawnTimeRemaining, 0.0f));
-			GEngine->AddOnScreenDebugMessage(300, 0.1f, FColor::Red,
-				FString::Printf(TEXT("Respawning in %d..."), SecondsLeft));
-		}
+		int32 SecondsLeft = FMath::CeilToInt(FMath::Max(DeathRespawnTimeRemaining, 0.0f));
+		// Persistent line under the announcer banner; Respawn() clears it
+		USkylandersAnnouncerWidget::SetStatus(this,
+			FString::Printf(TEXT("Respawning in %d..."), SecondsLeft), FLinearColor(1.0f, 0.3f, 0.3f));
 	}
 }
 

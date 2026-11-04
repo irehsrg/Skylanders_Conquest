@@ -1,6 +1,7 @@
 // Skylanders Conquest - Hex Implementation
 
 #include "SkylandersHexCharacter.h"
+#include "SkylandersKillFeedWidget.h"
 #include "SkylandersAoEExplosion.h"
 #include "SkylandersSimpleAnimInstance.h"
 #include "Components/CapsuleComponent.h"
@@ -136,7 +137,7 @@ void ASkylandersHexCharacter::UseAbility1()
 {
 	if (AbilityLevels[0] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Phantom Orb not learned! Press F1 to level it."));
+		USkylandersKillFeedWidget::Post(this, TEXT("Phantom Orb not learned! Press F1 to level it."), FLinearColor(1.0f, 0.4f, 0.35f));
 		return;
 	}
 	if (bIsRecalling) CancelRecall();
@@ -178,7 +179,7 @@ void ASkylandersHexCharacter::UseAbility2()
 {
 	if (AbilityLevels[1] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Wall of Bones not learned! Press F2 to level it."));
+		USkylandersKillFeedWidget::Post(this, TEXT("Wall of Bones not learned! Press F2 to level it."), FLinearColor(1.0f, 0.4f, 0.35f));
 		return;
 	}
 	if (bIsRecalling) CancelRecall();
@@ -226,7 +227,7 @@ void ASkylandersHexCharacter::UseAbility3()
 {
 	if (AbilityLevels[2] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Rain of Skulls not learned! Press F3 to level it."));
+		USkylandersKillFeedWidget::Post(this, TEXT("Rain of Skulls not learned! Press F3 to level it."), FLinearColor(1.0f, 0.4f, 0.35f));
 		return;
 	}
 	if (bIsRecalling) CancelRecall();
@@ -265,7 +266,7 @@ void ASkylandersHexCharacter::UseAbility4()
 {
 	if (AbilityLevels[3] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Skull Storm not learned! Press F4 to level it (requires level 5)."));
+		USkylandersKillFeedWidget::Post(this, TEXT("Skull Storm not learned! Press F4 to level it (requires level 5)."), FLinearColor(1.0f, 0.4f, 0.35f));
 		return;
 	}
 	if (bIsRecalling) CancelRecall();

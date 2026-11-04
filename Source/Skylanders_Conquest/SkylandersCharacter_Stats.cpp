@@ -74,6 +74,15 @@
 
 // ========== DAMAGE AND HEALING ==========
 
+AActor* ASkylandersCharacter::ResolveDamageHero(AActor* DamageCauser)
+{
+	if (!DamageCauser) return nullptr;
+	// Same chain as GetPenetrationOf / the gods' LastDamageCauser: a projectile or
+	// AoE is the causer, its shooter the instigator.
+	AActor* Src = DamageCauser->GetInstigator() ? static_cast<AActor*>(DamageCauser->GetInstigator()) : DamageCauser;
+	return (Cast<ASkylandersCharacter>(Src) || Cast<ASkylandersEnemyGod>(Src)) ? Src : nullptr;
+}
+
 float ASkylandersCharacter::GetPenetrationOf(const AActor* DamageCauser)
 {
 	if (!DamageCauser) return 0.0f;
@@ -93,6 +102,20 @@ void ASkylandersCharacter::TakeDamage_Custom(float DamageAmount, AActor* DamageC
 	if (CurrentHealth <= 0.0f)
 	{
 		return; // Already dead
+	}
+
+	// Remember who hit us, for kill credit and assists in Die()
+	if (DamageCauser)
+	{
+		AActor* CauserPawn = DamageCauser->GetInstigator() ? static_cast<AActor*>(DamageCauser->GetInstigator()) : DamageCauser;
+		LastDamageCauser = CauserPawn;
+		if (ASkylandersEnemyGod* HeroGod = Cast<ASkylandersEnemyGod>(ResolveDamageHero(DamageCauser)))
+		{
+			if (HeroGod->Team == ETowerTeam::Enemy)
+			{
+				RecentHeroDamagers.Add(HeroGod, GetWorld()->GetTimeSeconds());
+			}
+		}
 	}
 
 	// Apply protections: damage reduction formula (like SMITE)
@@ -139,7 +162,8 @@ void ASkylandersCharacter::Heal(float HealAmount)
 	float EffectiveMaxHP = MaxHealth + ItemBonusStats.MaxHealth;
 	CurrentHealth = FMath::Clamp(CurrentHealth + HealAmount, 0.0f, EffectiveMaxHP);
 	UpdateHUD();
-	UE_LOG(LogTemp, Log, TEXT("Healed %f! Health: %f / %f"), HealAmount, CurrentHealth, MaxHealth);
+	// Verbose: regen calls this every frame
+	UE_LOG(LogTemp, Verbose, TEXT("Healed %f! Health: %f / %f"), HealAmount, CurrentHealth, MaxHealth);
 }
 
 // ========== MANA MANAGEMENT ==========
@@ -170,7 +194,9 @@ void ASkylandersCharacter::AddCoins(int32 Amount)
 {
 	Coins += Amount;
 	if (Amount > 0) TotalGoldEarned += Amount; // team-economy metric only counts income
-	UE_LOG(LogTemp, Log, TEXT("Coins added: %d | Total: %d"), Amount, Coins);
+	// Verbose: passive income lands here every second
+	UE_LOG(LogTemp, Verbose, TEXT("Coins added: %d | Total: %d"), Amount, Coins);
+	UpdateHUD();
 
 	// Update coin display in HUD
 	if (MainHUDWidget)
@@ -186,7 +212,7 @@ void ASkylandersCharacter::AddCoins(int32 Amount)
 			FAddCoinsParams Params;
 			Params.Amount = Amount;
 			MainHUDWidget->ProcessEvent(AddCoinsFunc, &Params);
-			UE_LOG(LogTemp, Log, TEXT("HUD coin display updated"));
+			UE_LOG(LogTemp, Verbose, TEXT("HUD coin display updated"));
 		}
 		else
 		{
@@ -251,11 +277,9 @@ void ASkylandersCharacter::LevelUp()
 		UGameplayStatics::PlaySoundAtLocation(this, LevelUpSound, GetActorLocation());
 	}
 
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 4.0f, FColor::Yellow,
-			FString::Printf(TEXT("LEVEL %d! NEW SKILL POINT AVAILABLE! (%d points) - F1-F4 to level abilities"), PlayerLevel, AbilityPoints));
-	}
+	USkylandersKillFeedWidget::Post(this,
+		FString::Printf(TEXT("Level %d! %d skill point%s (F1-F4)"), PlayerLevel, AbilityPoints, AbilityPoints == 1 ? TEXT("") : TEXT("s")),
+		FLinearColor(1.0f, 0.85f, 0.2f));
 
 	UpdateHUD();
 }
@@ -284,6 +308,36 @@ void ASkylandersCharacter::Die()
 		Tele->LogPlayerDeath(this, TEXT("combat"));
 	}
 
+	// Kill credit and assists for the red gods. The player's bounty mirrors a
+	// god's CoinReward curve (150 + 15/level) so assists have something to split.
+	{
+		const int32 Bounty = 150 + (PlayerLevel - 1) * 15;
+		ASkylandersEnemyGod* KillerGod = Cast<ASkylandersEnemyGod>(LastDamageCauser.Get());
+		if (KillerGod && KillerGod->Team == ETowerTeam::Enemy)
+		{
+			KillerGod->Kills++;
+			KillerGod->Gold += Bounty;
+			USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("%s slew you"), *KillerGod->GodName),
+				FLinearColor(1.0f, 0.4f, 0.35f));
+		}
+		else
+		{
+			KillerGod = nullptr;
+		}
+
+		const float Now = GetWorld()->GetTimeSeconds();
+		for (const TPair<TWeakObjectPtr<AActor>, float>& Hit : RecentHeroDamagers)
+		{
+			ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Hit.Key.Get());
+			if (!God || God == KillerGod || Now - Hit.Value > AssistWindowSeconds) continue;
+			God->Assists++;
+			God->Gold += Bounty / 2;
+			SKY_COUNT("assist");
+		}
+		RecentHeroDamagers.Reset();
+		LastDamageCauser.Reset();
+	}
+
 	// Play death sound
 	if (DeathSound)
 	{
@@ -310,8 +364,9 @@ void ASkylandersCharacter::Die()
 	DisableInput(Cast<APlayerController>(GetController()));
 	GetCharacterMovement()->DisableMovement();
 
-	// Respawn time scales with level: 5s base + 2s per level
-	float RespawnTime = 5.0f + (PlayerLevel * 2.0f);
+	// Respawn time scales with level and match length (SMITE-like): 5s base
+	// + 2s per level + 1.5s per full match minute, capped at 45s
+	float RespawnTime = FMath::Min(5.0f + (PlayerLevel * 2.0f) + FMath::FloorToFloat(GameElapsedTime / 60.0f) * 1.5f, 45.0f);
 
 	// After a short delay, hide the character and spectate the friendly titan
 	FTimerHandle HideTimerHandle;
@@ -349,6 +404,11 @@ void ASkylandersCharacter::Die()
 void ASkylandersCharacter::Respawn()
 {
 	UE_LOG(LogTemp, Log, TEXT("Respawning player..."));
+	USkylandersAnnouncerWidget::ClearStatus(this);
+	DeathRespawnTimeRemaining = 0.0f;
+	// Hits from the last life must not count toward the next death's assists
+	RecentHeroDamagers.Reset();
+	LastDamageCauser.Reset();
 
 	// Kill feed: player respawn
 	USkylandersKillFeedWidget::Post(this, TEXT("You have respawned"), FLinearColor(0.4f, 1.0f, 0.5f));
@@ -392,6 +452,7 @@ void ASkylandersCharacter::Respawn()
 	EnableInput(PC);
 
 	UpdateHUD();
+	FlushHUD();
 }
 
 AActor* ASkylandersCharacter::GetPlayerStart()

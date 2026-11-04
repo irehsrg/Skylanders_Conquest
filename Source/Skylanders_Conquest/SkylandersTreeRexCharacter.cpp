@@ -1,6 +1,7 @@
 // Skylanders Conquest - Tree Rex Implementation
 
 #include "SkylandersTreeRexCharacter.h"
+#include "SkylandersKillFeedWidget.h"
 #include "SkylandersTower.h"
 #include "SkylandersTitan.h"
 #include "SkylandersSimpleAnimInstance.h"
@@ -188,7 +189,7 @@ void ASkylandersTreeRexCharacter::UseAbility1()
 {
 	if (AbilityLevels[0] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Shockwave Slam not learned! Press F1 to level it."));
+		USkylandersKillFeedWidget::Post(this, TEXT("Shockwave Slam not learned! Press F1 to level it."), FLinearColor(1.0f, 0.4f, 0.35f));
 		return;
 	}
 	if (bIsRecalling) CancelRecall();
@@ -227,7 +228,7 @@ void ASkylandersTreeRexCharacter::UseAbility2()
 {
 	if (AbilityLevels[1] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Barkskin not learned! Press F2 to level it."));
+		USkylandersKillFeedWidget::Post(this, TEXT("Barkskin not learned! Press F2 to level it."), FLinearColor(1.0f, 0.4f, 0.35f));
 		return;
 	}
 	if (bIsRecalling) CancelRecall();
@@ -250,18 +251,14 @@ void ASkylandersTreeRexCharacter::UseAbility2()
 			GetActorLocation() - FVector(0, 0, 100.0f), FRotator::ZeroRotator,
 			FVector(3.5f, 3.5f, 0.08f), FLinearColor(0.45f, 0.30f, 0.10f), BuffDuration);
 
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green,
-				FString::Printf(TEXT("Barkskin! +%.0f protections for %.0fs"), BuffProtections, BuffDuration));
-		}
+		USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("Barkskin! +%.0f protections for %.0fs"), BuffProtections, BuffDuration), FLinearColor(0.4f, 1.0f, 0.5f));
 
 		// Clear the buff after the duration (re-cast just refreshes the timer)
 		GetWorld()->GetTimerManager().SetTimer(BarkskinTimerHandle,
 			FTimerDelegate::CreateWeakLambda(this, [this]()
 			{
 				BuffProtections = 0.0f;
-				if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Silver, TEXT("Barkskin faded."));
+				USkylandersKillFeedWidget::Post(this, TEXT("Barkskin faded."), FLinearColor(0.7f, 0.7f, 0.75f));
 			}), BuffDuration, false);
 	}
 }
@@ -271,7 +268,7 @@ void ASkylandersTreeRexCharacter::UseAbility3()
 {
 	if (AbilityLevels[2] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Healing Grove not learned! Press F3 to level it."));
+		USkylandersKillFeedWidget::Post(this, TEXT("Healing Grove not learned! Press F3 to level it."), FLinearColor(1.0f, 0.4f, 0.35f));
 		return;
 	}
 	if (bIsRecalling) CancelRecall();
@@ -297,11 +294,7 @@ void ASkylandersTreeRexCharacter::UseAbility3()
 			GetActorLocation() - FVector(0, 0, 110.0f), FRotator::ZeroRotator,
 			FVector(4.5f, 4.5f, 0.05f), GroveGreen, 4.0f);
 
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green,
-				FString::Printf(TEXT("Healing Grove! Restoring %.0f HP over 4s"), TotalHeal));
-		}
+		USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("Healing Grove! Restoring %.0f HP over 4s"), TotalHeal), FLinearColor(0.4f, 1.0f, 0.5f));
 
 		GetWorld()->GetTimerManager().SetTimer(HealingGroveTimerHandle,
 			FTimerDelegate::CreateWeakLambda(this, [this]()
@@ -326,7 +319,7 @@ void ASkylandersTreeRexCharacter::UseAbility4()
 {
 	if (AbilityLevels[3] == 0)
 	{
-		if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Titan's Wrath not learned! Press F4 to level it (requires level 5)."));
+		USkylandersKillFeedWidget::Post(this, TEXT("Titan's Wrath not learned! Press F4 to level it (requires level 5)."), FLinearColor(1.0f, 0.4f, 0.35f));
 		return;
 	}
 	if (bIsRecalling) CancelRecall();

@@ -37,6 +37,22 @@ void USkylandersAnnouncerWidget::NativeOnInitialized()
 	CanvasSlot->SetPosition(FVector2D::ZeroVector);
 	CanvasSlot->SetAutoSize(true);
 
+	// Status line: smaller, just under the banner, hidden until SetStatus
+	StatusText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("AnnouncerStatus"));
+	FSlateFontInfo StatusFont = StatusText->GetFont();
+	StatusFont.Size = 22;
+	StatusFont.OutlineSettings.OutlineSize = 2;
+	StatusFont.OutlineSettings.OutlineColor = FLinearColor(0.0f, 0.0f, 0.0f, 0.9f);
+	StatusText->SetFont(StatusFont);
+	StatusText->SetJustification(ETextJustify::Center);
+	StatusText->SetVisibility(ESlateVisibility::Collapsed);
+
+	UCanvasPanelSlot* StatusSlot = Root->AddChildToCanvas(StatusText);
+	StatusSlot->SetAnchors(FAnchors(0.5f, 0.22f, 0.5f, 0.22f));
+	StatusSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+	StatusSlot->SetPosition(FVector2D(0.0f, 52.0f));
+	StatusSlot->SetAutoSize(true);
+
 	// Presentation only: never eat clicks meant for the shop or pause menu
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 }
@@ -117,9 +133,18 @@ void USkylandersAnnouncerWidget::Step()
 	}
 }
 
-void USkylandersAnnouncerWidget::Announce(UObject* WorldContext, const FString& Text, FLinearColor Color, float Seconds, const TCHAR* SoundName)
+USkylandersAnnouncerWidget* USkylandersAnnouncerWidget::Find(UObject* WorldContext)
 {
-	if (!WorldContext) return;
+	UWorld* World = (WorldContext && GEngine) ? GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::ReturnNull) : nullptr;
+	if (!World) return nullptr;
+
+	// SetStatus runs every frame during countdowns; searching every widget
+	// object each call would cost more than the text it sets.
+	static TWeakObjectPtr<USkylandersAnnouncerWidget> Cached;
+	if (Cached.IsValid() && Cached->GetWorld() == World)
+	{
+		return Cached.Get();
+	}
 
 	TArray<UUserWidget*> Found;
 	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(WorldContext, Found, USkylandersAnnouncerWidget::StaticClass(), false);
@@ -127,14 +152,56 @@ void USkylandersAnnouncerWidget::Announce(UObject* WorldContext, const FString& 
 	{
 		if (USkylandersAnnouncerWidget* Announcer = Cast<USkylandersAnnouncerWidget>(W))
 		{
-			FEntry Entry;
-			Entry.Text = Text;
-			Entry.Color = Color;
-			Entry.Seconds = Seconds;
-			Entry.SoundName = SoundName ? SoundName : TEXT("");
-			Announcer->Enqueue(MoveTemp(Entry));
-			return;
+			Cached = Announcer;
+			return Announcer;
 		}
+	}
+	return nullptr;
+}
+
+void USkylandersAnnouncerWidget::SetStatus(UObject* WorldContext, const FString& Text, FLinearColor Color)
+{
+	USkylandersAnnouncerWidget* Announcer = Find(WorldContext);
+	if (!Announcer || !Announcer->StatusText) return;
+
+	if (Text != Announcer->ShownStatus)
+	{
+		Announcer->ShownStatus = Text;
+		Announcer->StatusText->SetText(FText::FromString(Text));
+	}
+	if (Color != Announcer->ShownStatusColor)
+	{
+		Announcer->ShownStatusColor = Color;
+		Announcer->StatusText->SetColorAndOpacity(FSlateColor(Color));
+	}
+	if (Announcer->StatusText->GetVisibility() != ESlateVisibility::HitTestInvisible)
+	{
+		Announcer->StatusText->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+}
+
+void USkylandersAnnouncerWidget::ClearStatus(UObject* WorldContext)
+{
+	USkylandersAnnouncerWidget* Announcer = Find(WorldContext);
+	if (!Announcer || !Announcer->StatusText) return;
+
+	Announcer->ShownStatus.Reset();
+	Announcer->StatusText->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void USkylandersAnnouncerWidget::Announce(UObject* WorldContext, const FString& Text, FLinearColor Color, float Seconds, const TCHAR* SoundName)
+{
+	if (!WorldContext) return;
+
+	if (USkylandersAnnouncerWidget* Announcer = Find(WorldContext))
+	{
+		FEntry Entry;
+		Entry.Text = Text;
+		Entry.Color = Color;
+		Entry.Seconds = Seconds;
+		Entry.SoundName = SoundName ? SoundName : TEXT("");
+		Announcer->Enqueue(MoveTemp(Entry));
+		return;
 	}
 
 	// No banner on screen: the cue still matters (kill confirms)

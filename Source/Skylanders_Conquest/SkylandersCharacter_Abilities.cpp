@@ -45,6 +45,7 @@
 #include "SkylandersPauseMenuWidget.h"
 #include "SkylandersGameSettings.h"
 #include "SkylandersKillFeedWidget.h"
+#include "SkylandersAnnouncerWidget.h"
 #include "SkylandersSmokeTest.h"
 #include "SkylandersCameraShake.h"
 #include "SkylandersMatchStatusWidget.h"
@@ -254,11 +255,9 @@ void ASkylandersCharacter::StartRecall()
 	UE_LOG(LogTemp, Log, TEXT("Recall started! Channeling for %.1f seconds..."), RecallChannelTime);
 	SkylandersSound::PlayAt(this, TEXT("recall"), GetActorLocation());
 
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(200, RecallChannelTime + 1.0f, FColor::Cyan,
-			FString::Printf(TEXT("Recalling... %ds"), FMath::CeilToInt(RecallChannelTime)));
-	}
+	// TickRecall keeps this countdown current until the channel ends
+	USkylandersAnnouncerWidget::SetStatus(this,
+		FString::Printf(TEXT("Recalling... %ds"), FMath::CeilToInt(RecallChannelTime)), FLinearColor(0.3f, 0.85f, 1.0f));
 }
 
 void ASkylandersCharacter::CancelRecall()
@@ -273,11 +272,8 @@ void ASkylandersCharacter::CancelRecall()
 
 	UE_LOG(LogTemp, Log, TEXT("Recall cancelled!"));
 
-	if (GEngine)
-	{
-		GEngine->RemoveOnScreenDebugMessage(200);
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Recall cancelled!"));
-	}
+	USkylandersAnnouncerWidget::ClearStatus(this);
+	USkylandersKillFeedWidget::Post(this, TEXT("Recall cancelled"), FLinearColor(1.0f, 0.4f, 0.35f));
 }
 
 void ASkylandersCharacter::CompleteRecall()
@@ -302,11 +298,8 @@ void ASkylandersCharacter::CompleteRecall()
 		UE_LOG(LogTemp, Warning, TEXT("No Player Start found for recall, teleported to origin."));
 	}
 
-	if (GEngine)
-	{
-		GEngine->RemoveOnScreenDebugMessage(200);
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Cyan, TEXT("Recalled!"));
-	}
+	USkylandersAnnouncerWidget::ClearStatus(this);
+	USkylandersKillFeedWidget::Post(this, TEXT("Recalled"), FLinearColor(0.4f, 0.85f, 1.0f));
 }
 
 void ASkylandersCharacter::TeleportToBase()
@@ -327,10 +320,7 @@ void ASkylandersCharacter::TeleportToBase()
 		SetActorLocation(FVector(0.0f, 0.0f, 100.0f));
 	}
 
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 1.5f, FColor::Cyan, TEXT("Teleported to base!"));
-	}
+	USkylandersKillFeedWidget::Post(this, TEXT("Teleported to base!"), FLinearColor(0.4f, 0.85f, 1.0f));
 }
 
 // ========== PER-CHARACTER SETUP ==========

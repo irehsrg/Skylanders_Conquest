@@ -410,7 +410,7 @@ void ASkylandersTower::AttackTarget()
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("Tower '%s' attacks %s for %.0f damage!"),
+	UE_LOG(LogTemp, Verbose, TEXT("Tower '%s' attacks %s for %.0f damage!"),
 		*TowerName, *CurrentTarget->GetName(), AttackDamage);
 }
 
@@ -546,22 +546,11 @@ void ASkylandersTower::Die()
 			&ASkylandersTower::RespawnPhoenix, PhoenixRespawnTime, false);
 		UE_LOG(LogTemp, Warning, TEXT("Phoenix '%s' will respawn in %.0f seconds!"), *TowerName, PhoenixRespawnTime);
 
-		// Kill feed: Phoenix destroyed
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(101, 5.0f, FColor::Yellow,
-				FString::Printf(TEXT("%s Phoenix has been destroyed! It will respawn in %.0fs"), *TeamStr, PhoenixRespawnTime));
-		}
+		// "<name> destroyed" is already in the kill feed (top of Die); add when it returns
+		USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("%s Phoenix respawns in %.0fs"), *TeamStr, PhoenixRespawnTime),
+			FLinearColor(1.0f, 0.85f, 0.2f));
 	}
-	else
-	{
-		// Kill feed: Tower destroyed
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(100, 4.0f, FColor::Yellow,
-				FString::Printf(TEXT("%s Tower has been destroyed!"), *TeamStr));
-		}
-	}
+	// A plain tower's destruction is already posted to the kill feed and announcer above
 }
 
 void ASkylandersTower::RespawnPhoenix()
@@ -585,11 +574,8 @@ void ASkylandersTower::RespawnPhoenix()
 	UE_LOG(LogTemp, Warning, TEXT("Phoenix '%s' has RESPAWNED!"), *TowerName);
 
 	// Kill feed: Phoenix respawned
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(102, 5.0f, FColor::Yellow,
-			FString::Printf(TEXT("%s Phoenix has respawned!"), *TeamStr));
-	}
+	USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("%s Phoenix has respawned"), *TeamStr),
+		FLinearColor(1.0f, 0.85f, 0.2f));
 }
 
 void ASkylandersTower::UpdateHealthBar()

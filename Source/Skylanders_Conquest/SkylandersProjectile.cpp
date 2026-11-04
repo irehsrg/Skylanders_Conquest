@@ -112,7 +112,7 @@ void ASkylandersProjectile::BeginPlay()
 		ProjectileMovement->Velocity = GetActorForwardVector() * InitialSpeed;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("Projectile spawned! Instigator: %s"), GetInstigator() ? *GetInstigator()->GetName() : TEXT("NONE"));
+	UE_LOG(LogTemp, Verbose, TEXT("Projectile spawned! Instigator: %s"), GetInstigator() ? *GetInstigator()->GetName() : TEXT("NONE"));
 }
 
 // OnHit: fires for blocking collisions (walls, ground, buff camps)

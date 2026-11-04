@@ -691,6 +691,7 @@ void ASkylandersMinion::Die()
 	if (KillerGod && KillerGod->Team != Team)
 	{
 		KillerGod->Gold += CoinReward;
+		KillerGod->CreepScore++;
 	}
 	else if (Team == ETowerTeam::Enemy)
 	{
