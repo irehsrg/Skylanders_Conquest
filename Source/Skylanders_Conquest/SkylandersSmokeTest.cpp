@@ -4,12 +4,19 @@
 #include "SkylandersActorRegistry.h"
 #include "SkylandersBuffCamp.h"
 #include "SkylandersCharacter.h"
+#include "SkylandersCharacterSelectWidget.h"
 #include "SkylandersEnemyGod.h"
 #include "SkylandersGameInstance.h"
 #include "SkylandersItemCatalog.h"
+#include "SkylandersMainMenuWidget.h"
 #include "SkylandersMinion.h"
+#include "SkylandersSettingsWidget.h"
+#include "SkylandersShopWidget.h"
 #include "SkylandersTitan.h"
 #include "SkylandersTower.h"
+#include "SkylandersVictoryWidget.h"
+#include "Blueprint/UserWidget.h"
+#include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "Kismet/GameplayStatics.h"
@@ -83,11 +90,13 @@ void USkylandersSmokeTestSubsystem::Initialize(FSubsystemCollectionBase& Collect
 	DurationSeconds = Seconds;
 	bActive = true;
 	bItemTestRequested = FParse::Param(FCommandLine::Get(), TEXT("SkyItemTest"));
+	bUISmokeRequested = FParse::Param(FCommandLine::Get(), TEXT("SkyUISmoke"));
 	Counters.Reset();
 	GLog->AddOutputDevice(&ErrorSink);
 	TickHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &USkylandersSmokeTestSubsystem::Tick), 0.0f);
-	UE_LOG(LogTemp, Warning, TEXT("[Smoke] Smoke test armed for %.0f s%s"), DurationSeconds,
-		bItemTestRequested ? TEXT(" (+ item stat test)") : TEXT(""));
+	UE_LOG(LogTemp, Warning, TEXT("[Smoke] Smoke test armed for %.0f s%s%s"), DurationSeconds,
+		bItemTestRequested ? TEXT(" (+ item stat test)") : TEXT(""),
+		bUISmokeRequested ? TEXT(" (UI construction test)") : TEXT(""));
 }
 
 void USkylandersSmokeTestSubsystem::Deinitialize()
@@ -110,6 +119,11 @@ bool USkylandersSmokeTestSubsystem::Tick(float DeltaTime)
 	Elapsed += DeltaTime;
 	SinceSample += DeltaTime;
 
+	if (bUISmokeRequested)
+	{
+		return TickUISmoke(World);
+	}
+
 	// Nobody is at the keyboard: a scripted bot plays the player so combat,
 	// abilities and leveling actually get exercised (see SkylandersCharacter_Bot.cpp).
 	if (ASkylandersCharacter* P = Cast<ASkylandersCharacter>(UGameplayStatics::GetPlayerPawn(World, 0)))
@@ -123,6 +137,24 @@ bool USkylandersSmokeTestSubsystem::Tick(float DeltaTime)
 				*CharacterName, *CharacterID, *P->GetClass()->GetName());
 		}
 		P->DriveAsBot(DeltaTime);
+
+		// Shop probe: open the real shop widget mid-match for a moment, which
+		// constructs it (ui_shop_opened) under live gold/inventory updates
+		if (DurationSeconds >= ShopProbeAt + ShopProbeLength)
+		{
+			if (!bShopProbeOpened && Elapsed >= ShopProbeAt)
+			{
+				bShopProbeOpened = true;
+				P->OpenShop();
+				UE_LOG(LogTemp, Warning, TEXT("[Smoke] ui shop probe: opened at %.0f s"), Elapsed);
+			}
+			else if (bShopProbeOpened && !bShopProbeClosed && Elapsed >= ShopProbeAt + ShopProbeLength)
+			{
+				bShopProbeClosed = true;
+				P->CloseShop();
+				UE_LOG(LogTemp, Warning, TEXT("[Smoke] ui shop probe: closed at %.0f s"), Elapsed);
+			}
+		}
 	}
 	if (SinceSample >= 1.0f)
 	{
@@ -135,6 +167,151 @@ bool USkylandersSmokeTestSubsystem::Tick(float DeltaTime)
 		return false;
 	}
 	return true;
+}
+
+bool USkylandersSmokeTestSubsystem::TickUISmoke(UWorld* World)
+{
+	if (UISmokeFrames < 0)
+	{
+		const FString Map = UGameplayStatics::GetCurrentLevelName(World, true);
+		UE_LOG(LogTemp, Warning, TEXT("[Smoke] ui: map=%s"), *Map);
+		if (!Map.Contains(TEXT("MainMenu")))
+		{
+			UISmokeFailures.Add(FString::Printf(TEXT("-SkyUISmoke needs the MainMenu map, got %s"), *Map));
+			Finish();
+			return false;
+		}
+		APlayerController* PC = World->GetFirstPlayerController();
+		if (!PC)
+		{
+			// The menu controller is spawned before BeginPlay finishes; wait for it
+			if (Elapsed < DurationSeconds) return true;
+			UISmokeFailures.Add(TEXT("no player controller on MainMenu"));
+			Finish();
+			return false;
+		}
+
+		auto Build = [&](UUserWidget* W, TFunctionRef<FString(UUserWidget*)> Setup)
+		{
+			if (!W)
+			{
+				UISmokeFailures.Add(TEXT("CreateWidget returned null"));
+				return;
+			}
+			const FString ClassName = FString(W->GetClass()->GetPrefixCPP()) + W->GetClass()->GetName();
+			if (!W->GetRootWidget())
+			{
+				UISmokeFailures.Add(FString::Printf(TEXT("%s built no widget tree"), *ClassName));
+			}
+			W->AddToViewport(60);
+			UISmokeWidgets.Add(W);
+			UISmokeNotes.Add(Setup(W));
+		};
+
+		Build(CreateWidget<USkylandersMainMenuWidget>(PC, USkylandersMainMenuWidget::StaticClass()),
+			[](UUserWidget*) { return FString(); });
+
+		Build(CreateWidget<USkylandersCharacterSelectWidget>(PC, USkylandersCharacterSelectWidget::StaticClass()),
+			[this](UUserWidget* W)
+			{
+				USkylandersCharacterSelectWidget* Sel = CastChecked<USkylandersCharacterSelectWidget>(W);
+				const TArray<FSkylanderSelectEntry>& Roster = FSkylanderSelectEntry::GetRoster();
+				if (Roster.Num() != 4)
+				{
+					UISmokeFailures.Add(FString::Printf(TEXT("character select roster has %d entries, expected 4"), Roster.Num()));
+				}
+				// Every tile's selection path: info panel rebuild, preview swap, highlight
+				for (const FSkylanderSelectEntry& E : Roster)
+				{
+					Sel->SelectCharacter(E.ID);
+				}
+				return FString::Printf(TEXT("roster=%d"), Roster.Num());
+			});
+
+		// No pawn on the menu, so the shop has no owner: it must still build,
+		// and the RECOMMENDED filter falls back to the bruiser build
+		Build(CreateWidget<USkylandersShopWidget>(PC, USkylandersShopWidget::StaticClass()),
+			[this](UUserWidget* W)
+			{
+				USkylandersShopWidget* Shop = CastChecked<USkylandersShopWidget>(W);
+				Shop->SetFilter(USkylandersShopWidget::FilterRecommended);
+				const int32 Recommended = Shop->GetVisibleCardCount();
+				if (Recommended != 6)
+				{
+					UISmokeFailures.Add(FString::Printf(TEXT("shop RECOMMENDED shows %d cards, expected 6"), Recommended));
+				}
+				Shop->SetFilter(-1);
+				const int32 All = Shop->GetVisibleCardCount();
+				if (All != USkylandersItemCatalog::GetAllItems().Num())
+				{
+					UISmokeFailures.Add(FString::Printf(TEXT("shop ALL shows %d cards, catalog has %d"), All, USkylandersItemCatalog::GetAllItems().Num()));
+				}
+				return FString::Printf(TEXT("recommended=%d all=%d"), Recommended, All);
+			});
+
+		Build(CreateWidget<USkylandersVictoryWidget>(PC, USkylandersVictoryWidget::StaticClass()),
+			[](UUserWidget* W)
+			{
+				// No player: the end screen must still fill in (gods only, "-" tiles)
+				USkylandersVictoryWidget* V = CastChecked<USkylandersVictoryWidget>(W);
+				V->ShowResult(false, nullptr);
+				V->ShowResult(true, nullptr);
+				return FString(TEXT("ShowResult(null) x2"));
+			});
+
+		Build(CreateWidget<USkylandersSettingsWidget>(PC, USkylandersSettingsWidget::StaticClass()),
+			[](UUserWidget*) { return FString(); });
+
+		UISmokeFrames = 0;
+		return true;
+	}
+
+	// Let the widgets live through a few engine frames before checking them
+	if (++UISmokeFrames < UISmokeFrameCount && Elapsed < DurationSeconds) return true;
+
+	for (int32 i = 0; i < UISmokeWidgets.Num(); i++)
+	{
+		UUserWidget* W = UISmokeWidgets[i];
+		if (!W) continue;
+		const FString ClassName = FString(W->GetClass()->GetPrefixCPP()) + W->GetClass()->GetName();
+		if (W->IsInViewport())
+		{
+			UISmokeOk++;
+			SKY_COUNT("ui_widget_ok");
+			const FString& Note = UISmokeNotes.IsValidIndex(i) ? UISmokeNotes[i] : FString();
+			UE_LOG(LogTemp, Warning, TEXT("[Smoke] ui %s ok%s%s"), *ClassName, Note.IsEmpty() ? TEXT("") : TEXT(" - "), *Note);
+		}
+		else
+		{
+			UISmokeFailures.Add(FString::Printf(TEXT("%s left the viewport on its own"), *ClassName));
+		}
+		W->RemoveFromParent();
+	}
+	UISmokeWidgets.Reset();
+	Finish();
+	return false;
+}
+
+void USkylandersSmokeTestSubsystem::BuildEndScreenProbe(UWorld* World)
+{
+	if (!World) return;
+	APlayerController* PC = World->GetFirstPlayerController();
+	ASkylandersCharacter* P = Cast<ASkylandersCharacter>(UGameplayStatics::GetPlayerPawn(World, 0));
+
+	// Same construction as ASkylandersTitan::ShowEndScreen, minus the pause and
+	// the input capture, so the process can still exit right after
+	USkylandersVictoryWidget* W = PC
+		? CreateWidget<USkylandersVictoryWidget>(PC, USkylandersVictoryWidget::StaticClass())
+		: CreateWidget<USkylandersVictoryWidget>(World, USkylandersVictoryWidget::StaticClass());
+	if (!W)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Smoke] ui end screen: CreateWidget returned null"));
+		return;
+	}
+	W->AddToViewport(100);
+	W->ShowResult(true, P); // counts ui_endscreen_built
+	UE_LOG(LogTemp, Warning, TEXT("[Smoke] ui end screen built (player=%s)"), P ? *P->CharacterName : TEXT("none"));
+	W->RemoveFromParent();
 }
 
 void USkylandersSmokeTestSubsystem::Sample(UWorld* World)
@@ -467,6 +644,15 @@ TArray<FString> USkylandersSmokeTestSubsystem::EvaluateInvariants() const
 	auto C = [](const TCHAR* N) { const int32* V = Counters.Find(FName(N)); return V ? *V : 0; };
 	auto Require = [&](bool bOk, const FString& What) { if (!bOk) Failures.Add(What); };
 
+	if (bUISmokeRequested)
+	{
+		// UI construction run on the menu: no match, so none of the match invariants apply
+		Failures.Append(UISmokeFailures);
+		Require(UISmokeOk == UISmokeExpected, FString::Printf(TEXT("%d/%d UI widgets built and stayed in the viewport"), UISmokeOk, UISmokeExpected));
+		Require(ErrorSink.ErrorCount == 0, FString::Printf(TEXT("%d error(s) logged"), ErrorSink.ErrorCount));
+		return Failures;
+	}
+
 	Require(Samples.Num() > 0, TEXT("no samples taken (world never began play?)"));
 	if (Samples.Num() == 0) return Failures;
 	const FSample& Last = Samples.Last();
@@ -502,6 +688,9 @@ TArray<FString> USkylandersSmokeTestSubsystem::EvaluateInvariants() const
 		// The bot is levelled to 5 from 25 s and casts the ult on anything red in
 		// reach, so a full run must land at least one (counted on completion).
 		Require(C(TEXT("player_ult")) >= 1, TEXT("player bot never completed an ultimate"));
+		// The shop probe (t=60) and the end-screen probe (Finish) must have built both screens
+		Require(C(TEXT("ui_shop_opened")) >= 1, FString::Printf(TEXT("ui_shop_opened=%d: the shop probe never constructed the shop"), C(TEXT("ui_shop_opened"))));
+		Require(C(TEXT("ui_endscreen_built")) >= 1, FString::Printf(TEXT("ui_endscreen_built=%d: the end screen was never built"), C(TEXT("ui_endscreen_built"))));
 	}
 	if (bItemTestRequested)
 	{
@@ -526,6 +715,10 @@ TArray<FString> USkylandersSmokeTestSubsystem::EvaluateInvariants() const
 void USkylandersSmokeTestSubsystem::Finish()
 {
 	bFinished = true;
+	if (!bUISmokeRequested)
+	{
+		BuildEndScreenProbe(GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr);
+	}
 	TArray<FString> Failures = EvaluateInvariants();
 
 	FString Json = TEXT("{\n");

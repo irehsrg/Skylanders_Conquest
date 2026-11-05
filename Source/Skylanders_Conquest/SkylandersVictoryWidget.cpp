@@ -2,6 +2,11 @@
 
 #include "SkylandersVictoryWidget.h"
 #include "SkylandersCharacter.h"
+#include "SkylandersEnemyGod.h"
+#include "SkylandersActorRegistry.h"
+#include "SkylandersItemCatalog.h"
+#include "SkylandersItem.h"
+#include "SkylandersSmokeTest.h"
 #include "SkylandersUIStyle.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
@@ -12,20 +17,42 @@
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/SizeBox.h"
 #include "Blueprint/WidgetTree.h"
-#include "Fonts/SlateFontInfo.h"
 #include "Kismet/GameplayStatics.h"
 
-static UTextBlock* MakeVictoryText(UWidgetTree* Tree, const FName& Name, int32 FontSize, FLinearColor Color, const FString& Default)
+// Same columns and weights as the Tab scoreboard, so the end screen reads as
+// the final state of that board.
+static const float VictoryColumnFill[6] = { 2.4f, 0.6f, 1.3f, 0.7f, 0.9f, 4.0f };
+
+static const FLinearColor VictoryBlueRow(0.10f, 0.18f, 0.35f, 0.85f);
+static const FLinearColor VictoryRedRow(0.35f, 0.10f, 0.10f, 0.85f);
+static const FLinearColor VictoryBlueLabel(0.45f, 0.65f, 1.0f, 1.0f);
+static const FLinearColor VictoryRedLabel(1.0f, 0.45f, 0.4f, 1.0f);
+static const FLinearColor VictoryTileFill(0.05f, 0.06f, 0.12f, 1.0f);
+
+static constexpr float VictoryPanelWidth = 1000.0f;
+static constexpr int32 VictoryItemNameChars = 12;
+
+static FString VictoryItemList(const TArray<int32>& Inventory)
 {
-	UTextBlock* TB = Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
-	TB->SetText(FText::FromString(Default));
-	FSlateFontInfo Font = TB->GetFont();
-	Font.Size = FontSize;
-	TB->SetFont(Font);
-	TB->SetColorAndOpacity(FSlateColor(Color));
-	TB->SetJustification(ETextJustify::Center);
-	return TB;
+	FString Out;
+	for (int32 ItemID : Inventory)
+	{
+		if (ItemID <= 0) continue;
+		const FSkylandersItemData* Item = USkylandersItemCatalog::FindItem(ItemID);
+		if (!Item) continue;
+		if (!Out.IsEmpty()) Out += TEXT(", ");
+		Out += Item->ItemName.Left(VictoryItemNameChars);
+	}
+	return Out.IsEmpty() ? FString(TEXT("---")) : Out;
+}
+
+static void VictorySetText(UTextBlock* TB, const FString& Str)
+{
+	// Every text is optional: a Blueprint subclass or a partial build must not
+	// turn the end of a match into a crash.
+	if (TB) TB->SetText(FText::FromString(Str));
 }
 
 void USkylandersVictoryWidget::NativeOnInitialized()
@@ -34,88 +61,177 @@ void USkylandersVictoryWidget::NativeOnInitialized()
 
 	if (!WidgetTree) return;
 
-	// Root canvas - full screen
 	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("VictoryRoot"));
 	WidgetTree->RootWidget = Root;
 
-	// Full-screen semi-transparent dark overlay
+	// Dim the frozen match behind the results
 	UBorder* Overlay = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("VictoryOverlay"));
-	Overlay->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.75f));
-	Overlay->SetPadding(FMargin(0));
-
+	Overlay->SetBrushColor(SkylandersUI::OverlayBG);
 	UCanvasPanelSlot* OverlaySlot = Root->AddChildToCanvas(Overlay);
 	OverlaySlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
-	OverlaySlot->SetPosition(FVector2D(0.0f, 0.0f));
-	OverlaySlot->SetSize(FVector2D(0.0f, 0.0f));
-	OverlaySlot->SetAutoSize(false);
+	OverlaySlot->SetOffsets(FMargin(0.0f));
 
-	// Centered content box
-	UBorder* ContentBG = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("VictoryContentBG"));
-	ContentBG->SetBrushColor(FLinearColor(0.02f, 0.02f, 0.06f, 0.9f));
-	ContentBG->SetPadding(FMargin(40.0f, 30.0f));
+	// One centered panel; fixed width (the fill columns need one to divide),
+	// height from the rows
+	UBorder* Panel = SkylandersUI::MakePanel(WidgetTree, TEXT("VictoryPanel"), SkylandersUI::PanelBG, 14.0f,
+		SkylandersUI::PanelOutline, 1.0f, FMargin(28.0f, 22.0f));
+	USizeBox* WidthBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("VictoryWidth"));
+	WidthBox->SetWidthOverride(VictoryPanelWidth);
+	WidthBox->AddChild(Panel);
 
-	UCanvasPanelSlot* ContentSlot = Root->AddChildToCanvas(ContentBG);
-	ContentSlot->SetAnchors(FAnchors(0.5f, 0.45f, 0.5f, 0.45f));
-	ContentSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-	ContentSlot->SetPosition(FVector2D(0.0f, 0.0f));
-	ContentSlot->SetSize(FVector2D(520.0f, 430.0f));
-	ContentSlot->SetAutoSize(false);
+	UCanvasPanelSlot* PanelSlot = Root->AddChildToCanvas(WidthBox);
+	PanelSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+	PanelSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+	PanelSlot->SetPosition(FVector2D(0.0f, 0.0f));
+	PanelSlot->SetAutoSize(true);
 
-	// Vertical layout inside content box
 	UVerticalBox* VBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("VictoryVBox"));
-	ContentBG->AddChild(VBox);
+	Panel->AddChild(VBox);
 
-	auto AddRow = [&](UTextBlock* TB, float BottomPad = 6.0f)
+	auto AddLine = [&](UWidget* W, float BottomPad, EHorizontalAlignment HAlign = HAlign_Fill)
 	{
-		UVerticalBoxSlot* VBSlot = VBox->AddChildToVerticalBox(TB);
-		VBSlot->SetPadding(FMargin(0, 0, 0, BottomPad));
-		VBSlot->SetHorizontalAlignment(HAlign_Center);
+		UVerticalBoxSlot* LineSlot = VBox->AddChildToVerticalBox(W);
+		LineSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, BottomPad));
+		LineSlot->SetHorizontalAlignment(HAlign);
 	};
 
-	// VICTORY / DEFEAT text (large, colored later by ShowResult)
-	ResultText = MakeVictoryText(WidgetTree, TEXT("VResultText"), 42, FLinearColor::White, TEXT("---"));
-	AddRow(ResultText, 20);
+	// ---- Title block (text and color set by ShowResult) ----
+	ResultText = SkylandersUI::MakeTitle(WidgetTree, TEXT("VResultText"), TEXT("---"), 56, SkylandersUI::White);
+	AddLine(ResultText, 0.0f, HAlign_Center);
+	SubtitleText = SkylandersUI::MakeText(WidgetTree, TEXT("VSubtitle"), TEXT(""), 16, SkylandersUI::Dim);
+	AddLine(SubtitleText, 14.0f, HAlign_Center);
 
-	// Divider
-	UBorder* Divider = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("VDivider"));
-	Divider->SetBrushColor(FLinearColor(0.4f, 0.4f, 0.6f, 0.5f));
-	Divider->SetPadding(FMargin(0));
-	UVerticalBoxSlot* DivVBSlot = VBox->AddChildToVerticalBox(Divider);
-	DivVBSlot->SetPadding(FMargin(0, 0, 0, 16));
+	// Hairline divider
+	{
+		UBorder* Divider = SkylandersUI::MakePanel(WidgetTree, TEXT("VDivider"), SkylandersUI::PanelOutline, 0.0f,
+			FLinearColor::Transparent, 0.0f, FMargin(0.0f));
+		USizeBox* DividerBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("VDividerBox"));
+		DividerBox->SetHeightOverride(1.0f);
+		DividerBox->AddChild(Divider);
+		AddLine(DividerBox, 12.0f);
+	}
 
-	// Game time
-	TimeText = MakeVictoryText(WidgetTree, TEXT("VTimeText"), 16, FLinearColor(0.7f, 0.7f, 0.8f), TEXT("Time: 00:00"));
-	AddRow(TimeText, 8);
+	// ---- Results table ----
+	{
+		UHorizontalBox* Header = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("VHeader"));
+		static const TCHAR* const Titles[6] = { TEXT("NAME"), TEXT("LVL"), TEXT("K / D / A"), TEXT("CS"), TEXT("GOLD"), TEXT("ITEMS") };
+		for (int32 c = 0; c < 6; c++)
+		{
+			AddCell(Header, c, Titles[c], 10, SkylandersUI::Dim);
+		}
+		// Same horizontal padding as a row's border so the columns align
+		UBorder* HeaderPad = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("VHeaderPad"));
+		HeaderPad->SetBrushColor(FLinearColor::Transparent);
+		HeaderPad->SetPadding(FMargin(8.0f, 2.0f));
+		HeaderPad->AddChild(Header);
+		AddLine(HeaderPad, 4.0f);
+	}
 
-	// KDA + CS
-	KDAText = MakeVictoryText(WidgetTree, TEXT("VKDAText"), 16, FLinearColor(0.8f, 0.8f, 0.8f), TEXT("K: 0  D: 0  CS: 0"));
-	AddRow(KDAText, 8);
+	UTextBlock* BlueLabel = SkylandersUI::MakeTitle(WidgetTree, TEXT("VBlueLabel"), TEXT("BLUE"), 12, VictoryBlueLabel, ETextJustify::Left);
+	AddLine(BlueLabel, 3.0f);
+	BlueBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("VBlueBox"));
+	AddLine(BlueBox, 10.0f);
 
-	// Gold
-	GoldText = MakeVictoryText(WidgetTree, TEXT("VGoldText"), 16, FLinearColor(1.0f, 0.85f, 0.2f), TEXT("Gold: 0"));
-	AddRow(GoldText, 8);
+	UTextBlock* RedLabel = SkylandersUI::MakeTitle(WidgetTree, TEXT("VRedLabel"), TEXT("RED"), 12, VictoryRedLabel, ETextJustify::Left);
+	AddLine(RedLabel, 3.0f);
+	RedBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("VRedBox"));
+	AddLine(RedBox, 18.0f);
 
-	// Level
-	LevelText = MakeVictoryText(WidgetTree, TEXT("VLevelText"), 16, FLinearColor(0.6f, 0.8f, 1.0f), TEXT("Level: 1"));
-	AddRow(LevelText, 20);
+	// ---- Match stat tiles. Damage dealt is not tracked, so the three numbers
+	// are the ones the match does keep for the player. ----
+	{
+		UTextBlock* StatsLabel = SkylandersUI::MakeTitle(WidgetTree, TEXT("VStatsLabel"), TEXT("YOUR MATCH"), 12, SkylandersUI::Gold, ETextJustify::Left);
+		AddLine(StatsLabel, 6.0f);
 
-	// Exits - without these the match ends on a paused screen with no way out.
-	UHorizontalBox* Actions = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("VActions"));
+		UHorizontalBox* Tiles = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("VTiles"));
+		GoldTileText = AddStatTile(Tiles, TEXT("GOLD EARNED"), false);
+		CSTileText = AddStatTile(Tiles, TEXT("CREEP SCORE"), false);
+		KATileText = AddStatTile(Tiles, TEXT("KILLS + ASSISTS"), true);
+		AddLine(Tiles, 22.0f);
+	}
 
-	UButton* PlayAgainBtn = SkylandersUI::MakeButton(WidgetTree, TEXT("VPlayAgain"), TEXT("PLAY AGAIN"), 18);
-	PlayAgainBtn->OnClicked.AddDynamic(this, &USkylandersVictoryWidget::OnPlayAgainClicked);
-	UHorizontalBoxSlot* PlayAgainSlot = Actions->AddChildToHorizontalBox(PlayAgainBtn);
-	PlayAgainSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-	PlayAgainSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
+	// ---- Exits - without these the match ends on a paused screen with no way out ----
+	{
+		UHorizontalBox* Actions = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("VActions"));
 
-	UButton* MainMenuBtn = SkylandersUI::MakeButton(WidgetTree, TEXT("VMainMenu"), TEXT("MAIN MENU"), 18);
-	MainMenuBtn->OnClicked.AddDynamic(this, &USkylandersVictoryWidget::OnMainMenuClicked);
-	UHorizontalBoxSlot* MainMenuSlot = Actions->AddChildToHorizontalBox(MainMenuBtn);
-	MainMenuSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-	MainMenuSlot->SetPadding(FMargin(6.0f, 0.0f, 0.0f, 0.0f));
+		UButton* PlayAgainBtn = SkylandersUI::MakeButton(WidgetTree, TEXT("VPlayAgain"), TEXT("PLAY AGAIN"), 18);
+		PlayAgainBtn->OnClicked.AddDynamic(this, &USkylandersVictoryWidget::OnPlayAgainClicked);
+		USizeBox* PlayAgainBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("VPlayAgainBox"));
+		PlayAgainBox->SetWidthOverride(240.0f);
+		PlayAgainBox->SetHeightOverride(48.0f);
+		PlayAgainBox->AddChild(PlayAgainBtn);
+		Actions->AddChildToHorizontalBox(PlayAgainBox)->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
 
-	UVerticalBoxSlot* ActionsSlot = VBox->AddChildToVerticalBox(Actions);
-	ActionsSlot->SetHorizontalAlignment(HAlign_Fill);
+		UButton* MainMenuBtn = SkylandersUI::MakeButton(WidgetTree, TEXT("VMainMenu"), TEXT("MAIN MENU"), 18);
+		MainMenuBtn->OnClicked.AddDynamic(this, &USkylandersVictoryWidget::OnMainMenuClicked);
+		USizeBox* MainMenuBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("VMainMenuBox"));
+		MainMenuBox->SetWidthOverride(240.0f);
+		MainMenuBox->SetHeightOverride(48.0f);
+		MainMenuBox->AddChild(MainMenuBtn);
+		Actions->AddChildToHorizontalBox(MainMenuBox)->SetPadding(FMargin(8.0f, 0.0f, 0.0f, 0.0f));
+
+		AddLine(Actions, 0.0f, HAlign_Center);
+	}
+}
+
+UTextBlock* USkylandersVictoryWidget::AddCell(UHorizontalBox* Row, int32 Column, const FString& Str, int32 FontSize, FLinearColor Color)
+{
+	// Name and items read left-aligned; the numeric columns center under their header
+	const bool bLeft = (Column == 0 || Column == 5);
+	UTextBlock* TB = SkylandersUI::MakeText(WidgetTree, NAME_None, Str, FontSize, Color,
+		bLeft ? ETextJustify::Left : ETextJustify::Center);
+	// Long item lists end in "..." instead of pushing the other columns around
+	TB->SetTextOverflowPolicy(ETextOverflowPolicy::Ellipsis);
+
+	UHorizontalBoxSlot* CellSlot = Row->AddChildToHorizontalBox(TB);
+	FSlateChildSize Size(ESlateSizeRule::Fill);
+	Size.Value = VictoryColumnFill[Column];
+	CellSlot->SetSize(Size);
+	CellSlot->SetVerticalAlignment(VAlign_Center);
+	CellSlot->SetPadding(FMargin(4.0f, 0.0f));
+	return TB;
+}
+
+UTextBlock* USkylandersVictoryWidget::AddStatTile(UHorizontalBox* Row, const FString& Label, bool bLast)
+{
+	UBorder* Tile = SkylandersUI::MakePanel(WidgetTree, NAME_None, VictoryTileFill, 10.0f,
+		SkylandersUI::PanelOutline, 1.0f, FMargin(16.0f, 12.0f));
+
+	UVerticalBox* Inner = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+	UTextBlock* Value = SkylandersUI::MakeTitle(WidgetTree, NAME_None, TEXT("0"), 30, SkylandersUI::White);
+	Inner->AddChildToVerticalBox(Value)->SetHorizontalAlignment(HAlign_Center);
+	UTextBlock* Caption = SkylandersUI::MakeText(WidgetTree, NAME_None, Label, 11, SkylandersUI::Dim);
+	Inner->AddChildToVerticalBox(Caption)->SetHorizontalAlignment(HAlign_Center);
+	Tile->AddChild(Inner);
+
+	UHorizontalBoxSlot* TileSlot = Row->AddChildToHorizontalBox(Tile);
+	TileSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	TileSlot->SetPadding(FMargin(0.0f, 0.0f, bLast ? 0.0f : 12.0f, 0.0f));
+	return Value;
+}
+
+void USkylandersVictoryWidget::AddResultRow(UVerticalBox* Box, const FResultLine& L, const FLinearColor& RowColor)
+{
+	if (!Box || !WidgetTree) return;
+
+	// The player's row carries a gold rim and gold text so it is found at a glance
+	UBorder* Background = SkylandersUI::MakePanel(WidgetTree, NAME_None, RowColor, 6.0f,
+		L.bIsPlayer ? SkylandersUI::Gold : FLinearColor::Transparent, L.bIsPlayer ? 1.5f : 0.0f, FMargin(8.0f, 5.0f));
+
+	const FLinearColor TextColor = L.bIsPlayer ? SkylandersUI::Gold : SkylandersUI::White;
+	UHorizontalBox* Cells = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	UTextBlock* NameCell = AddCell(Cells, 0, L.Name, 13, TextColor);
+	if (L.bIsPlayer) SkylandersUI::SetFontStyle(NameCell, true, false);
+	AddCell(Cells, 1, FString::FromInt(L.Level), 13, TextColor);
+	AddCell(Cells, 2, FString::Printf(TEXT("%d / %d / %d"), L.Kills, L.Deaths, L.Assists), 13, TextColor);
+	AddCell(Cells, 3, FString::FromInt(L.CS), 13, TextColor);
+	AddCell(Cells, 4, FString::FromInt(L.Gold), 13, TextColor);
+	AddCell(Cells, 5, L.Items, 10, L.bIsPlayer ? SkylandersUI::Gold : SkylandersUI::Dim);
+	Background->AddChild(Cells);
+
+	UVerticalBoxSlot* RowSlot = Box->AddChildToVerticalBox(Background);
+	RowSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 3.0f));
+	RowSlot->SetHorizontalAlignment(HAlign_Fill);
 }
 
 void USkylandersVictoryWidget::LeaveToLevel(FName LevelName)
@@ -151,40 +267,72 @@ void USkylandersVictoryWidget::ShowResult(bool bVictory, ASkylandersCharacter* P
 {
 	if (ResultText)
 	{
-		if (bVictory)
+		ResultText->SetText(FText::FromString(bVictory ? TEXT("VICTORY") : TEXT("DEFEAT")));
+		ResultText->SetColorAndOpacity(FSlateColor(bVictory ? SkylandersUI::Gold : SkylandersUI::Red));
+	}
+
+	// The player's clock is the match clock; without a player fall back to world time
+	UWorld* World = GetWorld();
+	const float MatchSeconds = Player ? Player->GameElapsedTime : (World ? World->GetTimeSeconds() : 0.0f);
+	const int32 Minutes = FMath::FloorToInt(MatchSeconds / 60.0f);
+	const int32 Seconds = FMath::FloorToInt(FMath::Fmod(MatchSeconds, 60.0f));
+	VictorySetText(SubtitleText, FString::Printf(TEXT("%02d:%02d  ·  %s"), Minutes, Seconds,
+		bVictory ? TEXT("Titan destroyed") : TEXT("Your titan fell")));
+
+	// Rebuilt from scratch: ShowResult may be called more than once
+	TArray<FResultLine> Blue;
+	TArray<FResultLine> Red;
+
+	if (Player)
+	{
+		FResultLine& L = Blue.AddDefaulted_GetRef();
+		L.Name = (Player->CharacterName.IsEmpty() ? FString(TEXT("You")) : Player->CharacterName) + TEXT(" (You)");
+		L.Level = Player->PlayerLevel;
+		L.Kills = Player->Kills;
+		L.Deaths = Player->Deaths;
+		L.Assists = Player->Assists;
+		L.CS = Player->CreepScore;
+		L.Gold = Player->TotalGoldEarned;
+		L.Items = VictoryItemList(Player->Inventory);
+		L.bIsPlayer = true;
+	}
+
+	if (World)
+	{
+		TArray<AActor*> AllGods;
+		USkylandersActorRegistry::GetAllActorsOfClass(World, ASkylandersEnemyGod::StaticClass(), AllGods);
+		for (AActor* A : AllGods)
 		{
-			ResultText->SetText(FText::FromString(TEXT("VICTORY")));
-			ResultText->SetColorAndOpacity(FSlateColor(FLinearColor(0.2f, 1.0f, 0.3f)));
+			ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(A);
+			if (!God) continue;
+
+			FResultLine& L = (God->Team == ETowerTeam::Friendly) ? Blue.AddDefaulted_GetRef() : Red.AddDefaulted_GetRef();
+			L.Name = God->GodName;
+			L.Level = God->Level;
+			L.Kills = God->Kills;
+			L.Deaths = God->Deaths;
+			L.Assists = God->Assists;
+			L.CS = God->CreepScore;
+			L.Gold = God->Gold;
+			L.Items = VictoryItemList(God->Inventory);
 		}
-		else
-		{
-			ResultText->SetText(FText::FromString(TEXT("DEFEAT")));
-			ResultText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.2f, 0.2f)));
-		}
 	}
 
-	if (!Player) return;
-
-	if (TimeText)
+	if (BlueBox)
 	{
-		int32 Minutes = FMath::FloorToInt(Player->GameElapsedTime / 60.0f);
-		int32 Seconds = FMath::FloorToInt(FMath::Fmod(Player->GameElapsedTime, 60.0f));
-		TimeText->SetText(FText::FromString(FString::Printf(TEXT("Time: %02d:%02d"), Minutes, Seconds)));
+		BlueBox->ClearChildren();
+		for (const FResultLine& L : Blue) AddResultRow(BlueBox, L, VictoryBlueRow);
+	}
+	if (RedBox)
+	{
+		RedBox->ClearChildren();
+		for (const FResultLine& L : Red) AddResultRow(RedBox, L, VictoryRedRow);
 	}
 
-	if (KDAText)
-	{
-		KDAText->SetText(FText::FromString(FString::Printf(
-			TEXT("K: %d   D: %d   CS: %d"), Player->Kills, Player->Deaths, Player->CreepScore)));
-	}
+	VictorySetText(GoldTileText, Player ? FString::FromInt(Player->TotalGoldEarned) : FString(TEXT("-")));
+	VictorySetText(CSTileText, Player ? FString::FromInt(Player->CreepScore) : FString(TEXT("-")));
+	VictorySetText(KATileText, Player ? FString::FromInt(Player->Kills + Player->Assists) : FString(TEXT("-")));
+	if (GoldTileText) GoldTileText->SetColorAndOpacity(FSlateColor(SkylandersUI::Gold));
 
-	if (GoldText)
-	{
-		GoldText->SetText(FText::FromString(FString::Printf(TEXT("Gold: %d"), Player->Coins)));
-	}
-
-	if (LevelText)
-	{
-		LevelText->SetText(FText::FromString(FString::Printf(TEXT("Level: %d"), Player->PlayerLevel)));
-	}
+	SKY_COUNT("ui_endscreen_built");
 }

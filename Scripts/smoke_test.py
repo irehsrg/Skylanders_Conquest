@@ -11,6 +11,7 @@ log lines, and exits with the game's exit code (0 = pass).
     python Scripts/smoke_test.py --character Spyro    # play a specific kit
     python Scripts/smoke_test.py --all-characters     # every playable kit, back to back
     python Scripts/smoke_test.py --items              # + the item stat check (-SkyItemTest)
+    python Scripts/smoke_test.py --ui                 # build every menu/end screen on MainMenu
 
 --character passes -SkyCharacter=<ID> (USkylandersGameInstance::Init), using the
 character-select IDs. --all-characters runs each kit for --seconds, prints one
@@ -18,6 +19,10 @@ summary line per character, and exits non-zero if any run failed. --items adds
 -SkyItemTest: at the first sample the game checks every catalog item's stats,
 the CDR caps, penetration math and the full-inventory refusal on the player,
 restores it, and plays the match on; the report's "item_test" block is printed.
+--ui loads the MainMenu map with -SkySmoke=10 -SkyUISmoke instead of a match: the
+game creates the main menu, character select, shop, end screen and settings
+widgets, runs their setup, lets a few frames pass, logs "[Smoke] ui <Class> ok"
+for each and exits (0 = all five built without errors).
 """
 
 import argparse
@@ -38,7 +43,8 @@ ALL_CHARACTERS = ["TriggerHappy", "Hex", "TreeRex", "Spyro"]
 SUMMARY_COUNTERS = ["player_shot", "player_ability", "player_ult", "player_damage", "player_death"]
 
 
-def run_one(seconds: int, map_name: str, character: str | None, items: bool = False) -> tuple[int, dict | None]:
+def run_one(seconds: int, map_name: str, character: str | None, items: bool = False,
+            ui: bool = False) -> tuple[int, dict | None]:
     """Runs one headless match; prints the detailed result and returns (exit code, report)."""
     if REPORT.exists():
         REPORT.unlink()  # never report a stale result
@@ -49,6 +55,8 @@ def run_one(seconds: int, map_name: str, character: str | None, items: bool = Fa
         cmd.append(f"-SkyCharacter={character}")
     if items:
         cmd.append("-SkyItemTest")
+    if ui:
+        cmd.append("-SkyUISmoke")
     limit = seconds + STARTUP_GRACE_S
     who = f" as {character}" if character else ""
     print(f"[smoke] running {map_name}{who} headless for {seconds} s (timeout {limit} s)...", flush=True)
@@ -97,7 +105,8 @@ def run_one(seconds: int, map_name: str, character: str | None, items: bool = Fa
         lines = [l.rstrip() for l in LOG.read_text(encoding="utf-8", errors="replace").splitlines() if "[Smoke]" in l]
         if lines:
             print("log:")
-            for l in lines[-5:]:
+            # The UI run's whole point is its per-widget lines; a match shows the tail
+            for l in (lines if ui else lines[-5:]):
                 print("  " + l)
 
     if code == 0 and report is None:
@@ -145,7 +154,13 @@ def main() -> int:
     group.add_argument("--character", help="character-select ID to play (TriggerHappy, Hex, TreeRex, Spyro)")
     group.add_argument("--all-characters", action="store_true", help="run every playable kit back to back")
     ap.add_argument("--items", action="store_true", help="also run the item stat check (-SkyItemTest)")
+    ap.add_argument("--ui", action="store_true",
+                    help="UI construction check on the MainMenu map (-SkySmoke=10 -SkyUISmoke)")
     args = ap.parse_args()
+
+    if args.ui:
+        code, _ = run_one(10, "MainMenu", None, ui=True)
+        return code
 
     if not args.all_characters:
         code, _ = run_one(args.seconds, args.map, args.character, args.items)

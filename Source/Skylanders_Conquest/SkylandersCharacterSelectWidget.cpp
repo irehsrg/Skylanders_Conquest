@@ -3,6 +3,7 @@
 #include "SkylandersCharacterSelectWidget.h"
 #include "SkylandersCharacterPreviewActor.h"
 #include "SkylandersGameInstance.h"
+#include "SkylandersUIStyle.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Components/Image.h"
@@ -11,6 +12,9 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/SizeBox.h"
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
 #include "Blueprint/WidgetTree.h"
@@ -20,13 +24,12 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 
-// ---- Style constants (shared look with the main menu) ----
-static const FLinearColor SelBG(0.012f, 0.016f, 0.04f, 1.0f);
-static const FLinearColor SelGold(0.95f, 0.78f, 0.20f, 1.0f);
-static const FLinearColor SelWhite(0.92f, 0.92f, 0.95f, 1.0f);
-static const FLinearColor SelGrey(0.62f, 0.62f, 0.70f, 1.0f);
+// Tile fills on the shared palette; outlines come from SkylandersUI::PanelOutline
+// (idle) and the entry's Accent (selected).
 static const FLinearColor SelTile(0.06f, 0.08f, 0.15f, 1.0f);
-static const FLinearColor SelTileHover(0.14f, 0.18f, 0.32f, 1.0f);
+static const FLinearColor SelTileHover(0.12f, 0.15f, 0.27f, 1.0f);
+static const FLinearColor SelTileLocked(0.04f, 0.05f, 0.09f, 0.8f);
+static constexpr float SelTileRadius = 10.0f;
 
 const TArray<FSkylanderSelectEntry>& FSkylanderSelectEntry::GetRoster()
 {
@@ -37,7 +40,7 @@ const TArray<FSkylanderSelectEntry>& FSkylanderSelectEntry::GetRoster()
 		TH.ID = TEXT("TriggerHappy");
 		TH.DisplayName = TEXT("TRIGGER HAPPY");
 		TH.Role = TEXT("Gunslinger  ·  Ranged Carry");
-		TH.Accent = SelGold;
+		TH.Accent = SkylandersUI::Gold;
 		TH.StatLine = TEXT("HP 140   MP 130   ·   Fast attacks, gold-fueled burst");
 		TH.AutoAttack = TEXT("Dual golden pistols — rapid alternating shots.");
 		TH.Abilities[0] = TEXT("Gatling Gun|Piercing golden beam that damages everything in a line. (350% power)");
@@ -112,41 +115,53 @@ const TArray<FSkylanderSelectEntry>& FSkylanderSelectEntry::GetRoster()
 	return Roster;
 }
 
+// Left-justified body text, optionally wrapped (the info panel's paragraphs)
 static UTextBlock* SelMakeText(UWidgetTree* Tree, const FString& Str, int32 Size, FLinearColor Color, bool bWrap = false)
 {
-	UTextBlock* TB = Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-	TB->SetText(FText::FromString(Str));
-	FSlateFontInfo Font = TB->GetFont();
-	Font.Size = Size;
-	TB->SetFont(Font);
-	TB->SetColorAndOpacity(FSlateColor(Color));
-	if (bWrap) TB->SetAutoWrapText(true);
+	UTextBlock* TB = SkylandersUI::MakeText(Tree, NAME_None, Str, Size, Color, ETextJustify::Left);
+	if (TB && bWrap) TB->SetAutoWrapText(true);
 	return TB;
+}
+
+// A tile's button style: a rounded fill per state; the selected tile swaps the
+// 1px panel rim for a 2px rim in its Accent (see UpdateTileHighlights)
+static FButtonStyle SelTileStyle(FButtonStyle Style, const FLinearColor& Accent, bool bSelected)
+{
+	const FLinearColor Rim = bSelected ? Accent : SkylandersUI::PanelOutline;
+	const float RimWidth = bSelected ? 2.0f : 1.0f;
+	const FLinearColor Fill = bSelected ? FMath::Lerp(SelTile, Accent, 0.18f) : SelTile;
+	Style.Normal = SkylandersUI::RoundedBrush(Fill, SelTileRadius, Rim, RimWidth);
+	Style.Hovered = SkylandersUI::RoundedBrush(FMath::Lerp(SelTileHover, Accent, bSelected ? 0.22f : 0.08f), SelTileRadius, Rim, RimWidth);
+	Style.Pressed = SkylandersUI::RoundedBrush(FMath::Lerp(SelTileHover, Accent, 0.35f), SelTileRadius, Accent, 2.0f);
+	Style.Disabled = SkylandersUI::RoundedBrush(SelTileLocked, SelTileRadius, SkylandersUI::PanelOutline * FLinearColor(1.0f, 1.0f, 1.0f, 0.5f), 1.0f);
+	return Style;
 }
 
 UButton* USkylandersCharacterSelectWidget::MakeTile(const FSkylanderSelectEntry& Entry, int32 Index)
 {
 	UButton* Btn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(),
 		FName(*FString::Printf(TEXT("Tile_%s"), *Entry.ID.ToString())));
-
-	FButtonStyle Style = Btn->GetStyle();
-	auto SetBrush = [](FSlateBrush& Brush, FLinearColor Color)
-	{
-		Brush.TintColor = FSlateColor(Color);
-		Brush.DrawAs = ESlateBrushDrawType::Box;
-	};
-	SetBrush(Style.Normal, SelTile);
-	SetBrush(Style.Hovered, SelTileHover);
-	SetBrush(Style.Pressed, Entry.Accent * 0.5f);
-	Btn->SetStyle(Style);
+	Btn->SetStyle(SelTileStyle(Btn->GetStyle(), Entry.Accent, false));
 
 	UVerticalBox* Inner = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-	UTextBlock* Name = SelMakeText(WidgetTree, Entry.DisplayName, 19, Entry.Accent);
-	Name->SetJustification(ETextJustify::Center);
-	Inner->AddChildToVerticalBox(Name)->SetPadding(FMargin(6.f, 22.f, 6.f, 2.f));
-	UTextBlock* Role = SelMakeText(WidgetTree, Entry.Role, 11, SelGrey);
-	Role->SetJustification(ETextJustify::Center);
-	Inner->AddChildToVerticalBox(Role)->SetPadding(FMargin(6.f, 0.f, 6.f, 22.f));
+
+	// Short Accent bar: identifies the character before the name is read
+	{
+		UBorder* Bar = SkylandersUI::MakePanel(WidgetTree, NAME_None, Entry.Accent, 2.0f, FLinearColor::Transparent, 0.0f, FMargin(0.0f));
+		USizeBox* BarBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		BarBox->SetWidthOverride(36.0f);
+		BarBox->SetHeightOverride(4.0f);
+		BarBox->AddChild(Bar);
+		UVerticalBoxSlot* BarSlot = Inner->AddChildToVerticalBox(BarBox);
+		BarSlot->SetHorizontalAlignment(HAlign_Center);
+		BarSlot->SetPadding(FMargin(6.f, 20.f, 6.f, 8.f));
+	}
+
+	UTextBlock* Name = SkylandersUI::MakeTitle(WidgetTree, NAME_None, Entry.DisplayName, 19, SkylandersUI::White);
+	Inner->AddChildToVerticalBox(Name)->SetPadding(FMargin(6.f, 0.f, 6.f, 2.f));
+	UTextBlock* Role = SkylandersUI::MakeText(WidgetTree, NAME_None, Entry.Role, 11, SkylandersUI::Dim);
+	Role->SetAutoWrapText(true);
+	Inner->AddChildToVerticalBox(Role)->SetPadding(FMargin(6.f, 0.f, 6.f, 20.f));
 	Btn->AddChild(Inner);
 
 	return Btn;
@@ -164,14 +179,13 @@ void USkylandersCharacterSelectWidget::NativeOnInitialized()
 
 	// Opaque backdrop
 	UBorder* BG = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SelectBG"));
-	BG->SetBrushColor(SelBG);
+	BG->SetBrushColor(SkylandersUI::ScreenBG);
 	UCanvasPanelSlot* BGSlot = RootCanvas->AddChildToCanvas(BG);
 	BGSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
 	BGSlot->SetOffsets(FMargin(0));
 
 	// Title
-	UTextBlock* Title = SelMakeText(WidgetTree, TEXT("CHOOSE YOUR SKYLANDER"), 34, SelGold);
-	Title->SetJustification(ETextJustify::Center);
+	UTextBlock* Title = SkylandersUI::MakeTitle(WidgetTree, TEXT("SelectTitle"), TEXT("CHOOSE YOUR SKYLANDER"), 34, SkylandersUI::Gold);
 	UCanvasPanelSlot* TitleSlot = RootCanvas->AddChildToCanvas(Title);
 	TitleSlot->SetAnchors(FAnchors(0.5f, 0.045f, 0.5f, 0.045f));
 	TitleSlot->SetAlignment(FVector2D(0.5f, 0.5f));
@@ -193,7 +207,7 @@ void USkylandersCharacterSelectWidget::NativeOnInitialized()
 		GS->SetVerticalAlignment(VAlign_Fill);
 		TileButtons.Add(Tile);
 	}
-	// AddDynamic needs literal function names — bind each roster slot
+	// AddDynamic needs literal function names - bind each roster slot
 	if (TileButtons.Num() > 0) TileButtons[0]->OnClicked.AddDynamic(this, &USkylandersCharacterSelectWidget::OnTile0);
 	if (TileButtons.Num() > 1) TileButtons[1]->OnClicked.AddDynamic(this, &USkylandersCharacterSelectWidget::OnTile1);
 	if (TileButtons.Num() > 2) TileButtons[2]->OnClicked.AddDynamic(this, &USkylandersCharacterSelectWidget::OnTile2);
@@ -214,16 +228,23 @@ void USkylandersCharacterSelectWidget::NativeOnInitialized()
 		GS->SetVerticalAlignment(VAlign_Fill);
 	}
 
-	// ---- Center: live 3D preview ----
+	// ---- Center: live 3D preview on an Accent-tinted backdrop. The stage has
+	// no ring of its own, so the backdrop's tint and rim carry the Accent
+	// (re-tinted by SelectCharacter). ----
+	PreviewBackdrop = SkylandersUI::MakePanel(WidgetTree, TEXT("PreviewBackdrop"), SkylandersUI::PanelBG, 16.f,
+		SkylandersUI::PanelOutline, 1.f, FMargin(6.f));
+	PreviewBackdrop->SetHorizontalAlignment(HAlign_Fill);
+	PreviewBackdrop->SetVerticalAlignment(VAlign_Fill);
+	UCanvasPanelSlot* BackdropSlot = RootCanvas->AddChildToCanvas(PreviewBackdrop);
+	BackdropSlot->SetAnchors(FAnchors(0.36f, 0.10f, 0.66f, 0.86f));
+	BackdropSlot->SetOffsets(FMargin(0));
+
 	PreviewImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("PreviewImage"));
-	UCanvasPanelSlot* PrevSlot = RootCanvas->AddChildToCanvas(PreviewImage);
-	PrevSlot->SetAnchors(FAnchors(0.36f, 0.10f, 0.66f, 0.90f));
-	PrevSlot->SetOffsets(FMargin(0));
+	PreviewBackdrop->SetContent(PreviewImage);
 
 	// ---- Right third: info panel ----
-	UBorder* InfoBG = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InfoBG"));
-	InfoBG->SetBrushColor(FLinearColor(0.03f, 0.04f, 0.09f, 0.9f));
-	InfoBG->SetPadding(FMargin(18.f));
+	UBorder* InfoBG = SkylandersUI::MakePanel(WidgetTree, TEXT("InfoBG"), SkylandersUI::PanelBG, 12.f,
+		SkylandersUI::PanelOutline, 1.f, FMargin(20.f, 18.f));
 	UCanvasPanelSlot* InfoSlot = RootCanvas->AddChildToCanvas(InfoBG);
 	InfoSlot->SetAnchors(FAnchors(0.68f, 0.10f, 0.98f, 0.86f));
 	InfoSlot->SetOffsets(FMargin(0));
@@ -231,44 +252,22 @@ void USkylandersCharacterSelectWidget::NativeOnInitialized()
 	InfoPanel = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("InfoPanel"));
 	InfoBG->SetContent(InfoPanel);
 
-	// ---- Bottom bar: back + lock in ----
-	UButton* BackBtn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("BackBtn"));
-	{
-		FButtonStyle Style = BackBtn->GetStyle();
-		auto SetBrush = [](FSlateBrush& Brush, FLinearColor Color)
-		{
-			Brush.TintColor = FSlateColor(Color);
-			Brush.DrawAs = ESlateBrushDrawType::Box;
-		};
-		SetBrush(Style.Normal, SelTile);
-		SetBrush(Style.Hovered, SelTileHover);
-		SetBrush(Style.Pressed, SelTileHover);
-		BackBtn->SetStyle(Style);
-	}
-	UTextBlock* BackText = SelMakeText(WidgetTree, TEXT("BACK"), 18, SelWhite);
-	BackText->SetJustification(ETextJustify::Center);
-	BackBtn->AddChild(BackText);
+	// ---- Bottom bar: back + play ----
+	UButton* BackBtn = SkylandersUI::MakeButton(WidgetTree, TEXT("BackBtn"), TEXT("BACK"), 18);
 	BackBtn->OnClicked.AddDynamic(this, &USkylandersCharacterSelectWidget::OnBack);
 	UCanvasPanelSlot* BackSlot = RootCanvas->AddChildToCanvas(BackBtn);
 	BackSlot->SetAnchors(FAnchors(0.02f, 0.90f, 0.14f, 0.96f));
 	BackSlot->SetOffsets(FMargin(0));
 
-	UButton* LockBtn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("LockInBtn"));
+	// PLAY is the primary action: gold rim, bold gold label naming the pick
+	UButton* LockBtn = SkylandersUI::MakeButton(WidgetTree, TEXT("LockInBtn"), TEXT("PLAY"), 24);
+	SkylandersUI::SetButtonHighlight(LockBtn, true);
+	LockInLabel = SkylandersUI::GetButtonLabel(LockBtn);
+	if (LockInLabel)
 	{
-		FButtonStyle Style = LockBtn->GetStyle();
-		auto SetBrush = [](FSlateBrush& Brush, FLinearColor Color)
-		{
-			Brush.TintColor = FSlateColor(Color);
-			Brush.DrawAs = ESlateBrushDrawType::Box;
-		};
-		SetBrush(Style.Normal, FLinearColor(0.55f, 0.42f, 0.06f, 1.0f));
-		SetBrush(Style.Hovered, SelGold * 0.8f);
-		SetBrush(Style.Pressed, SelGold);
-		LockBtn->SetStyle(Style);
+		LockInLabel->SetColorAndOpacity(FSlateColor(SkylandersUI::Gold));
+		SkylandersUI::SetFontStyle(LockInLabel, true, false);
 	}
-	LockInLabel = SelMakeText(WidgetTree, TEXT("LOCK IN"), 24, FLinearColor(0.05f, 0.04f, 0.01f, 1.0f));
-	LockInLabel->SetJustification(ETextJustify::Center);
-	LockBtn->AddChild(LockInLabel);
 	LockBtn->OnClicked.AddDynamic(this, &USkylandersCharacterSelectWidget::OnLockIn);
 	UCanvasPanelSlot* LockSlot = RootCanvas->AddChildToCanvas(LockBtn);
 	LockSlot->SetAnchors(FAnchors(0.68f, 0.885f, 0.98f, 0.965f));
@@ -331,7 +330,15 @@ void USkylandersCharacterSelectWidget::SelectCharacter(FName CharacterID)
 
 	if (LockInLabel)
 	{
-		LockInLabel->SetText(FText::FromString(FString::Printf(TEXT("LOCK IN  ·  %s"), *Entry->DisplayName)));
+		LockInLabel->SetText(FText::FromString(FString::Printf(TEXT("PLAY  ·  %s"), *Entry->DisplayName)));
+	}
+
+	// The preview stage has no ring, so its backdrop carries the Accent: a dark
+	// tint of it behind the model and a strong rim
+	if (PreviewBackdrop)
+	{
+		const FLinearColor Tint = FMath::Lerp(SkylandersUI::PanelBG, Entry->Accent, 0.16f);
+		PreviewBackdrop->SetBrush(SkylandersUI::RoundedBrush(Tint, 16.f, Entry->Accent * FLinearColor(1, 1, 1, 0.7f), 1.5f));
 	}
 }
 
@@ -340,34 +347,56 @@ void USkylandersCharacterSelectWidget::RebuildInfoPanel(const FSkylanderSelectEn
 	if (!InfoPanel) return;
 	InfoPanel->ClearChildren();
 
-	UTextBlock* Name = SelMakeText(WidgetTree, Entry.DisplayName, 30, Entry.Accent);
+	UTextBlock* Name = SkylandersUI::MakeTitle(WidgetTree, NAME_None, Entry.DisplayName, 30, Entry.Accent, ETextJustify::Left);
 	InfoPanel->AddChildToVerticalBox(Name)->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
 
-	UTextBlock* Role = SelMakeText(WidgetTree, Entry.Role, 15, SelWhite);
-	InfoPanel->AddChildToVerticalBox(Role)->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+	UTextBlock* Role = SelMakeText(WidgetTree, Entry.Role, 14, SkylandersUI::Dim);
+	InfoPanel->AddChildToVerticalBox(Role)->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
 
-	UTextBlock* Stats = SelMakeText(WidgetTree, Entry.StatLine, 12, SelGrey, true);
-	InfoPanel->AddChildToVerticalBox(Stats)->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
+	// Stat line in its own chip so it reads as data, not prose
+	{
+		UBorder* Chip = SkylandersUI::MakePanel(WidgetTree, NAME_None, FLinearColor(0.05f, 0.06f, 0.12f, 1.0f), 6.f,
+			SkylandersUI::PanelOutline, 1.f, FMargin(10.f, 6.f));
+		Chip->SetContent(SelMakeText(WidgetTree, Entry.StatLine, 12, SkylandersUI::White, true));
+		InfoPanel->AddChildToVerticalBox(Chip)->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
+	}
 
-	UTextBlock* AAHeader = SelMakeText(WidgetTree, TEXT("BASIC ATTACK"), 13, SelGold);
-	InfoPanel->AddChildToVerticalBox(AAHeader)->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
-	UTextBlock* AAText = SelMakeText(WidgetTree, Entry.AutoAttack, 12, SelWhite, true);
-	InfoPanel->AddChildToVerticalBox(AAText)->SetPadding(FMargin(0.f, 0.f, 0.f, 12.f));
+	UTextBlock* AAHeader = SkylandersUI::MakeTitle(WidgetTree, NAME_None, TEXT("BASIC ATTACK"), 13, SkylandersUI::Gold, ETextJustify::Left);
+	InfoPanel->AddChildToVerticalBox(AAHeader)->SetPadding(FMargin(0.f, 0.f, 0.f, 3.f));
+	UTextBlock* AAText = SelMakeText(WidgetTree, Entry.AutoAttack, 12, SkylandersUI::White, true);
+	InfoPanel->AddChildToVerticalBox(AAText)->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
 
-	UTextBlock* AbHeader = SelMakeText(WidgetTree, TEXT("ABILITIES"), 13, SelGold);
+	UTextBlock* AbHeader = SkylandersUI::MakeTitle(WidgetTree, NAME_None, TEXT("ABILITIES"), 13, SkylandersUI::Gold, ETextJustify::Left);
 	InfoPanel->AddChildToVerticalBox(AbHeader)->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
 
 	for (int32 i = 0; i < 4; i++)
 	{
 		FString AbilityName, AbilityDesc;
-		Entry.Abilities[i].Split(TEXT("|"), &AbilityName, &AbilityDesc);
+		if (!Entry.Abilities[i].Split(TEXT("|"), &AbilityName, &AbilityDesc))
+		{
+			AbilityName = Entry.Abilities[i];
+		}
 
-		UTextBlock* AbName = SelMakeText(WidgetTree,
-			FString::Printf(TEXT("[%d]  %s"), i + 1, *AbilityName), 14, Entry.Accent);
-		InfoPanel->AddChildToVerticalBox(AbName)->SetPadding(FMargin(0.f, 4.f, 0.f, 1.f));
+		// Key badge 1-4 (the HUD's ability-slot badge, rimmed in the Accent),
+		// then the name over "- description"
+		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+		UHorizontalBoxSlot* BadgeSlot = Row->AddChildToHorizontalBox(
+			SkylandersUI::MakeKeyBadge(WidgetTree, FString::FromInt(i + 1), 24.f, Entry.Accent));
+		BadgeSlot->SetVerticalAlignment(VAlign_Top);
+		BadgeSlot->SetPadding(FMargin(0.f, 1.f, 10.f, 0.f));
 
-		UTextBlock* AbDesc = SelMakeText(WidgetTree, AbilityDesc, 12, SelWhite, true);
-		InfoPanel->AddChildToVerticalBox(AbDesc)->SetPadding(FMargin(14.f, 0.f, 0.f, 3.f));
+		UVerticalBox* Text = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+		UTextBlock* AbName = SkylandersUI::MakeTitle(WidgetTree, NAME_None, AbilityName, 14, Entry.Accent, ETextJustify::Left);
+		Text->AddChildToVerticalBox(AbName);
+		if (!AbilityDesc.IsEmpty())
+		{
+			UTextBlock* AbDesc = SelMakeText(WidgetTree, FString::Printf(TEXT("— %s"), *AbilityDesc), 12, SkylandersUI::White, true);
+			Text->AddChildToVerticalBox(AbDesc)->SetPadding(FMargin(0.f, 1.f, 0.f, 0.f));
+		}
+		UHorizontalBoxSlot* TextSlot = Row->AddChildToHorizontalBox(Text);
+		TextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+
+		InfoPanel->AddChildToVerticalBox(Row)->SetPadding(FMargin(0.f, 6.f, 0.f, 2.f));
 	}
 }
 
@@ -389,10 +418,9 @@ void USkylandersCharacterSelectWidget::UpdateTileHighlights()
 	const TArray<FSkylanderSelectEntry>& Roster = FSkylanderSelectEntry::GetRoster();
 	for (int32 i = 0; i < TileButtons.Num() && i < Roster.Num(); i++)
 	{
-		FButtonStyle Style = TileButtons[i]->GetStyle();
+		if (!TileButtons[i]) continue;
 		const bool bSelected = (Roster[i].ID == SelectedID);
-		Style.Normal.TintColor = FSlateColor(bSelected ? Roster[i].Accent * 0.35f : SelTile);
-		TileButtons[i]->SetStyle(Style);
+		TileButtons[i]->SetStyle(SelTileStyle(TileButtons[i]->GetStyle(), Roster[i].Accent, bSelected));
 	}
 }
 

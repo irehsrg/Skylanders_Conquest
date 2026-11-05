@@ -15,10 +15,12 @@ played solo against bots. Networking is deliberately last.
   last-hit, duel, take jungle buffs, back off towers with hysteresis, focus
   the lowest-health hero, and join your fights. Kills and assists are
   credited to whoever earned them.
-- **Full MOBA loop.** Towers, titans, two minion waves, jungle buff camps with
-  a boss, gold and XP, 500 starting gold, a 36-item shop with cooldown
-  reduction and penetration, ability leveling, recall, respawn timers that
-  scale with match time.
+- **Full MOBA loop.** Towers, phoenixes and titans built as stepped stone
+  structures with glowing team crystals, two minion waves, jungle buff camps
+  with a boss, gold and XP, 500 starting gold, a 36-item shop with cooldown
+  reduction, penetration and a recommended build per god, ability leveling,
+  recall, respawn timers that scale with match time, and an end-of-match
+  results screen with both teams' stats.
 - **Four playable Skylanders.** Trigger Happy (ranged crit), Hex (burst mage),
   Tree Rex (tank) and Spyro (bruiser: Flame Breath, Charge, Comet Dash,
   Daybringer Flame). Stealth Elf, Kaos Sensei, Chompy Mage and Cynder as AI
@@ -31,9 +33,14 @@ played solo against bots. Networking is deliberately last.
   event, and an announcer: 3-2-1-FIGHT, FIRST BLOOD, kills, tower and
   phoenix falls, titan vulnerable.
 - **A complete front end.** Main menu, character select with live preview,
-  settings, pause menu, a two-team scoreboard with K/D/A, kill feed, match
-  status bar, minimap, and a C++-built HUD (portrait, bars, ability slots
-  with cooldown sweeps and rank pips, items, gold).
+  settings, pause menu, shop, end screen and a two-team scoreboard with
+  K/D/A, all C++-built on one palette, plus kill feed, match status bar,
+  minimap and the HUD (portrait, bars, ability slots with cooldown sweeps
+  and rank pips, items, gold).
+- **A dressed map.** The Joust greybox is ringed with cliffs, rocks and trees
+  from the Imaginators level rip, a lighthouse behind each base and a whale
+  breaching beyond the Golden Queen pit; 130 instanced statics placed
+  deterministically outside the walkable area.
 - **Telemetry.** Every match writes a JSONL event log and periodic god snapshots
   to `Saved/Telemetry/` for data-driven tuning.
 
@@ -133,6 +140,8 @@ python Scripts\smoke_test.py                    # 120 s match as Trigger Happy
 python Scripts\smoke_test.py --character Spyro  # any playable kit
 python Scripts\smoke_test.py --all-characters   # all four, one after another
 python Scripts\smoke_test.py --seconds 180
+python Scripts\smoke_test.py --items            # buys and sells all 36 items, asserts every stat
+python Scripts\smoke_test.py --ui               # builds every menu/shop/end-screen widget
 ```
 
 The report lands in `Saved/SmokeTest/report.json`. Every change in this

@@ -1,9 +1,11 @@
 // Skylanders Conquest - Character Select Screen (SMITE/LoL style)
 //
-// Full-screen, fully code-built: a portrait grid on the left third, a live
-// rotating 3D preview of the hovered character in the center (SceneCapture
-// render target), and the character's role/stats/abilities on the right.
-// LOCK IN stores the pick in the game instance and starts the match.
+// Full-screen, fully code-built on the shared SkylandersUI palette: a tile grid
+// on the left third (rounded panels; the selected one gets a 2px outline in the
+// entry's Accent), a live rotating 3D preview of the selected character in the
+// center (SceneCapture render target) framed by an Accent-tinted backdrop, and
+// the character's role/stats/abilities on the right, abilities keyed 1-4 like
+// the HUD. PLAY stores the pick in the game instance and starts the match.
 
 #pragma once
 
@@ -15,6 +17,7 @@ class UButton;
 class UTextBlock;
 class UImage;
 class UVerticalBox;
+class UBorder;
 class UUniformGridPanel;
 class ASkylandersCharacterPreviewActor;
 
@@ -50,7 +53,7 @@ public:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
-	/** Level the LOCK IN button loads (set by the main menu). */
+	/** Level the PLAY button loads (set by the main menu). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Menu")
 	FName GameLevelName = TEXT("Joust");
 
@@ -76,6 +79,7 @@ private:
 	FName SelectedID;
 
 	UPROPERTY() UImage* PreviewImage = nullptr;
+	UPROPERTY() UBorder* PreviewBackdrop = nullptr;
 	UPROPERTY() UVerticalBox* InfoPanel = nullptr;
 	UPROPERTY() UTextBlock* LockInLabel = nullptr;
 	UPROPERTY() TArray<UButton*> TileButtons;

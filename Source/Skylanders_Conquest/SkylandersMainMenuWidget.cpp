@@ -3,6 +3,7 @@
 #include "SkylandersMainMenuWidget.h"
 #include "SkylandersCharacterSelectWidget.h"
 #include "SkylandersSettingsWidget.h"
+#include "SkylandersUIStyle.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -10,49 +11,14 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Border.h"
+#include "Components/SizeBox.h"
 #include "Blueprint/WidgetTree.h"
 #include "Fonts/SlateFontInfo.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "GameFramework/PlayerController.h"
 
-// ---- Shared style constants ----
-static const FLinearColor MenuGold(0.95f, 0.78f, 0.20f, 1.0f);
-static const FLinearColor MenuWhite(0.92f, 0.92f, 0.95f, 1.0f);
-static const FLinearColor MenuBtnNormal(0.08f, 0.10f, 0.18f, 0.95f);
-static const FLinearColor MenuBtnHover(0.18f, 0.24f, 0.42f, 1.0f);
-static const FLinearColor MenuBtnPress(0.30f, 0.38f, 0.60f, 1.0f);
-
-static UTextBlock* MakeText(UWidgetTree* Tree, FName Name, const FString& Str, int32 Size, FLinearColor Color)
-{
-	UTextBlock* TB = Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
-	TB->SetText(FText::FromString(Str));
-	FSlateFontInfo Font = TB->GetFont();
-	Font.Size = Size;
-	TB->SetFont(Font);
-	TB->SetColorAndOpacity(FSlateColor(Color));
-	TB->SetJustification(ETextJustify::Center);
-	return TB;
-}
-
-UButton* USkylandersMainMenuWidget::MakeMenuButton(const FString& Label, FName Name)
-{
-	UButton* Btn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
-
-	FButtonStyle Style = Btn->GetStyle();
-	auto SetBrush = [](FSlateBrush& Brush, FLinearColor Color)
-	{
-		Brush.TintColor = FSlateColor(Color);
-		Brush.DrawAs = ESlateBrushDrawType::Box;
-	};
-	SetBrush(Style.Normal, MenuBtnNormal);
-	SetBrush(Style.Hovered, MenuBtnHover);
-	SetBrush(Style.Pressed, MenuBtnPress);
-	Btn->SetStyle(Style);
-
-	UTextBlock* TB = MakeText(WidgetTree, FName(*(Name.ToString() + TEXT("_Txt"))), Label, 22, MenuWhite);
-	Btn->AddChild(TB);
-	return Btn;
-}
+// Gold rim on the big CONQUEST word: a dark outline would vanish on ScreenBG
+static const FLinearColor MenuTitleOutline(0.95f, 0.78f, 0.20f, 0.55f);
 
 void USkylandersMainMenuWidget::NativeOnInitialized()
 {
@@ -63,33 +29,68 @@ void USkylandersMainMenuWidget::NativeOnInitialized()
 	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("MenuRoot"));
 	WidgetTree->RootWidget = Root;
 
-	// Dark full-screen background
+	// Opaque full-screen backdrop
 	UBorder* BG = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("MenuBG"));
-	BG->SetBrushColor(FLinearColor(0.015f, 0.02f, 0.05f, 1.0f));
+	BG->SetBrushColor(SkylandersUI::ScreenBG);
 	UCanvasPanelSlot* BGSlot = Root->AddChildToCanvas(BG);
 	BGSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
 	BGSlot->SetOffsets(FMargin(0));
 
-	// Title
-	UTextBlock* Title = MakeText(WidgetTree, TEXT("MenuTitle"), TEXT("SKYLANDERS CONQUEST"), 52, MenuGold);
-	UCanvasPanelSlot* TitleSlot = Root->AddChildToCanvas(Title);
-	TitleSlot->SetAnchors(FAnchors(0.5f, 0.12f, 0.5f, 0.12f));
-	TitleSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+	// ---- Title block, left-aligned with the button column ----
+	UVerticalBox* TitleBlock = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("MenuTitleBlock"));
+	UCanvasPanelSlot* TitleSlot = Root->AddChildToCanvas(TitleBlock);
+	TitleSlot->SetAnchors(FAnchors(0.08f, 0.14f, 0.08f, 0.14f));
+	TitleSlot->SetAlignment(FVector2D(0.f, 0.f));
 	TitleSlot->SetAutoSize(true);
 
-	UTextBlock* Subtitle = MakeText(WidgetTree, TEXT("MenuSubtitle"), TEXT("A Skylanders MOBA"), 18, MenuWhite);
-	UCanvasPanelSlot* SubSlot = Root->AddChildToCanvas(Subtitle);
-	SubSlot->SetAnchors(FAnchors(0.5f, 0.18f, 0.5f, 0.18f));
-	SubSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-	SubSlot->SetAutoSize(true);
+	UTextBlock* Kicker = SkylandersUI::MakeText(WidgetTree, TEXT("MenuTitleKicker"), TEXT("SKYLANDERS"), 24,
+		SkylandersUI::Gold, ETextJustify::Left);
+	{
+		// Wide tracking so the small word spans most of the big one
+		SkylandersUI::SetFontStyle(Kicker, true, false);
+		FSlateFontInfo Font = Kicker->GetFont();
+		Font.LetterSpacing = 520;
+		Kicker->SetFont(Font);
+	}
+	TitleBlock->AddChildToVerticalBox(Kicker)->SetPadding(FMargin(4.f, 0.f, 0.f, 0.f));
 
-	// Button column (centered). Character select and settings are both
-	// full-screen overlays now, so no switcher is needed.
+	UTextBlock* Title = SkylandersUI::MakeText(WidgetTree, TEXT("MenuTitle"), TEXT("CONQUEST"), 84,
+		SkylandersUI::White, ETextJustify::Left);
+	SkylandersUI::SetFontStyle(Title, true, true, MenuTitleOutline);
+	TitleBlock->AddChildToVerticalBox(Title)->SetPadding(FMargin(0.f, -10.f, 0.f, 6.f));
+
+	// Short gold rule under the title
+	{
+		UBorder* Rule = SkylandersUI::MakePanel(WidgetTree, TEXT("MenuTitleRule"), SkylandersUI::Gold, 1.f,
+			FLinearColor::Transparent, 0.f, FMargin(0));
+		USizeBox* RuleBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("MenuTitleRuleBox"));
+		RuleBox->SetWidthOverride(140.f);
+		RuleBox->SetHeightOverride(3.f);
+		RuleBox->AddChild(Rule);
+		UVerticalBoxSlot* RuleSlot = TitleBlock->AddChildToVerticalBox(RuleBox);
+		RuleSlot->SetHorizontalAlignment(HAlign_Left);
+		RuleSlot->SetPadding(FMargin(4.f, 0.f, 0.f, 10.f));
+	}
+
+	UTextBlock* Subtitle = SkylandersUI::MakeText(WidgetTree, TEXT("MenuSubtitle"), TEXT("A Skylanders MOBA"), 18,
+		SkylandersUI::Dim, ETextJustify::Left);
+	TitleBlock->AddChildToVerticalBox(Subtitle)->SetPadding(FMargin(4.f, 0.f, 0.f, 0.f));
+
+	// ---- Button column in the left third. Character select and settings are
+	// both full-screen overlays, so no switcher is needed. ----
 	UCanvasPanelSlot* MenuSlot = Root->AddChildToCanvas(BuildMainScreen());
-	MenuSlot->SetAnchors(FAnchors(0.5f, 0.55f, 0.5f, 0.55f));
-	MenuSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-	MenuSlot->SetSize(FVector2D(420.f, 360.f));
+	MenuSlot->SetAnchors(FAnchors(0.08f, 0.46f, 0.08f, 0.46f));
+	MenuSlot->SetAlignment(FVector2D(0.f, 0.f));
+	MenuSlot->SetSize(FVector2D(380.f, 300.f));
 	MenuSlot->SetAutoSize(false);
+
+	// ---- Footer ----
+	UTextBlock* Footer = SkylandersUI::MakeText(WidgetTree, TEXT("MenuFooter"), TEXT("Prototype · UE 5.8"), 12,
+		SkylandersUI::Dim, ETextJustify::Left);
+	UCanvasPanelSlot* FooterSlot = Root->AddChildToCanvas(Footer);
+	FooterSlot->SetAnchors(FAnchors(0.08f, 0.96f, 0.08f, 0.96f));
+	FooterSlot->SetAlignment(FVector2D(0.f, 1.f));
+	FooterSlot->SetAutoSize(true);
 }
 
 UVerticalBox* USkylandersMainMenuWidget::BuildMainScreen()
@@ -99,24 +100,31 @@ UVerticalBox* USkylandersMainMenuWidget::BuildMainScreen()
 	auto AddBtn = [&](UButton* Btn)
 	{
 		UVerticalBoxSlot* S = Box->AddChildToVerticalBox(Btn);
-		S->SetPadding(FMargin(0.f, 8.f));
+		S->SetPadding(FMargin(0.f, 7.f));
 		S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		S->SetHorizontalAlignment(HAlign_Fill);
 	};
 
-	UButton* PlayBtn = MakeMenuButton(TEXT("PLAY"), TEXT("PlayBtn"));
+	UButton* PlayBtn = SkylandersUI::MakeButton(WidgetTree, TEXT("PlayBtn"), TEXT("PLAY"), 22);
 	PlayBtn->OnClicked.AddDynamic(this, &USkylandersMainMenuWidget::OnPlayClicked);
+	// PLAY is the primary action: gold rim and gold label
+	SkylandersUI::SetButtonHighlight(PlayBtn, true);
+	if (UTextBlock* PlayLabel = SkylandersUI::GetButtonLabel(PlayBtn))
+	{
+		PlayLabel->SetColorAndOpacity(FSlateColor(SkylandersUI::Gold));
+		SkylandersUI::SetFontStyle(PlayLabel, true, false);
+	}
 	AddBtn(PlayBtn);
 
-	UButton* CharBtn = MakeMenuButton(TEXT("CHARACTERS"), TEXT("CharBtn"));
+	UButton* CharBtn = SkylandersUI::MakeButton(WidgetTree, TEXT("CharBtn"), TEXT("CHARACTERS"), 22);
 	CharBtn->OnClicked.AddDynamic(this, &USkylandersMainMenuWidget::OnCharactersClicked);
 	AddBtn(CharBtn);
 
-	UButton* SetBtn = MakeMenuButton(TEXT("SETTINGS"), TEXT("SetBtn"));
+	UButton* SetBtn = SkylandersUI::MakeButton(WidgetTree, TEXT("SetBtn"), TEXT("SETTINGS"), 22);
 	SetBtn->OnClicked.AddDynamic(this, &USkylandersMainMenuWidget::OnSettingsClicked);
 	AddBtn(SetBtn);
 
-	UButton* QuitBtn = MakeMenuButton(TEXT("QUIT"), TEXT("QuitBtn"));
+	UButton* QuitBtn = SkylandersUI::MakeButton(WidgetTree, TEXT("QuitBtn"), TEXT("QUIT"), 22);
 	QuitBtn->OnClicked.AddDynamic(this, &USkylandersMainMenuWidget::OnQuitClicked);
 	AddBtn(QuitBtn);
 

@@ -4,6 +4,8 @@
 #include "SkylandersCharacter.h"
 #include "SkylandersItemCatalog.h"
 #include "SkylandersItem.h"
+#include "SkylandersSmokeTest.h"
+#include "SkylandersUIStyle.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/VerticalBox.h"
@@ -14,6 +16,7 @@
 #include "Components/BorderSlot.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/SizeBox.h"
 #include "Components/Spacer.h"
 #include "Components/ScrollBox.h"
 #include "Blueprint/WidgetTree.h"
@@ -21,6 +24,55 @@
 
 // Running counter for unique widget names
 static int32 GShopWidgetCounter = 0;
+
+// Card and inventory fills; rims are the category color (cards) or the shared
+// panel outline (slots)
+static const FLinearColor ShopCardFill(0.05f, 0.06f, 0.11f, 1.0f);
+static const FLinearColor ShopSlotFill(0.05f, 0.06f, 0.11f, 1.0f);
+static const FLinearColor ShopStatColor(0.75f, 0.80f, 0.65f, 1.0f);
+static const FLinearColor ShopUnaffordable(0.75f, 0.32f, 0.30f, 1.0f);
+static const FLinearColor ShopInSpawn(0.35f, 0.95f, 0.45f, 1.0f);
+
+static FLinearColor ShopCategoryColor(ESkylandersItemCategory Category)
+{
+	switch (Category)
+	{
+	case ESkylandersItemCategory::Offense: return FLinearColor(0.90f, 0.35f, 0.32f, 1.0f);
+	case ESkylandersItemCategory::Defense: return FLinearColor(0.38f, 0.62f, 1.00f, 1.0f);
+	case ESkylandersItemCategory::Utility: return FLinearColor(0.38f, 0.88f, 0.52f, 1.0f);
+	}
+	return SkylandersUI::Dim;
+}
+
+static const TCHAR* ShopCategoryLabel(ESkylandersItemCategory Category)
+{
+	switch (Category)
+	{
+	case ESkylandersItemCategory::Offense: return TEXT("OFFENSE");
+	case ESkylandersItemCategory::Defense: return TEXT("DEFENSE");
+	case ESkylandersItemCategory::Utility: return TEXT("UTILITY");
+	}
+	return TEXT("ITEM");
+}
+
+const TArray<int32>& USkylandersShopWidget::GetRecommendedBuild(const FString& CharacterName)
+{
+	// Final six of each build in docs/ITEMS-DESIGN.md section 4, in the order
+	// they are bought (the early component that gets sold is left out).
+	static const TArray<int32> TriggerHappy = { 15, 6, 23, 7, 35, 8 };   // ranged crit
+	static const TArray<int32> Hex = { 31, 23, 34, 24, 2, 20 };          // mage CDR / pen
+	static const TArray<int32> TreeRex = { 26, 29, 12, 30, 13, 36 };     // tank
+	// Bruiser (Spyro): health + power + CDR. Celerity boots for the HP and
+	// chase speed, Giant's Girdle for HP + power, Sky-Iron for protections +
+	// CDR, Traptanium for the power spike, Core of Light to finish the CDR at
+	// 35% (under the 40% cap) and Blade of Fire for raw power: 9,450 g.
+	static const TArray<int32> Bruiser = { 19, 28, 27, 24, 30, 2 };
+
+	if (CharacterName == TEXT("Trigger Happy")) return TriggerHappy;
+	if (CharacterName == TEXT("Hex")) return Hex;
+	if (CharacterName == TEXT("Tree Rex")) return TreeRex;
+	return Bruiser;
+}
 
 void USkylandersShopWidget::NativeOnInitialized()
 {
@@ -42,6 +94,13 @@ void USkylandersShopWidget::NativeOnInitialized()
 	UpdateBuyButtons();
 }
 
+void USkylandersShopWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+	// Every OpenShop re-adds the widget to the viewport, so this counts opens
+	SKY_COUNT("ui_shop_opened");
+}
+
 void USkylandersShopWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
@@ -56,46 +115,14 @@ void USkylandersShopWidget::NativeTick(const FGeometry& MyGeometry, float InDelt
 UTextBlock* USkylandersShopWidget::MakeText(const FString& Content, int32 FontSize, FLinearColor Color)
 {
 	if (!WidgetTree) return nullptr;
-
-	FString Name = FString::Printf(TEXT("ST_%d"), GShopWidgetCounter++);
-	UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), *Name);
-	T->SetText(FText::FromString(Content));
-
-	FSlateFontInfo Font = T->GetFont();
-	Font.Size = FontSize;
-	T->SetFont(Font);
-	T->SetColorAndOpacity(FSlateColor(Color));
-
-	return T;
+	return SkylandersUI::MakeText(WidgetTree, *FString::Printf(TEXT("ST_%d"), GShopWidgetCounter++),
+		Content, FontSize, Color, ETextJustify::Left);
 }
 
 UButton* USkylandersShopWidget::MakeButton(const FString& Label, int32 FontSize)
 {
 	if (!WidgetTree) return nullptr;
-
-	FString Name = FString::Printf(TEXT("SB_%d"), GShopWidgetCounter++);
-	UButton* B = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), *Name);
-
-	FButtonStyle Style = B->GetStyle();
-
-	FSlateBrush Normal;
-	Normal.TintColor = FSlateColor(FLinearColor(0.15f, 0.15f, 0.2f, 1.0f));
-	Style.SetNormal(Normal);
-
-	FSlateBrush Hover;
-	Hover.TintColor = FSlateColor(FLinearColor(0.25f, 0.25f, 0.35f, 1.0f));
-	Style.SetHovered(Hover);
-
-	FSlateBrush Press;
-	Press.TintColor = FSlateColor(FLinearColor(0.35f, 0.35f, 0.45f, 1.0f));
-	Style.SetPressed(Press);
-
-	B->SetStyle(Style);
-
-	UTextBlock* BtnText = MakeText(Label, FontSize, FLinearColor::White);
-	B->AddChild(BtnText);
-
-	return B;
+	return SkylandersUI::MakeButton(WidgetTree, *FString::Printf(TEXT("SB_%d"), GShopWidgetCounter++), Label, FontSize);
 }
 
 FString USkylandersShopWidget::BuildStatSummary(const FSkylandersItemStats& Stats)
@@ -145,81 +172,104 @@ void USkylandersShopWidget::BuildLayout()
 	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("ShopRoot"));
 	WidgetTree->RootWidget = Root;
 
-	// ===== BACKGROUND =====
-	UBorder* BG = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ShopBG"));
-	BG->SetBrushColor(FLinearColor(0.02f, 0.02f, 0.05f, 0.94f));
-	BG->SetPadding(FMargin(24.0f, 18.0f));
+	// ===== PANEL =====
+	UBorder* BG = SkylandersUI::MakePanel(WidgetTree, TEXT("ShopBG"), SkylandersUI::PanelBG, 14.0f,
+		SkylandersUI::PanelOutline, 1.0f, FMargin(24.0f, 18.0f));
 
 	UCanvasPanelSlot* BGSlot = Root->AddChildToCanvas(BG);
 	BGSlot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
 	BGSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-	BGSlot->SetSize(FVector2D(920.0f, 700.0f));
+	BGSlot->SetSize(FVector2D(960.0f, 740.0f));
 	BGSlot->SetPosition(FVector2D(0.0f, 0.0f));
 	BGSlot->SetAutoSize(false);
 
 	UVerticalBox* MainVBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ShopVBox"));
 	BG->AddChild(MainVBox);
 
+	auto AddRule = [&](const TCHAR* Name, FMargin RulePadding)
+	{
+		UBorder* Rule = SkylandersUI::MakePanel(WidgetTree, Name, SkylandersUI::PanelOutline, 0.0f,
+			FLinearColor::Transparent, 0.0f, FMargin(0.0f));
+		USizeBox* RuleBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		RuleBox->SetHeightOverride(1.0f);
+		RuleBox->AddChild(Rule);
+		MainVBox->AddChildToVerticalBox(RuleBox)->SetPadding(RulePadding);
+	};
+
 	// ===== ROW 1: Title + Gold + Spawn Status =====
 	{
 		UHorizontalBox* TitleRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("TitleRow"));
 		UVerticalBoxSlot* TRSlot = MainVBox->AddChildToVerticalBox(TitleRow);
-		TRSlot->SetPadding(FMargin(0, 0, 0, 6));
+		TRSlot->SetPadding(FMargin(0, 0, 0, 10));
 
-		UTextBlock* Title = MakeText(TEXT("SHOP"), 24, FLinearColor(1.0f, 0.85f, 0.0f));
+		UTextBlock* Title = SkylandersUI::MakeTitle(WidgetTree, TEXT("ShopTitle"), TEXT("SHOP"), 26, SkylandersUI::Gold, ETextJustify::Left);
 		UHorizontalBoxSlot* TSlot = TitleRow->AddChildToHorizontalBox(Title);
 		TSlot->SetPadding(FMargin(0, 0, 24, 0));
 		TSlot->SetVerticalAlignment(VAlign_Center);
 
-		GoldText = MakeText(TEXT("Gold: 0"), 20, FLinearColor(1.0f, 0.9f, 0.3f));
+		// Coin glyph + amount, the HUD's gold readout
+		UHorizontalBoxSlot* CoinSlot = TitleRow->AddChildToHorizontalBox(SkylandersUI::MakeCoin(WidgetTree, 22.0f));
+		CoinSlot->SetVerticalAlignment(VAlign_Center);
+		CoinSlot->SetPadding(FMargin(0, 0, 8, 0));
+
+		GoldText = MakeText(TEXT("0"), 22, SkylandersUI::Gold);
+		SkylandersUI::SetFontStyle(GoldText, true, false);
 		UHorizontalBoxSlot* GSlot = TitleRow->AddChildToHorizontalBox(GoldText);
 		GSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		GSlot->SetVerticalAlignment(VAlign_Center);
 
-		SpawnAreaText = MakeText(TEXT("NOT IN SPAWN"), 14, FLinearColor(1.0f, 0.3f, 0.3f));
+		SpawnAreaText = MakeText(TEXT("NOT IN SPAWN"), 14, SkylandersUI::Red);
+		SkylandersUI::SetFontStyle(SpawnAreaText, true, false);
 		UHorizontalBoxSlot* SASlot = TitleRow->AddChildToHorizontalBox(SpawnAreaText);
 		SASlot->SetVerticalAlignment(VAlign_Center);
 	}
 
-	// ===== ROW 2: Filter Buttons + Close Hint =====
+	// ===== ROW 2: Filter Buttons + Spawn Reminder =====
 	{
 		UHorizontalBox* FilterRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("FilterRow"));
 		UVerticalBoxSlot* FRSlot = MainVBox->AddChildToVerticalBox(FilterRow);
-		FRSlot->SetPadding(FMargin(0, 0, 0, 8));
+		FRSlot->SetPadding(FMargin(0, 0, 0, 10));
 
+		// Index in FilterButtons is CurrentFilter + 1 (ApplyFilter relies on it)
 		auto AddFilterBtn = [&](const FString& Label, FName FuncName)
 		{
 			UButton* Btn = MakeButton(Label, 13);
 			FScriptDelegate Del;
 			Del.BindUFunction(this, FuncName);
 			Btn->OnClicked.Add(Del);
-			UHorizontalBoxSlot* BSlot = FilterRow->AddChildToHorizontalBox(Btn);
+			USizeBox* BtnBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+			BtnBox->SetHeightOverride(32.0f);
+			BtnBox->SetMinDesiredWidth(96.0f);
+			BtnBox->AddChild(Btn);
+			UHorizontalBoxSlot* BSlot = FilterRow->AddChildToHorizontalBox(BtnBox);
 			BSlot->SetPadding(FMargin(0, 0, 6, 0));
 			FilterButtons.Add(Btn);
 		};
 
-		AddFilterBtn(TEXT("All"), TEXT("OnFilterAll"));
-		AddFilterBtn(TEXT("Offense"), TEXT("OnFilterOffense"));
-		AddFilterBtn(TEXT("Defense"), TEXT("OnFilterDefense"));
-		AddFilterBtn(TEXT("Utility"), TEXT("OnFilterUtility"));
+		AddFilterBtn(TEXT("ALL"), TEXT("OnFilterAll"));
+		AddFilterBtn(TEXT("OFFENSE"), TEXT("OnFilterOffense"));
+		AddFilterBtn(TEXT("DEFENSE"), TEXT("OnFilterDefense"));
+		AddFilterBtn(TEXT("UTILITY"), TEXT("OnFilterUtility"));
+		AddFilterBtn(TEXT("RECOMMENDED"), TEXT("OnFilterRecommended"));
 
 		// Spawn area reminder
-		UTextBlock* Reminder = MakeText(TEXT("Must be in spawn area to buy/sell"), 11, FLinearColor(0.6f, 0.5f, 0.3f));
+		UTextBlock* Reminder = MakeText(TEXT("Buy and sell in your spawn area"), 11, SkylandersUI::Dim);
 		UHorizontalBoxSlot* RSlot = FilterRow->AddChildToHorizontalBox(Reminder);
 		RSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		RSlot->SetHorizontalAlignment(HAlign_Right);
 		RSlot->SetVerticalAlignment(VAlign_Center);
 	}
 
-	// ===== SEPARATOR =====
+	AddRule(TEXT("Sep1"), FMargin(0, 0, 0, 8));
+
+	// ===== RECOMMENDED HINT (only under the RECOMMENDED filter) =====
 	{
-		UBorder* Sep = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Sep1"));
-		Sep->SetBrushColor(FLinearColor(0.4f, 0.35f, 0.1f, 0.6f));
-		USpacer* Sp = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("Sp1"));
-		Sp->SetSize(FVector2D(1, 2));
-		Sep->AddChild(Sp);
-		UVerticalBoxSlot* SepSlot = MainVBox->AddChildToVerticalBox(Sep);
-		SepSlot->SetPadding(FMargin(0, 2, 0, 8));
+		const FString Who = (OwnerCharacter && !OwnerCharacter->CharacterName.IsEmpty())
+			? OwnerCharacter->CharacterName : FString(TEXT("a bruiser"));
+		RecommendedHint = MakeText(FString::Printf(TEXT("Recommended build for %s · buy in order, #1 to #6"), *Who),
+			12, SkylandersUI::Gold);
+		RecommendedHint->SetVisibility(ESlateVisibility::Collapsed);
+		MainVBox->AddChildToVerticalBox(RecommendedHint)->SetPadding(FMargin(2, 0, 0, 6));
 	}
 
 	// ===== ITEM GRID (scrollable, 3 columns) =====
@@ -237,89 +287,77 @@ void USkylandersShopWidget::BuildLayout()
 		// Build one card per catalog item (will be arranged into grid rows later)
 		for (const FSkylandersItemData& Item : AllItems)
 		{
-			// Outer border (card frame)
-			FLinearColor BorderColor(0.3f, 0.3f, 0.3f, 1.0f);
-			FString CatLabel = TEXT("ITEM");
-			switch (Item.Category)
-			{
-			case ESkylandersItemCategory::Offense:
-				BorderColor = FLinearColor(0.6f, 0.15f, 0.15f, 1.0f);
-				CatLabel = TEXT("OFFENSE");
-				break;
-			case ESkylandersItemCategory::Defense:
-				BorderColor = FLinearColor(0.15f, 0.3f, 0.6f, 1.0f);
-				CatLabel = TEXT("DEFENSE");
-				break;
-			case ESkylandersItemCategory::Utility:
-				BorderColor = FLinearColor(0.15f, 0.5f, 0.25f, 1.0f);
-				CatLabel = TEXT("UTILITY");
-				break;
-			}
+			const FLinearColor CatColor = ShopCategoryColor(Item.Category);
 
-			UBorder* CardBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(),
-				*FString::Printf(TEXT("Card_%d"), Item.ItemID));
-			CardBorder->SetBrushColor(BorderColor);
-			CardBorder->SetPadding(FMargin(2.0f));
+			// Card: rounded fill, 1px rim in the category color
+			UBorder* CardBorder = SkylandersUI::MakePanel(WidgetTree, *FString::Printf(TEXT("Card_%d"), Item.ItemID),
+				ShopCardFill, 8.0f, CatColor, 1.0f, FMargin(12.0f, 10.0f));
 
 			ItemCardBorders.Add(CardBorder);
 			ItemCardCategories.Add(static_cast<int32>(Item.Category));
 
-			// Inner background
-			UBorder* CardInner = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(),
-				*FString::Printf(TEXT("CardInner_%d"), Item.ItemID));
-			CardInner->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.09f, 1.0f));
-			CardInner->SetPadding(FMargin(10.0f, 8.0f));
-			CardBorder->AddChild(CardInner);
-
 			UVerticalBox* CardVBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(),
 				*FString::Printf(TEXT("CardVB_%d"), Item.ItemID));
-			CardInner->AddChild(CardVBox);
+			CardBorder->AddChild(CardVBox);
 
-			// Category tag (small, colored)
-			FLinearColor CatTextColor(0.8f, 0.8f, 0.8f);
-			switch (Item.Category)
+			// Category tag (small, colored) + build-order badge on the right
 			{
-			case ESkylandersItemCategory::Offense:
-				CatTextColor = FLinearColor(1.0f, 0.4f, 0.4f);
-				break;
-			case ESkylandersItemCategory::Defense:
-				CatTextColor = FLinearColor(0.4f, 0.7f, 1.0f);
-				break;
-			case ESkylandersItemCategory::Utility:
-				CatTextColor = FLinearColor(0.4f, 1.0f, 0.6f);
-				break;
+				UHorizontalBox* TagRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+				UTextBlock* CatText = MakeText(ShopCategoryLabel(Item.Category), 9, CatColor);
+				SkylandersUI::SetFontStyle(CatText, true, false);
+				UHorizontalBoxSlot* CatSlot = TagRow->AddChildToHorizontalBox(CatText);
+				CatSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				CatSlot->SetVerticalAlignment(VAlign_Center);
+
+				UTextBlock* OrderText = MakeText(TEXT(""), 12, SkylandersUI::Gold);
+				SkylandersUI::SetFontStyle(OrderText, true, true);
+				TagRow->AddChildToHorizontalBox(OrderText)->SetVerticalAlignment(VAlign_Center);
+				ItemCardOrderTexts.Add(OrderText);
+
+				CardVBox->AddChildToVerticalBox(TagRow)->SetPadding(FMargin(0, 0, 0, 2));
 			}
 
-			UTextBlock* CatText = MakeText(CatLabel, 9, CatTextColor);
-			UVerticalBoxSlot* CatSlot = CardVBox->AddChildToVerticalBox(CatText);
-			CatSlot->SetPadding(FMargin(0, 0, 0, 2));
-
 			// Item name
-			UTextBlock* NameText = MakeText(Item.ItemName, 15, FLinearColor::White);
+			UTextBlock* NameText = MakeText(Item.ItemName, 15, SkylandersUI::White);
+			SkylandersUI::SetFontStyle(NameText, true, false);
 			UVerticalBoxSlot* NameSlot = CardVBox->AddChildToVerticalBox(NameText);
 			NameSlot->SetPadding(FMargin(0, 0, 0, 4));
 
 			// Stat summary (multi-line)
-			FString StatStr = BuildStatSummary(Item.Stats);
-			UTextBlock* StatText = MakeText(StatStr, 11, FLinearColor(0.75f, 0.8f, 0.65f));
+			UTextBlock* StatText = MakeText(BuildStatSummary(Item.Stats), 11, ShopStatColor);
 			StatText->SetAutoWrapText(true);
 			UVerticalBoxSlot* StatSlot = CardVBox->AddChildToVerticalBox(StatText);
-			StatSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			StatSlot->SetPadding(FMargin(0, 0, 0, 6));
+			StatSlot->SetPadding(FMargin(0, 0, 0, 4));
 
-			// Bottom row: cost + buy button
+			// Description: the tooltip-ish line under the numbers
+			UTextBlock* DescText = MakeText(Item.Description, 10, SkylandersUI::Dim);
+			DescText->SetAutoWrapText(true);
+			UVerticalBoxSlot* DescSlot = CardVBox->AddChildToVerticalBox(DescText);
+			DescSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			DescSlot->SetPadding(FMargin(0, 0, 0, 8));
+
+			// Bottom row: coin + cost, BUY button
 			UHorizontalBox* BottomRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(),
 				*FString::Printf(TEXT("CardBot_%d"), Item.ItemID));
 			CardVBox->AddChildToVerticalBox(BottomRow);
 
-			UTextBlock* CostText = MakeText(FString::Printf(TEXT("%d gold"), Item.Cost), 13, FLinearColor(1.0f, 0.9f, 0.3f));
+			UHorizontalBoxSlot* CoinSlot = BottomRow->AddChildToHorizontalBox(SkylandersUI::MakeCoin(WidgetTree, 16.0f));
+			CoinSlot->SetVerticalAlignment(VAlign_Center);
+			CoinSlot->SetPadding(FMargin(0, 0, 6, 0));
+
+			UTextBlock* CostText = MakeText(FString::FromInt(Item.Cost), 14, SkylandersUI::Gold);
+			SkylandersUI::SetFontStyle(CostText, true, false);
 			UHorizontalBoxSlot* CostSlot = BottomRow->AddChildToHorizontalBox(CostText);
 			CostSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 			CostSlot->SetVerticalAlignment(VAlign_Center);
 			ItemCostTexts.Add(CostText);
 
 			UButton* BuyBtn = MakeButton(TEXT("BUY"), 12);
-			UHorizontalBoxSlot* BuySlot = BottomRow->AddChildToHorizontalBox(BuyBtn);
+			USizeBox* BuyBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+			BuyBox->SetWidthOverride(72.0f);
+			BuyBox->SetHeightOverride(28.0f);
+			BuyBox->AddChild(BuyBtn);
+			UHorizontalBoxSlot* BuySlot = BottomRow->AddChildToHorizontalBox(BuyBox);
 			BuySlot->SetVerticalAlignment(VAlign_Center);
 			ItemBuyButtons.Add(BuyBtn);
 
@@ -336,28 +374,19 @@ void USkylandersShopWidget::BuildLayout()
 		RebuildGrid();
 	}
 
-	// ===== SEPARATOR 2 =====
-	{
-		UBorder* Sep2 = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Sep2"));
-		Sep2->SetBrushColor(FLinearColor(0.4f, 0.35f, 0.1f, 0.6f));
-		USpacer* Sp2 = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass(), TEXT("Sp2"));
-		Sp2->SetSize(FVector2D(1, 2));
-		Sep2->AddChild(Sp2);
-		UVerticalBoxSlot* Sep2Slot = MainVBox->AddChildToVerticalBox(Sep2);
-		Sep2Slot->SetPadding(FMargin(0, 2, 0, 6));
-	}
+	AddRule(TEXT("Sep2"), FMargin(0, 0, 0, 8));
 
 	// ===== INVENTORY LABEL =====
 	{
 		UHorizontalBox* InvHeader = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("InvHeader"));
 		UVerticalBoxSlot* IHSlot = MainVBox->AddChildToVerticalBox(InvHeader);
-		IHSlot->SetPadding(FMargin(0, 0, 0, 4));
+		IHSlot->SetPadding(FMargin(0, 0, 0, 6));
 
-		UTextBlock* InvLabel = MakeText(TEXT("INVENTORY"), 16, FLinearColor(0.7f, 0.85f, 1.0f));
+		UTextBlock* InvLabel = SkylandersUI::MakeTitle(WidgetTree, TEXT("InvLabel"), TEXT("INVENTORY"), 15, SkylandersUI::White, ETextJustify::Left);
 		UHorizontalBoxSlot* ILSlot = InvHeader->AddChildToHorizontalBox(InvLabel);
 		ILSlot->SetVerticalAlignment(VAlign_Center);
 
-		UTextBlock* CloseHint = MakeText(TEXT("  [B] Close Shop"), 12, FLinearColor(0.5f, 0.5f, 0.5f));
+		UTextBlock* CloseHint = MakeText(TEXT("[B] Close Shop"), 12, SkylandersUI::Dim);
 		UHorizontalBoxSlot* CHSlot = InvHeader->AddChildToHorizontalBox(CloseHint);
 		CHSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		CHSlot->SetHorizontalAlignment(HAlign_Right);
@@ -368,7 +397,7 @@ void USkylandersShopWidget::BuildLayout()
 	{
 		UHorizontalBox* InvRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("InvRow"));
 		UVerticalBoxSlot* InvRowSlot = MainVBox->AddChildToVerticalBox(InvRow);
-		InvRowSlot->SetPadding(FMargin(0, 0, 0, 4));
+		InvRowSlot->SetPadding(FMargin(0, 0, 0, 0));
 
 		InventorySlotTexts.SetNum(6);
 		InventorySlotStatTexts.SetNum(6);
@@ -376,41 +405,32 @@ void USkylandersShopWidget::BuildLayout()
 
 		for (int32 i = 0; i < 6; i++)
 		{
-			// Slot border
-			UBorder* SlotBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(),
-				*FString::Printf(TEXT("InvBorder_%d"), i));
-			SlotBorder->SetBrushColor(FLinearColor(0.2f, 0.2f, 0.3f, 0.6f));
-			SlotBorder->SetPadding(FMargin(2.0f));
+			UBorder* SlotBorder = SkylandersUI::MakePanel(WidgetTree, *FString::Printf(TEXT("InvBorder_%d"), i),
+				ShopSlotFill, 6.0f, SkylandersUI::PanelOutline, 1.0f, FMargin(8.0f, 6.0f));
 
 			UHorizontalBoxSlot* SBSlot = InvRow->AddChildToHorizontalBox(SlotBorder);
-			SBSlot->SetPadding(FMargin(0, 0, (i < 5) ? 4.0f : 0.0f, 0));
+			SBSlot->SetPadding(FMargin(0, 0, (i < 5) ? 6.0f : 0.0f, 0));
 			SBSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-
-			// Inner bg
-			UBorder* SlotInner = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(),
-				*FString::Printf(TEXT("InvInner_%d"), i));
-			SlotInner->SetBrushColor(FLinearColor(0.06f, 0.06f, 0.1f, 1.0f));
-			SlotInner->SetPadding(FMargin(6, 4));
-			SlotBorder->AddChild(SlotInner);
 
 			UVerticalBox* SlotVBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(),
 				*FString::Printf(TEXT("InvVB_%d"), i));
-			SlotInner->AddChild(SlotVBox);
+			SlotBorder->AddChild(SlotVBox);
 
 			// Item name
-			InventorySlotTexts[i] = MakeText(TEXT("Empty"), 11, FLinearColor(0.4f, 0.4f, 0.4f));
+			InventorySlotTexts[i] = MakeText(TEXT("Empty"), 11, SkylandersUI::Dim);
+			InventorySlotTexts[i]->SetTextOverflowPolicy(ETextOverflowPolicy::Ellipsis);
 			SlotVBox->AddChildToVerticalBox(InventorySlotTexts[i]);
 
-			// Item stat line
-			InventorySlotStatTexts[i] = MakeText(TEXT(""), 9, FLinearColor(0.5f, 0.5f, 0.4f));
+			// Sell price line
+			InventorySlotStatTexts[i] = MakeText(TEXT(""), 9, SkylandersUI::Dim);
 			UVerticalBoxSlot* StatLine = SlotVBox->AddChildToVerticalBox(InventorySlotStatTexts[i]);
 			StatLine->SetPadding(FMargin(0, 1, 0, 0));
 
 			// Sell button
-			SellButtons[i] = MakeButton(TEXT("Sell"), 10);
+			SellButtons[i] = MakeButton(TEXT("SELL"), 10);
 			SellButtons[i]->SetVisibility(ESlateVisibility::Collapsed);
 			UVerticalBoxSlot* BtnVSlot = SlotVBox->AddChildToVerticalBox(SellButtons[i]);
-			BtnVSlot->SetPadding(FMargin(0, 3, 0, 0));
+			BtnVSlot->SetPadding(FMargin(0, 4, 0, 0));
 		}
 
 		// Bind sell buttons
@@ -430,17 +450,42 @@ void USkylandersShopWidget::RebuildGrid()
 	// Remove old children
 	ItemGridContainer->ClearChildren();
 
+	for (UTextBlock* OrderText : ItemCardOrderTexts)
+	{
+		if (OrderText) OrderText->SetText(FText::GetEmpty());
+	}
+
 	// Collect visible cards
 	TArray<UBorder*> VisibleCards;
-	for (int32 i = 0; i < ItemCardBorders.Num(); i++)
+	if (CurrentFilter == FilterRecommended)
 	{
-		if (!ItemCardBorders[i]) continue;
-		bool bShow = (CurrentFilter < 0) || (ItemCardCategories[i] == CurrentFilter);
-		if (bShow)
+		// The character's build, in buy order; card i is catalog item i
+		const TArray<FSkylandersItemData>& AllItems = USkylandersItemCatalog::GetAllItems();
+		const TArray<int32>& Build = GetRecommendedBuild(OwnerCharacter ? OwnerCharacter->CharacterName : FString());
+		for (int32 ItemID : Build)
 		{
-			VisibleCards.Add(ItemCardBorders[i]);
+			const int32 Idx = AllItems.IndexOfByPredicate([ItemID](const FSkylandersItemData& It) { return It.ItemID == ItemID; });
+			if (!ItemCardBorders.IsValidIndex(Idx) || !ItemCardBorders[Idx]) continue;
+			VisibleCards.Add(ItemCardBorders[Idx]);
+			if (ItemCardOrderTexts.IsValidIndex(Idx) && ItemCardOrderTexts[Idx])
+			{
+				ItemCardOrderTexts[Idx]->SetText(FText::FromString(FString::Printf(TEXT("#%d"), VisibleCards.Num())));
+			}
 		}
 	}
+	else
+	{
+		for (int32 i = 0; i < ItemCardBorders.Num(); i++)
+		{
+			if (!ItemCardBorders[i]) continue;
+			bool bShow = (CurrentFilter < 0) || (ItemCardCategories[i] == CurrentFilter);
+			if (bShow)
+			{
+				VisibleCards.Add(ItemCardBorders[i]);
+			}
+		}
+	}
+	VisibleCardCount = VisibleCards.Num();
 
 	// Arrange into rows of 3
 	const int32 Columns = 3;
@@ -449,7 +494,7 @@ void USkylandersShopWidget::RebuildGrid()
 		UHorizontalBox* GridRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(),
 			*FString::Printf(TEXT("GR_%d"), GShopWidgetCounter++));
 		UVerticalBoxSlot* RowVSlot = ItemGridContainer->AddChildToVerticalBox(GridRow);
-		RowVSlot->SetPadding(FMargin(0, 0, 0, 6));
+		RowVSlot->SetPadding(FMargin(0, 0, 0, 8));
 
 		for (int32 Col = 0; Col < Columns; Col++)
 		{
@@ -458,7 +503,7 @@ void USkylandersShopWidget::RebuildGrid()
 			{
 				UHorizontalBoxSlot* CardHSlot = GridRow->AddChildToHorizontalBox(VisibleCards[Idx]);
 				CardHSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-				CardHSlot->SetPadding(FMargin(0, 0, (Col < Columns - 1) ? 6.0f : 0.0f, 0));
+				CardHSlot->SetPadding(FMargin(0, 0, (Col < Columns - 1) ? 8.0f : 0.0f, 0));
 			}
 			else
 			{
@@ -467,7 +512,7 @@ void USkylandersShopWidget::RebuildGrid()
 					*FString::Printf(TEXT("GSp_%d"), GShopWidgetCounter++));
 				UHorizontalBoxSlot* SpHSlot = GridRow->AddChildToHorizontalBox(EmptySpacer);
 				SpHSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-				SpHSlot->SetPadding(FMargin(0, 0, (Col < Columns - 1) ? 6.0f : 0.0f, 0));
+				SpHSlot->SetPadding(FMargin(0, 0, (Col < Columns - 1) ? 8.0f : 0.0f, 0));
 			}
 		}
 	}
@@ -478,6 +523,29 @@ void USkylandersShopWidget::ApplyFilter()
 	// All cards are always "visible" in terms of ESlateVisibility;
 	// the grid rebuild handles which ones appear
 	RebuildGrid();
+
+	// The active filter button gets the gold rim and a gold label
+	for (int32 i = 0; i < FilterButtons.Num(); i++)
+	{
+		const bool bActive = (i == CurrentFilter + 1);
+		SkylandersUI::SetButtonHighlight(FilterButtons[i], bActive);
+		if (UTextBlock* Label = SkylandersUI::GetButtonLabel(FilterButtons[i]))
+		{
+			Label->SetColorAndOpacity(FSlateColor(bActive ? SkylandersUI::Gold : SkylandersUI::White));
+		}
+	}
+
+	if (RecommendedHint)
+	{
+		RecommendedHint->SetVisibility(CurrentFilter == FilterRecommended
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
+void USkylandersShopWidget::SetFilter(int32 Filter)
+{
+	CurrentFilter = FMath::Clamp(Filter, -1, FilterRecommended);
+	ApplyFilter();
 }
 
 void USkylandersShopWidget::UpdateInventory()
@@ -495,14 +563,14 @@ void USkylandersShopWidget::UpdateInventory()
 			if (Item)
 			{
 				InventorySlotTexts[i]->SetText(FText::FromString(Item->ItemName));
-				InventorySlotTexts[i]->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+				InventorySlotTexts[i]->SetColorAndOpacity(FSlateColor(SkylandersUI::White));
 
 				// Show sell price
 				if (i < InventorySlotStatTexts.Num() && InventorySlotStatTexts[i])
 				{
 					InventorySlotStatTexts[i]->SetText(FText::FromString(
-						FString::Printf(TEXT("Sell: %dg"), Item->GetSellPrice())));
-					InventorySlotStatTexts[i]->SetColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.4f)));
+						FString::Printf(TEXT("Sells for %dg"), Item->GetSellPrice())));
+					InventorySlotStatTexts[i]->SetColorAndOpacity(FSlateColor(SkylandersUI::Gold * FLinearColor(1.0f, 1.0f, 1.0f, 0.75f)));
 				}
 
 				SellButtons[i]->SetVisibility(
@@ -512,7 +580,7 @@ void USkylandersShopWidget::UpdateInventory()
 		else
 		{
 			InventorySlotTexts[i]->SetText(FText::FromString(TEXT("Empty")));
-			InventorySlotTexts[i]->SetColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.4f)));
+			InventorySlotTexts[i]->SetColorAndOpacity(FSlateColor(SkylandersUI::Dim * FLinearColor(1.0f, 1.0f, 1.0f, 0.6f)));
 
 			if (i < InventorySlotStatTexts.Num() && InventorySlotStatTexts[i])
 			{
@@ -530,20 +598,20 @@ void USkylandersShopWidget::UpdateHeader()
 
 	if (GoldText)
 	{
-		GoldText->SetText(FText::FromString(FString::Printf(TEXT("Gold: %d"), OwnerCharacter->Coins)));
+		GoldText->SetText(FText::AsNumber(OwnerCharacter->Coins));
 	}
 
 	if (SpawnAreaText)
 	{
 		if (OwnerCharacter->bIsInSpawnArea)
 		{
-			SpawnAreaText->SetText(FText::FromString(TEXT("IN SPAWN - Ready to Buy!")));
-			SpawnAreaText->SetColorAndOpacity(FSlateColor(FLinearColor(0.3f, 1.0f, 0.3f)));
+			SpawnAreaText->SetText(FText::FromString(TEXT("IN SPAWN · READY TO BUY")));
+			SpawnAreaText->SetColorAndOpacity(FSlateColor(ShopInSpawn));
 		}
 		else
 		{
-			SpawnAreaText->SetText(FText::FromString(TEXT("NOT IN SPAWN - Browse Only")));
-			SpawnAreaText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.3f, 0.3f)));
+			SpawnAreaText->SetText(FText::FromString(TEXT("NOT IN SPAWN · BROWSE ONLY")));
+			SpawnAreaText->SetColorAndOpacity(FSlateColor(SkylandersUI::Red));
 		}
 	}
 }
@@ -575,17 +643,10 @@ void USkylandersShopWidget::UpdateBuyButtons()
 
 		ItemBuyButtons[i]->SetIsEnabled(bEnabled);
 
-		// Update cost text color: green if affordable, red if not
+		// Cost reads gold when affordable, red when not
 		if (i < ItemCostTexts.Num() && ItemCostTexts[i])
 		{
-			if (bCanAfford)
-			{
-				ItemCostTexts[i]->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.9f, 0.3f)));
-			}
-			else
-			{
-				ItemCostTexts[i]->SetColorAndOpacity(FSlateColor(FLinearColor(0.7f, 0.3f, 0.3f)));
-			}
+			ItemCostTexts[i]->SetColorAndOpacity(FSlateColor(bCanAfford ? SkylandersUI::Gold : ShopUnaffordable));
 		}
 	}
 }
@@ -598,10 +659,11 @@ static void PlayShopClick(const UObject* Widget)
 }
 
 // ===== Filter Callbacks =====
-void USkylandersShopWidget::OnFilterAll()     { PlayShopClick(this); CurrentFilter = -1; ApplyFilter(); }
-void USkylandersShopWidget::OnFilterOffense() { PlayShopClick(this); CurrentFilter = 0;  ApplyFilter(); }
-void USkylandersShopWidget::OnFilterDefense() { PlayShopClick(this); CurrentFilter = 1;  ApplyFilter(); }
-void USkylandersShopWidget::OnFilterUtility() { PlayShopClick(this); CurrentFilter = 2;  ApplyFilter(); }
+void USkylandersShopWidget::OnFilterAll()         { PlayShopClick(this); SetFilter(-1); }
+void USkylandersShopWidget::OnFilterOffense()     { PlayShopClick(this); SetFilter(0); }
+void USkylandersShopWidget::OnFilterDefense()     { PlayShopClick(this); SetFilter(1); }
+void USkylandersShopWidget::OnFilterUtility()     { PlayShopClick(this); SetFilter(2); }
+void USkylandersShopWidget::OnFilterRecommended() { PlayShopClick(this); SetFilter(FilterRecommended); }
 
 // ===== Buy Callbacks =====
 void USkylandersShopWidget::OnBuyItem(int32 ItemID)

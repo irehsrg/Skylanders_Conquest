@@ -45,17 +45,19 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **Replace minion placeholders** — melee = Terrabite, ranged = Drobit, with
   the old tinted capsule flattened into a team-coloured foot ring. Jungle camps
   too: Shaman (mana x2), GraveClobberer (damage), GoldenQueen (boss), BadJuju.
-- [ ] **Towers/titans still geometric** — the rip has NO structure/environment
-  geometry (characters only), so these can't become real Skylanders buildings.
-  Options: better authored geometry (base + column + team crystal), or an
-  environment pack from Fab.
+- [~] **Towers/titans still geometric** — now composed structures (stepped
+  stone base, column, ring, glowing team crystal; titans with pillars and a
+  pulsing core) built from primitives (Nov 2026). Real buildings still need a
+  Fab pack; the rip has no structure geometry.
 
 ## Tier 3 — Presentation
-- [ ] **Map set-dressing** — prop/structure models on the greybox (trees, rocks,
-  real base structures); further map polish.
-- [~] **Menu / hub UI polish** — HUD rebuilt in C++ with one palette, announcer,
-  scoreboard (Nov 2026). Remaining: menu/select/shop art, ability tooltips,
-  Spyro portrait and icons.
+- [~] **Map set-dressing** — 130 instanced rip statics (cliffs, rocks, trees,
+  lighthouses, whale) placed outside the walkable area (Nov 2026). Remaining:
+  in-lane props, lighting pass, skybox.
+- [~] **Menu / hub UI polish** — HUD, announcer, scoreboard, main menu,
+  character select, shop (with recommended builds) and end screen all on one
+  palette (Nov 2026). Remaining: real art, ability tooltips, Spyro portrait
+  and icons.
 - [~] **Audio** — 12 synthesized placeholder cues cover every event (Nov 2026);
   replace with real SFX and add music.
 

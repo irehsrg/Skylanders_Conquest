@@ -13,9 +13,11 @@ class USkylandersCharacterSelectWidget;
 class USkylandersSettingsWidget;
 
 /**
- * Fully code-built front-end menu. PLAY and CHARACTERS open the full-screen
- * character select (grid + live 3D preview + abilities); SETTINGS opens the
- * shared settings screen, which the in-match pause menu also uses.
+ * Fully code-built front-end menu: an opaque ScreenBG backdrop, a title block
+ * ("SKYLANDERS" small gold over "CONQUEST" large white) and the button column
+ * in the left third, and a version footer bottom-left. PLAY and CHARACTERS open
+ * the full-screen character select (grid + live 3D preview + abilities);
+ * SETTINGS opens the shared settings screen, which the in-match pause menu also uses.
  */
 UCLASS()
 class SKYLANDERS_CONQUEST_API USkylandersMainMenuWidget : public UUserWidget
@@ -35,7 +37,6 @@ private:
 
 	// Build helpers
 	UVerticalBox* BuildMainScreen();
-	UButton* MakeMenuButton(const FString& Label, FName Name);
 
 	// Opens the full-screen character select overlay
 	void OpenCharacterSelect();

@@ -1,4 +1,11 @@
 // Skylanders Conquest - Shop UI Widget (fully C++ driven, grid layout)
+//
+// One rounded panel on the shared SkylandersUI palette: a title row (SHOP, the
+// coin + gold, spawn status), a filter row (ALL / OFFENSE / DEFENSE / UTILITY /
+// RECOMMENDED, the active one rimmed in gold), a scrolling 3-column grid of item
+// cards (outlined in their category color: name, stats, description, coin + cost,
+// BUY) and the 6-slot inventory row with SELL buttons. RECOMMENDED shows the
+// current character's six-item build in buy order (docs/ITEMS-DESIGN.md section 4).
 
 #pragma once
 
@@ -42,7 +49,24 @@ class SKYLANDERS_CONQUEST_API USkylandersShopWidget : public UUserWidget
 
 public:
 	virtual void NativeOnInitialized() override;
+	virtual void NativeConstruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
+	/** Filter values for SetFilter: -1 all, 0 offense, 1 defense, 2 utility, 3 recommended. */
+	static constexpr int32 FilterRecommended = 3;
+
+	/** Switches the grid to a filter, as the filter buttons do (no click sound). */
+	void SetFilter(int32 Filter);
+
+	/** Cards the grid currently shows (after the filter). */
+	int32 GetVisibleCardCount() const { return VisibleCardCount; }
+
+	/**
+	 * A character's recommended six items in buy order, keyed by CharacterName
+	 * ("Trigger Happy", "Hex", "Tree Rex", "Spyro"). Unknown names get the
+	 * bruiser build (Spyro's).
+	 */
+	static const TArray<int32>& GetRecommendedBuild(const FString& CharacterName);
 
 private:
 	// Owner character reference
@@ -62,6 +86,16 @@ private:
 
 	// Category per card (0=offense, 1=defense, 2=utility)
 	TArray<int32> ItemCardCategories;
+
+	// Build-order badge per card ("#1".."#6"), filled only under RECOMMENDED
+	UPROPERTY()
+	TArray<UTextBlock*> ItemCardOrderTexts;
+
+	// "Recommended for X" line above the grid; collapsed under the other filters
+	UPROPERTY()
+	UTextBlock* RecommendedHint;
+
+	int32 VisibleCardCount = 0;
 
 	// Cost text per card (to color red/green based on affordability)
 	UPROPERTY()
@@ -91,7 +125,7 @@ private:
 	UPROPERTY()
 	UVerticalBox* ItemGridContainer;
 
-	// Current filter (-1 = all, 0 = offense, 1 = defense, 2 = utility)
+	// Current filter (-1 = all, 0 = offense, 1 = defense, 2 = utility, 3 = recommended)
 	int32 CurrentFilter;
 
 	// Filter button references (to highlight active filter)
@@ -104,7 +138,7 @@ private:
 	// Rebuild grid rows based on visible items (3 per row)
 	void RebuildGrid();
 
-	// Show/hide items based on filter
+	// Show/hide items based on filter, and mark the active filter button
 	void ApplyFilter();
 
 	// Update inventory display
@@ -124,6 +158,7 @@ private:
 	UFUNCTION() void OnFilterOffense();
 	UFUNCTION() void OnFilterDefense();
 	UFUNCTION() void OnFilterUtility();
+	UFUNCTION() void OnFilterRecommended();
 
 	// Buy item by ID
 	void OnBuyItem(int32 ItemID);

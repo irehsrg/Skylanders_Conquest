@@ -6,7 +6,8 @@
 //   UnrealEditor-Cmd.exe <project>.uproject Joust -game -nullrhi -unattended -SkySmoke=120
 //
 // (Scripts/smoke_test.py wraps this; add -SkyItemTest for the item stat check,
-// see RunItemTest). Every second it samples the match through
+// see RunItemTest; -SkyUISmoke on the MainMenu map for the UI construction
+// check, see TickUISmoke). Every second it samples the match through
 // the actor registry; gameplay code bumps named counters via SKY_COUNT(...).
 // At the end it writes Saved/SmokeTest/report.json, evaluates the invariants in
 // EvaluateInvariants(), logs PASS/FAIL and exits with status 0 or 1.
@@ -83,6 +84,29 @@ private:
 	};
 	TArray<FSample> Samples;
 	int32 MaxMinionsSeen = 0;
+
+	// -SkyUISmoke (MainMenu map): builds every front-end and end-of-match screen
+	// with CreateWidget, adds it to the viewport, runs its public setup, lets a
+	// few frames pass, logs "[Smoke] ui <Class> ok" and removes it, then finishes
+	// the run. Replaces the match sampling and its invariants.
+	bool TickUISmoke(UWorld* World);
+	bool bUISmokeRequested = false;
+	int32 UISmokeFrames = -1; // -1: widgets not built yet
+	int32 UISmokeOk = 0;
+	TArray<FString> UISmokeFailures;
+	TArray<FString> UISmokeNotes; // parallel to UISmokeWidgets: what the setup checked
+	UPROPERTY() TArray<TObjectPtr<class UUserWidget>> UISmokeWidgets;
+	static constexpr int32 UISmokeExpected = 5;
+	static constexpr int32 UISmokeFrameCount = 5;
+
+	// Normal runs: the bot opens the shop at ShopProbeAt for ShopProbeLength s,
+	// and Finish builds an end screen, so both screens are constructed in a
+	// live match (counted as ui_shop_opened / ui_endscreen_built).
+	void BuildEndScreenProbe(UWorld* World);
+	static constexpr float ShopProbeAt = 60.0f;
+	static constexpr float ShopProbeLength = 2.0f;
+	bool bShopProbeOpened = false;
+	bool bShopProbeClosed = false;
 
 	// Which kit the player pawn is running (logged once at match start and
 	// written to the report, so a run proves which character it exercised)

@@ -75,7 +75,7 @@ void USkylandersSettingsWidget::NativeOnInitialized()
 	BGSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
 	BGSlot->SetOffsets(FMargin(0));
 
-	UTextBlock* Title = SkylandersUI::MakeText(WidgetTree, TEXT("SettingsTitle"), TEXT("SETTINGS"), 42, SkylandersUI::Gold);
+	UTextBlock* Title = SkylandersUI::MakeTitle(WidgetTree, TEXT("SettingsTitle"), TEXT("SETTINGS"), 42, SkylandersUI::Gold);
 	UCanvasPanelSlot* TitleSlot = Root->AddChildToCanvas(Title);
 	TitleSlot->SetAnchors(FAnchors(0.5f, 0.12f, 0.5f, 0.12f));
 	TitleSlot->SetAlignment(FVector2D(0.5f, 0.5f));
@@ -83,7 +83,8 @@ void USkylandersSettingsWidget::NativeOnInitialized()
 
 	// Panel holding the rows
 	UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SettingsPanel"));
-	Panel->SetBrushColor(SkylandersUI::PanelBG);
+	// Same rounded, rimmed panel as the HUD, shop and end screen
+	Panel->SetBrush(SkylandersUI::RoundedBrush(SkylandersUI::PanelBG, 12.f, SkylandersUI::PanelOutline, 1.f));
 	Panel->SetPadding(FMargin(28.f, 24.f));
 	UCanvasPanelSlot* PanelSlot = Root->AddChildToCanvas(Panel);
 	PanelSlot->SetAnchors(FAnchors(0.5f, 0.55f, 0.5f, 0.55f));
