@@ -22,8 +22,8 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
   teammates once Tier 2 adds them.
 - [x] **Flesh out items + first balance pass** — 20 items (8 off / 6 def / 6 utl),
   basic -> capstone tiers, tuned cost/stat ratios.
-- [ ] **Scoreboard / death-recap polish** — the widget exists; make it read well
-  (KDA, gold, items per player).
+- [x] **Scoreboard / death-recap polish** — two-team table with level, K/D/A,
+  CS, gold and items for every hero (Nov 2026).
 
 ## Tier 2 — Make it feel like a real 3v3
 *(bigger, still bots)*
@@ -34,14 +34,14 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
   friendly towers. Allies lane toward the enemy base, blue; enemies red. Towers
   now shoot gods on both sides, minions target opposing gods, gods can actually
   auto-attack each other, and kills/farm are credited to whoever landed the blow
-  (see `docs/AUDIT-2026-08-02.md`). TODO from playtest: tune ally aggressiveness.
+  (see `docs/AUDIT-2026-08-02.md`). Allies now join the player's fights (Nov 2026).
 - [~] **Better enemy AI + real character** — real models DONE: all 5 AI gods now
   wear their own distinct animated Skylander (Spyro, Stealth Elf, Kaos Sensei,
   Chompy Mage, Cynder) + team-colored ground rings. NOTE: the earlier "only Hex
   and TreeRex have animations" limit was wrong — it was a sparse-checkout artifact
   of the asset repo; 227 characters have full anim sets upstream (`git
-  sparse-checkout add Assets/Skylanders/Animations/<Name>`). Remaining: smarter
-  combat/objective AI.
+  sparse-checkout add Assets/Skylanders/Animations/<Name>`). Nov 2026: tower back-off hysteresis, jungling for
+  buff camps, focus-the-squishy targeting. Remaining: titan/boss objective play.
 - [x] **Replace minion placeholders** — melee = Terrabite, ranged = Drobit, with
   the old tinted capsule flattened into a team-coloured foot ring. Jungle camps
   too: Shaman (mana x2), GraveClobberer (damage), GoldenQueen (boss), BadJuju.
@@ -53,8 +53,11 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 ## Tier 3 — Presentation
 - [ ] **Map set-dressing** — prop/structure models on the greybox (trees, rocks,
   real base structures); further map polish.
-- [ ] **Menu / hub UI polish** — main menu, character select, shop, HUD styling.
-- [ ] **Audio** — infrastructure is wired but no clips assigned; add SFX + music.
+- [~] **Menu / hub UI polish** — HUD rebuilt in C++ with one palette, announcer,
+  scoreboard (Nov 2026). Remaining: menu/select/shop art, ability tooltips,
+  Spyro portrait and icons.
+- [~] **Audio** — 12 synthesized placeholder cues cover every event (Nov 2026);
+  replace with real SFX and add music.
 
 ## Tier 4 — Heavy infrastructure *(optional given "won't get legs")*
 - [ ] **Networking** — real multiplayer 3v3 (replication, server authority, lag
@@ -66,6 +69,8 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
 ---
 
 ## Tooling
+- [x] **Headless smoke test** — `Scripts/smoke_test.py` runs a bot-driven match
+  under -nullrhi per playable kit and gates every change (Nov 2026).
 - [x] **Telemetry** — per-match JSONL event log + 2.5s god snapshots in
   `Saved/Telemetry/` (`USkylandersTelemetrySubsystem`). Deaths, abilities,
   structures, match result, and movement/`stuck` flags for data-driven tuning.
@@ -79,7 +84,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done
   PLAY AGAIN / MAIN MENU on the end screen (PR #2).
 - [ ] Make jungle objectives pay off (Bull Demon King worth contesting).
 - [ ] Finish ability telegraphs/targeters for every kit.
-- [ ] Buff camps: confirm kill → buff → XP/gold loop end to end.
+- [x] Buff camps: kill → buff → gold loop works for the player and AI gods.
 - [ ] Recall/back-to-base UX polish (channel bar, cancel feedback).
 
 ## Known bugs / debt

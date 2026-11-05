@@ -509,9 +509,10 @@ void ASkylandersCharacter::BeginPlay()
 	}
 
 	// Trigger Happy's HUD art used to be baked into WBP_MainHUD; the C++ HUD
-	// needs it as data. Only fills slots a subclass left empty (Hex/Tree Rex
-	// set theirs in their constructors). LoadObject rather than
+	// needs it as data. Only for Trigger Happy himself: a kit without art (Spyro)
+	// must show empty slots, not his. LoadObject rather than
 	// ConstructorHelpers so a missing asset is a quiet log, never a crash.
+	if (CharacterName == TEXT("Trigger Happy")) // only his art; other kits keep empty slots
 	{
 		static const TCHAR* const DefaultIconPaths[4] = {
 			// The ability 1 asset really is named with a trailing underscore

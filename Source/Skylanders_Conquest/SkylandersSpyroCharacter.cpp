@@ -65,16 +65,13 @@ ASkylandersSpyroCharacter::ASkylandersSpyroCharacter()
 	Ability4_Cooldown = 80.0f;
 	Ability4_ManaCost = 100.0f;
 
-	// Spyro's body at the AI table's 0.52 scale: a small quadruped ~45 units
-	// tall and longer than he is tall. Capsule: a touch wider than Trigger
-	// Happy's (the snout and tail stick out), half-height just over his
-	// standing height so the hit band still covers the horns. Like Hex and
-	// Tree Rex, the ripped animations put the ground at the skeleton origin,
-	// so the mesh sits capsule-half-height down. (The AI table's +5.2 MeshZ
-	// comes from the bind-pose bounds of a center-pivoted model, which the
-	// first-frame-pinned animated poses don't use.)
-	GetCapsuleComponent()->SetCapsuleSize(30.0f, 32.0f);
-	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -32.0f));
+	// Measured in PIE (2026-11-04): Spyro's skeleton origin is at the model's
+	// centre, not his feet. With the mesh pinned to the capsule bottom he stood
+	// 45 units into the floor and the capsule covered half of him. At 0.52
+	// scale his animated bounds are ~110 tall, so the capsule is his full
+	// height and the mesh origin sits at the capsule centre.
+	GetCapsuleComponent()->SetCapsuleSize(30.0f, 55.0f);
+	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f)); // Interchange meshes face +X already
 	GetMesh()->SetRelativeScale3D(FVector(0.52f));
 

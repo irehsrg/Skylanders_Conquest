@@ -12,18 +12,28 @@ played solo against bots. Networking is deliberately last.
 ## What's in a match
 
 - **3v3 with bots.** You plus two AI allies against three AI gods. Gods lane,
-  last-hit, duel, dive towers and retreat; kills and farm are credited to whoever
-  landed the blow.
-- **Full MOBA loop.** Towers, titans, two minion waves, jungle buff camps with a
-  boss, gold and XP, a 20-item shop in three tiers, ability leveling, recall.
-- **Real Skylanders.** Playable Hex and Tree Rex; Spyro, Stealth Elf, Kaos
-  Sensei, Chompy Mage and Cynder as AI gods; Terrabite and Drobit minions;
-  Shaman, Grave Clobber, Golden Queen and Bad Juju holding the jungle.
+  last-hit, duel, take jungle buffs, back off towers with hysteresis, focus
+  the lowest-health hero, and join your fights. Kills and assists are
+  credited to whoever earned them.
+- **Full MOBA loop.** Towers, titans, two minion waves, jungle buff camps with
+  a boss, gold and XP, 500 starting gold, a 36-item shop with cooldown
+  reduction and penetration, ability leveling, recall, respawn timers that
+  scale with match time.
+- **Four playable Skylanders.** Trigger Happy (ranged crit), Hex (burst mage),
+  Tree Rex (tank) and Spyro (bruiser: Flame Breath, Charge, Comet Dash,
+  Daybringer Flame). Stealth Elf, Kaos Sensei, Chompy Mage and Cynder as AI
+  gods; Terrabite and Drobit minions; Shaman, Grave Clobber, Golden Queen and
+  Bad Juju holding the jungle. The ally roster never duplicates your pick.
 - **SMITE-style controls.** Third-person, skillshots aimed with hold-to-aim
   ground targeters, auto-attack target highlight, cleave, crits, lifesteal.
+- **Combat feedback.** Hit flash on every damaged actor, camera shake on
+  hits, casts and ults, floating damage numbers, placeholder sound for every
+  event, and an announcer: 3-2-1-FIGHT, FIRST BLOOD, kills, tower and
+  phoenix falls, titan vulnerable.
 - **A complete front end.** Main menu, character select with live preview,
-  settings, pause menu, scoreboard, kill feed, match status bar, minimap,
-  damage numbers, victory and defeat screens.
+  settings, pause menu, a two-team scoreboard with K/D/A, kill feed, match
+  status bar, minimap, and a C++-built HUD (portrait, bars, ability slots
+  with cooldown sweeps and rank pips, items, gold).
 - **Telemetry.** Every match writes a JSONL event log and periodic god snapshots
   to `Saved/Telemetry/` for data-driven tuning.
 
@@ -81,12 +91,12 @@ Blueprints exist only as thin subclasses for class defaults.
 
 | Area | Classes |
 |---|---|
-| Player | `SkylandersCharacter` (split by concern across `_Stats`, `_HUD`, `_Shop`, `_Abilities`), `SkylandersHexCharacter`, `SkylandersTreeRexCharacter` |
-| AI | `SkylandersEnemyGod` (team-aware laning, dueling, item builds), `SkylandersMinion`, `SkylandersMinionSpawner`, `SkylandersEnemy`, `SkylandersBuffCamp` |
-| Structures | `SkylandersTower`, `SkylandersTitan`, `SkylandersSpawnArea`, `SkylandersMapBuilder` (lays out the Joust map at runtime) |
-| Combat | `SkylandersProjectile`, `SkylandersAoEExplosion`, `SkylandersDamageNumber`, `SkylandersItemCatalog` |
-| UI | `Skylanders*Widget` for the HUD, shop, inventory, minimap, scoreboard, kill feed, match status, menus, settings, victory |
-| Infrastructure | `SkylandersActorRegistry` (per-world index of gameplay actors), `SkylandersTelemetrySubsystem`, `SkylandersGameInstance`, `SkylandersGameSettings` |
+| Player | `SkylandersCharacter` (split by concern across `_Stats`, `_HUD`, `_Shop`, `_Abilities`, `_Bot`), `SkylandersHexCharacter`, `SkylandersTreeRexCharacter`, `SkylandersSpyroCharacter` |
+| AI | `SkylandersEnemyGod` (laning, fighting, tower back-off, jungling, retreat, archetype item builds), `SkylandersMinion`, `SkylandersMinionSpawner`, `SkylandersEnemy`, `SkylandersBuffCamp` |
+| Structures | `SkylandersTower`, `SkylandersTitan`, `SkylandersSpawnArea`, `SkylandersMapBuilder` (lays out the Joust map and the god roster at runtime) |
+| Combat | `SkylandersProjectile`, `SkylandersAoEExplosion`, `SkylandersDamageNumber`, `SkylandersItemCatalog`, `SkylandersHitFlash`, `SkylandersCameraShake`, `SkylandersSoundLibrary` |
+| UI | `SkylandersMainHUDWidget`, `SkylandersAnnouncerWidget`, and `Skylanders*Widget` for the shop, minimap, scoreboard, kill feed, match status, menus, settings, victory; `SkylandersUIStyle` holds the palette |
+| Infrastructure | `SkylandersActorRegistry` (per-world index of gameplay actors), `SkylandersSmokeTestSubsystem` (headless regression harness), `SkylandersTelemetrySubsystem`, `SkylandersGameInstance`, `SkylandersGameSettings` |
 
 AI and structures query other actors through `USkylandersActorRegistry`, a world
 subsystem that tracked classes register with in `BeginPlay`. It has the same
@@ -112,16 +122,37 @@ map; the match map is `Joust`.
 Character and environment assets are stored with Git LFS. Clone with LFS
 installed or the `.uasset` files will be pointers.
 
+## Testing
+
+There is a headless regression harness. It runs a real match with no
+rendering, drives the player with a scripted bot, counts gameplay events,
+captures error logs and checks invariants:
+
+```powershell
+python Scripts\smoke_test.py                    # 120 s match as Trigger Happy
+python Scripts\smoke_test.py --character Spyro  # any playable kit
+python Scripts\smoke_test.py --all-characters   # all four, one after another
+python Scripts\smoke_test.py --seconds 180
+```
+
+The report lands in `Saved/SmokeTest/report.json`. Every change in this
+repository since the harness existed was gated on it passing with zero
+logged errors.
+
 ## Working on it
 
 - [ROADMAP.md](ROADMAP.md) is the plan, tiered by value per effort.
 - [docs/AUDIT-2026-07-03.md](docs/AUDIT-2026-07-03.md) and
   [docs/AUDIT-2026-08-02.md](docs/AUDIT-2026-08-02.md) are code audits with the
   bugs they found and fixed.
+- [docs/AUDIT-2026-11-04.md](docs/AUDIT-2026-11-04.md) is the polish pass that added
+  the harness, combat feedback, items, AI and Spyro, with what is still open.
+- [docs/ITEMS-DESIGN.md](docs/ITEMS-DESIGN.md) is the item catalog spec.
 - [docs/HANDOFF.md](docs/HANDOFF.md) is the latest state of the asset pipeline.
 - [docs/CHARACTER-DESIGNS.md](docs/CHARACTER-DESIGNS.md) has the kit designs.
-- `Scripts/` holds the editor Python used to import characters and geometry,
-  build materials and diagnose animations. The editor has Python remote
+- `Scripts/` holds the editor Python used to import characters, animations and
+  geometry, build materials, synthesize and import placeholder sounds, and
+  diagnose animations. `RunEditorPython.ps1` runs any of them headless. The editor has Python remote
   execution enabled, and `.mcp.json` points Claude Code at the editor's MCP
   server so an agent can drive it.
 - `docs/archive/` is the Blueprint-era notes from before the C++ conversion.
