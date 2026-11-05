@@ -404,7 +404,7 @@ void ASkylandersSpyroCharacter::UseAbility4()
 	if (UseMana(Ability4_ManaCost))
 	{
 		float CooldownScale = 1.2f - 0.04f * AbilityLevels[3];
-		Ability4_RemainingCooldown = Ability4_Cooldown * CooldownScale * GetCooldownMultiplier();
+		Ability4_RemainingCooldown = Ability4_Cooldown * CooldownScale * GetUltCooldownMultiplier();
 
 		if (AbilitySound) UGameplayStatics::PlaySoundAtLocation(this, AbilitySound, GetActorLocation());
 		PlayAnimOnSlot(YamatoAnim, 1.0f);

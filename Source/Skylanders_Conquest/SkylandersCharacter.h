@@ -593,6 +593,10 @@ public:
 	// 1 - clamp(ItemBonusStats.CooldownReduction, 0, 0.40); applied once when a cooldown is set
 	float GetCooldownMultiplier() const;
 
+	// Ultimate (ability 4) only: 1 - clamp(ItemBonusStats.CooldownReduction, 0, 0.25).
+	// A 60-80 s ult at the full 40% would come back every 36-48 s, so ults get a lower cap.
+	float GetUltCooldownMultiplier() const;
+
 	// Item Penetration of the pawn behind a hit (follows projectile -> instigator); 0 if none
 	static float GetPenetrationOf(const AActor* DamageCauser);
 
@@ -616,6 +620,7 @@ protected:
 	FVector BotPathGoal = FVector::ZeroVector;
 	float BotRepathTimer = 0.0f;
 	float BotNextCastTime = 0.0f;   // throttles cast attempts that get refused
+	float BotNextForcedLevelTime = 0.0f; // paces the forced level-ups toward the ult window
 	// Where the bot wants ground-aimed abilities to land. The camera trace in
 	// GetGroundAimPoint follows the mouse; the bot has none (its camera always
 	// looks at the ground a step ahead), so it hands the aim point in directly.

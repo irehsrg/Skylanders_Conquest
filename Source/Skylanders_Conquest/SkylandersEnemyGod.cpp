@@ -498,13 +498,34 @@ void ASkylandersEnemyGod::TryPurchaseItems()
 	float DistToBase = FVector::Dist(GetActorLocation(), BasePosition);
 	if (DistToBase > 500.0f) return;
 
-	// Find an empty slot first; a full inventory buys nothing
 	int32 EmptySlot = -1;
 	for (int32 i = 0; i < MaxInventorySlots; i++)
 	{
 		if (Inventory[i] == 0) { EmptySlot = i; break; }
 	}
-	if (EmptySlot < 0) return;
+
+	// Full inventory: the cheapest owned item (a starter, by list order) may be
+	// sold to make room, otherwise late builds stall at six early items and the
+	// capstones at the end of every list are never reached (ITEMS-DESIGN.md §3.2).
+	int32 SellSlot = -1;
+	int32 SellRefund = 0;
+	int32 SellCost = 0;
+	if (EmptySlot < 0)
+	{
+		for (int32 i = 0; i < MaxInventorySlots; i++)
+		{
+			const FSkylandersItemData* Owned = USkylandersItemCatalog::FindItem(Inventory[i]);
+			if (Owned && (SellSlot < 0 || Owned->Cost < SellCost))
+			{
+				SellSlot = i;
+				SellCost = Owned->Cost;
+				SellRefund = Owned->GetSellPrice();
+			}
+		}
+		if (SellSlot < 0) return;
+	}
+	// Gold the purchase can draw on: with a sale pending, the refund counts
+	const int32 Budget = Gold + (EmptySlot < 0 ? SellRefund : 0);
 
 	const TArray<int32>& Priority = GetItemPurchasePriority(BuildArchetype);
 
@@ -516,7 +537,10 @@ void ASkylandersEnemyGod::TryPurchaseItems()
 	{
 		const FSkylandersItemData* ItemData = USkylandersItemCatalog::FindItem(ItemID);
 		if (!ItemData) continue;
-		if (Gold < ItemData->Cost) continue;
+		if (Budget < ItemData->Cost) continue;
+		// A swap must be an upgrade: the inventory's total cost strictly rises with
+		// every sale, so a full god can never sell/buy in a loop.
+		if (EmptySlot < 0 && ItemData->Cost <= SellCost) continue;
 
 		// One copy per occurrence in the list (an ID listed twice may be bought twice)
 		int32 AllowedCopies = 0;
@@ -537,6 +561,17 @@ void ASkylandersEnemyGod::TryPurchaseItems()
 		}
 	}
 	if (!Best) return;
+
+	if (EmptySlot < 0)
+	{
+		const FSkylandersItemData* Sold = USkylandersItemCatalog::FindItem(Inventory[SellSlot]);
+		Gold += SellRefund;
+		Inventory[SellSlot] = 0;
+		EmptySlot = SellSlot;
+		SKY_COUNT("god_item_sold");
+		UE_LOG(LogTemp, Warning, TEXT("Enemy God '%s' sold '%s' for %d gold to make room for '%s'"),
+			*GodName, Sold ? *Sold->ItemName : TEXT("?"), SellRefund, *Best->ItemName);
+	}
 
 	// Purchase (one item per tick to simulate realistic shopping)
 	Gold -= Best->Cost;

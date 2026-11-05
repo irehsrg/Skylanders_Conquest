@@ -6,6 +6,7 @@
 #include "SkylandersCharacter.h"
 #include "SkylandersEnemyGod.h"
 #include "SkylandersGameInstance.h"
+#include "SkylandersItemCatalog.h"
 #include "SkylandersMinion.h"
 #include "SkylandersTitan.h"
 #include "SkylandersTower.h"
@@ -81,10 +82,12 @@ void USkylandersSmokeTestSubsystem::Initialize(FSubsystemCollectionBase& Collect
 	}
 	DurationSeconds = Seconds;
 	bActive = true;
+	bItemTestRequested = FParse::Param(FCommandLine::Get(), TEXT("SkyItemTest"));
 	Counters.Reset();
 	GLog->AddOutputDevice(&ErrorSink);
 	TickHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &USkylandersSmokeTestSubsystem::Tick), 0.0f);
-	UE_LOG(LogTemp, Warning, TEXT("[Smoke] Smoke test armed for %.0f s"), DurationSeconds);
+	UE_LOG(LogTemp, Warning, TEXT("[Smoke] Smoke test armed for %.0f s%s"), DurationSeconds,
+		bItemTestRequested ? TEXT(" (+ item stat test)") : TEXT(""));
 }
 
 void USkylandersSmokeTestSubsystem::Deinitialize()
@@ -178,6 +181,11 @@ void USkylandersSmokeTestSubsystem::Sample(UWorld* World)
 
 	if (ASkylandersCharacter* P = Cast<ASkylandersCharacter>(UGameplayStatics::GetPlayerPawn(World, 0)))
 	{
+		// Before reading the player, so this sample already shows the restored state
+		if (bItemTestRequested && !bItemTestRan)
+		{
+			RunItemTest(World, P);
+		}
 		S.PlayerHealth = P->CurrentHealth;
 		S.PlayerLevel = P->PlayerLevel;
 		S.PlayerCoins = P->Coins;
@@ -187,6 +195,264 @@ void USkylandersSmokeTestSubsystem::Sample(UWorld* World)
 
 	MaxMinionsSeen = FMath::Max(MaxMinionsSeen, S.Minions);
 	Samples.Add(S);
+}
+
+void USkylandersSmokeTestSubsystem::RunItemTest(UWorld* World, ASkylandersCharacter* P)
+{
+	bItemTestRan = true;
+	UE_LOG(LogTemp, Warning, TEXT("[Smoke] item_test: starting on %s"), *P->GetName());
+
+	// The test buys/sells ~90 times and lands a few test hits; none of that is
+	// gameplay, so every counter is put back afterwards and the normal
+	// invariants (item_bought, god_damage, ...) still measure the real match.
+	const TMap<FName, int32> SavedCounters = Counters;
+
+	// Starting state, restored at the end so the rest of the match proceeds
+	const TArray<int32> SavedInventory = P->Inventory;
+	const int32 SavedCoins = P->Coins;
+	const int32 SavedTotalGold = P->TotalGoldEarned;
+	const bool bSavedInSpawn = P->bIsInSpawnArea;
+	const float SavedHealth = P->CurrentHealth;
+	const float SavedMana = P->CurrentMana;
+	const float SavedWalkSpeed = P->BaseMaxWalkSpeed;
+
+	// BuyItem/SellItem only work in the fountain. The pawn stands there at the
+	// first sample anyway, but the check must not depend on where it happens to be.
+	P->bIsInSpawnArea = true;
+
+	auto Fail = [this](const FString& Msg)
+	{
+		ItemTestFailures.Add(Msg);
+		UE_LOG(LogTemp, Warning, TEXT("[Smoke] item_test FAIL: %s"), *Msg);
+	};
+	auto Expect = [&](const FString& Ctx, const TCHAR* What, float Got, float Want, float Tol)
+	{
+		ItemTestChecks++;
+		if (!FMath::IsNearlyEqual(Got, Want, Tol))
+		{
+			Fail(FString::Printf(TEXT("%s: %s = %.4f, expected %.4f"), *Ctx, What, Got, Want));
+		}
+	};
+	auto ExpectTrue = [&](const FString& Ctx, bool bOk, const FString& What)
+	{
+		ItemTestChecks++;
+		if (!bOk) Fail(Ctx + TEXT(": ") + What);
+	};
+	struct FStatField { const TCHAR* Name; float FSkylandersItemStats::* Member; };
+	static const FStatField StatFields[] = {
+		{ TEXT("Power"), &FSkylandersItemStats::Power },
+		{ TEXT("AttackSpeed"), &FSkylandersItemStats::AttackSpeed },
+		{ TEXT("CritChance"), &FSkylandersItemStats::CritChance },
+		{ TEXT("MaxHealth"), &FSkylandersItemStats::MaxHealth },
+		{ TEXT("MaxMana"), &FSkylandersItemStats::MaxMana },
+		{ TEXT("HealthRegen"), &FSkylandersItemStats::HealthRegen },
+		{ TEXT("ManaRegen"), &FSkylandersItemStats::ManaRegen },
+		{ TEXT("Protections"), &FSkylandersItemStats::Protections },
+		{ TEXT("Lifesteal"), &FSkylandersItemStats::Lifesteal },
+		{ TEXT("MovementSpeed"), &FSkylandersItemStats::MovementSpeed },
+		{ TEXT("CooldownReduction"), &FSkylandersItemStats::CooldownReduction },
+		{ TEXT("Penetration"), &FSkylandersItemStats::Penetration },
+	};
+	auto ExpectStats = [&](const FString& Ctx, const FSkylandersItemStats& Got, const FSkylandersItemStats& Want)
+	{
+		for (const FStatField& F : StatFields)
+		{
+			Expect(Ctx, *FString::Printf(TEXT("ItemBonusStats.%s"), F.Name), Got.*F.Member, Want.*F.Member, 1e-3f);
+		}
+	};
+	auto ClearInventory = [P]()
+	{
+		for (int32& Id : P->Inventory) Id = 0;
+		P->RecalculateItemBonuses();
+	};
+	// Through AddCoins, not a direct write: it keeps a Blueprint HUD's coin accumulator in sync
+	auto SetCoins = [P](int32 N) { P->AddCoins(N - P->Coins); };
+	auto BuyAll = [&](const FString& Ctx, const TArray<FSkylandersItemData>& Items) -> bool
+	{
+		int32 Total = 0;
+		for (const FSkylandersItemData& It : Items) Total += It.Cost;
+		SetCoins(Total + 100);
+		bool bAll = true;
+		for (const FSkylandersItemData& It : Items)
+		{
+			const bool bBought = P->BuyItem(It.ItemID);
+			ExpectTrue(Ctx, bBought, FString::Printf(TEXT("BuyItem(%s) returned false"), *It.ItemName));
+			bAll &= bBought;
+		}
+		return bAll;
+	};
+
+	const TArray<FSkylandersItemData>& Catalog = USkylandersItemCatalog::GetAllItems();
+
+	// ---- 1. Every item alone: stats land in ItemBonusStats and in every getter
+	// that consumes them; selling refunds 67% and clears them again.
+	ClearInventory();
+	const float EmptyProtections = P->GetEffectiveProtections();
+	const float EmptyWalkSpeed = P->BaseMaxWalkSpeed;
+	{
+		// The empty-inventory baseline must itself be the base/level formula
+		const float LevelProtections = P->BaseProtections + P->ProtectionsPerLevel * FMath::Max(P->PlayerLevel - 1, 0) + P->BuffProtections;
+		Expect(TEXT("empty inventory"), TEXT("GetEffectiveProtections()"), EmptyProtections, LevelProtections, 1e-3f);
+		ExpectStats(TEXT("empty inventory"), P->ItemBonusStats, FSkylandersItemStats());
+	}
+	for (const FSkylandersItemData& Item : Catalog)
+	{
+		const FString Ctx = FString::Printf(TEXT("%s (id %d)"), *Item.ItemName, Item.ItemID);
+		const FSkylandersItemStats& S = Item.Stats;
+		ClearInventory();
+		SetCoins(Item.Cost + 100);
+		const int32 CoinsBeforeBuy = P->Coins;
+		if (!P->BuyItem(Item.ItemID))
+		{
+			ItemTestChecks++;
+			Fail(FString::Printf(TEXT("%s: BuyItem returned false with %d coins (cost %d)"), *Ctx, CoinsBeforeBuy, Item.Cost));
+			continue;
+		}
+		ItemTestItemsChecked++;
+		Expect(Ctx, TEXT("coins after buy"), (float)P->Coins, (float)(CoinsBeforeBuy - Item.Cost), 0.5f);
+		ExpectTrue(Ctx, P->Inventory[0] == Item.ItemID, FString::Printf(TEXT("slot 0 holds id %d"), P->Inventory[0]));
+		ExpectStats(Ctx, P->ItemBonusStats, S);
+		Expect(Ctx, TEXT("GetEffectivePower()"), P->GetEffectivePower(), P->BasePower + S.Power, 1e-3f);
+		Expect(Ctx, TEXT("GetEffectiveAttackSpeed()"), P->GetEffectiveAttackSpeed(), P->FireRate + S.AttackSpeed, 1e-3f);
+		Expect(Ctx, TEXT("GetEffectiveProtections()"), P->GetEffectiveProtections(), EmptyProtections + S.Protections, 1e-3f);
+		Expect(Ctx, TEXT("BaseMaxWalkSpeed"), P->BaseMaxWalkSpeed, EmptyWalkSpeed + S.MovementSpeed, 1e-3f);
+		Expect(Ctx, TEXT("GetPenetrationOf(player)"), ASkylandersCharacter::GetPenetrationOf(P), S.Penetration, 1e-3f);
+		Expect(Ctx, TEXT("GetCooldownMultiplier()"), P->GetCooldownMultiplier(), 1.0f - FMath::Min(0.40f, S.CooldownReduction), 1e-3f);
+		Expect(Ctx, TEXT("GetUltCooldownMultiplier()"), P->GetUltCooldownMultiplier(), 1.0f - FMath::Min(0.25f, S.CooldownReduction), 1e-3f);
+
+		const int32 CoinsBeforeSell = P->Coins;
+		ExpectTrue(Ctx, P->SellItem(0), TEXT("SellItem(0) returned false"));
+		Expect(Ctx, TEXT("coins after sell"), (float)P->Coins, (float)(CoinsBeforeSell + Item.GetSellPrice()), 0.5f);
+		ExpectStats(Ctx + TEXT(" after sell"), P->ItemBonusStats, FSkylandersItemStats());
+		Expect(Ctx + TEXT(" after sell"), TEXT("GetCooldownMultiplier()"), P->GetCooldownMultiplier(), 1.0f, 1e-3f);
+	}
+	ItemTestNotes += FString::Printf(TEXT("\"catalog_items\": %d, "), Catalog.Num());
+
+	// ---- 2a. CDR stacking: the three highest-CDR items sum past both caps;
+	// abilities 1-3 clamp at 40% (x0.60), the ult at 25% (x0.75).
+	{
+		TArray<FSkylandersItemData> ByCdr = Catalog;
+		ByCdr.StableSort([](const FSkylandersItemData& A, const FSkylandersItemData& B) { return A.Stats.CooldownReduction > B.Stats.CooldownReduction; });
+		ByCdr.SetNum(3);
+		float Sum = 0.0f;
+		FString Ids;
+		for (const FSkylandersItemData& It : ByCdr) { Sum += It.Stats.CooldownReduction; Ids += FString::Printf(TEXT("%s%d"), Ids.IsEmpty() ? TEXT("") : TEXT(", "), It.ItemID); }
+		const FString Ctx = FString::Printf(TEXT("CDR stack [%s] sum %.2f"), *Ids, Sum);
+		ClearInventory();
+		BuyAll(Ctx, ByCdr);
+		ExpectTrue(Ctx, Sum > 0.40f, TEXT("the top three CDR items no longer sum past the 40% cap"));
+		Expect(Ctx, TEXT("ItemBonusStats.CooldownReduction (uncapped sum)"), P->ItemBonusStats.CooldownReduction, Sum, 1e-3f);
+		Expect(Ctx, TEXT("GetCooldownMultiplier()"), P->GetCooldownMultiplier(), 0.60f, 1e-3f);
+		Expect(Ctx, TEXT("GetUltCooldownMultiplier()"), P->GetUltCooldownMultiplier(), 0.75f, 1e-3f);
+		ItemTestNotes += FString::Printf(TEXT("\"cdr_stack\": {\"items\": [%s], \"sum\": %.2f, \"multiplier\": %.3f, \"ult_multiplier\": %.3f}, "),
+			*Ids, Sum, P->GetCooldownMultiplier(), P->GetUltCooldownMultiplier());
+	}
+
+	// ---- 2b/3. Penetration: two pen items sum, and a 100-damage hit on a red god
+	// loses exactly 100 * (1 - P'/(P'+100)), P' = max(0, Prot - Pen). Checked with
+	// no pen, the smallest pen item alone, and the two biggest together, so both
+	// the partial strip and (usually) the floor at 0 are covered.
+	{
+		TArray<FSkylandersItemData> PenItems = Catalog.FilterByPredicate([](const FSkylandersItemData& It) { return It.Stats.Penetration > 0.0f; });
+		PenItems.StableSort([](const FSkylandersItemData& A, const FSkylandersItemData& B) { return A.Stats.Penetration > B.Stats.Penetration; });
+		if (PenItems.Num() < 2)
+		{
+			ItemTestChecks++;
+			Fail(FString::Printf(TEXT("catalog has %d penetration items, need 2"), PenItems.Num()));
+		}
+		else
+		{
+			// A living red god with health to spare (the hit must not kill it)
+			ASkylandersEnemyGod* God = nullptr;
+			TArray<AActor*> Gods;
+			USkylandersActorRegistry::GetAllActorsOfClass(World, ASkylandersEnemyGod::StaticClass(), Gods);
+			for (AActor* A : Gods)
+			{
+				ASkylandersEnemyGod* G = Cast<ASkylandersEnemyGod>(A);
+				if (G && G->Team == ETowerTeam::Enemy && G->CurrentState != EGodAIState::Dead && G->CurrentHealth > 200.0f)
+				{
+					God = G;
+					break;
+				}
+			}
+
+			const TArray<FSkylandersItemData> Configs[] = {
+				{},
+				{ PenItems.Last() },
+				{ PenItems[0], PenItems[1] },
+			};
+			FString MathJson;
+			for (const TArray<FSkylandersItemData>& Config : Configs)
+			{
+				float WantPen = 0.0f;
+				FString Ids;
+				for (const FSkylandersItemData& It : Config) { WantPen += It.Stats.Penetration; Ids += FString::Printf(TEXT("%s%d"), Ids.IsEmpty() ? TEXT("") : TEXT(", "), It.ItemID); }
+				const FString Ctx = FString::Printf(TEXT("pen [%s]"), *Ids);
+				ClearInventory();
+				BuyAll(Ctx, Config);
+				const float Pen = ASkylandersCharacter::GetPenetrationOf(P);
+				Expect(Ctx, TEXT("GetPenetrationOf(player)"), Pen, WantPen, 1e-3f);
+				if (Config.Num() == 2)
+				{
+					ItemTestNotes += FString::Printf(TEXT("\"pen_stack\": {\"items\": [%s], \"penetration\": %.1f}, "), *Ids, Pen);
+				}
+				if (!God)
+				{
+					ItemTestChecks++;
+					Fail(Ctx + TEXT(": no living red god to hit"));
+					continue;
+				}
+				const float Prot = God->GetEffectiveProtections();
+				const float Eff = FMath::Max(0.0f, Prot - Pen);
+				const float WantLost = 100.0f * (1.0f - Eff / (Eff + 100.0f));
+				const float HealthBefore = God->CurrentHealth;
+				God->TakeDamage_Custom(100.0f, P);
+				const float Lost = HealthBefore - God->CurrentHealth;
+				God->CurrentHealth = HealthBefore;
+				Expect(Ctx + FString::Printf(TEXT(" vs %s (prot %.1f)"), *God->GodName, Prot), TEXT("god health lost to 100 damage"), Lost, WantLost, 0.5f);
+				MathJson += FString::Printf(TEXT("%s{\"pen\": %.1f, \"god\": \"%s\", \"god_prot\": %.1f, \"expected_loss\": %.2f, \"loss\": %.2f}"),
+					MathJson.IsEmpty() ? TEXT("") : TEXT(", "), Pen, *JsonEscape(God->GodName), Prot, WantLost, Lost);
+			}
+			ItemTestNotes += FString::Printf(TEXT("\"pen_math\": [%s], "), *MathJson);
+		}
+	}
+
+	// ---- 4. Full inventory: a seventh purchase is refused and costs nothing
+	{
+		TArray<FSkylandersItemData> Cheapest = Catalog;
+		Cheapest.StableSort([](const FSkylandersItemData& A, const FSkylandersItemData& B) { return A.Cost < B.Cost; });
+		const FSkylandersItemData Seventh = Cheapest[ASkylandersCharacter::MaxInventorySlots];
+		Cheapest.SetNum(ASkylandersCharacter::MaxInventorySlots);
+		const FString Ctx = TEXT("full inventory");
+		ClearInventory();
+		BuyAll(Ctx, Cheapest);
+		SetCoins(Seventh.Cost + 100);
+		const int32 CoinsBefore = P->Coins;
+		const TArray<int32> InvBefore = P->Inventory;
+		ExpectTrue(Ctx, !P->BuyItem(Seventh.ItemID), FString::Printf(TEXT("BuyItem(%s) succeeded with six items held"), *Seventh.ItemName));
+		Expect(Ctx, TEXT("coins after refused buy"), (float)P->Coins, (float)CoinsBefore, 0.5f);
+		ExpectTrue(Ctx, P->Inventory == InvBefore, TEXT("inventory changed by a refused buy"));
+	}
+
+	// ---- Restore the player exactly as found
+	P->Inventory = SavedInventory;
+	P->RecalculateItemBonuses();
+	SetCoins(SavedCoins);
+	P->TotalGoldEarned = SavedTotalGold;
+	P->bIsInSpawnArea = bSavedInSpawn;
+	P->CurrentHealth = SavedHealth;
+	P->CurrentMana = SavedMana;
+	P->BaseMaxWalkSpeed = SavedWalkSpeed;
+	P->UpdateHUD();
+
+	Counters = SavedCounters;
+	Count(TEXT("item_test_fail"), 0); // present in the report even when clean
+	for (int32 i = 0; i < ItemTestFailures.Num(); i++)
+	{
+		SKY_COUNT("item_test_fail");
+	}
+	UE_LOG(LogTemp, Warning, TEXT("[Smoke] item_test: %d/%d items checked, %d checks, %d failure(s)"),
+		ItemTestItemsChecked, Catalog.Num(), ItemTestChecks, ItemTestFailures.Num());
 }
 
 FString USkylandersSmokeTestSubsystem::FSample::ToJson() const
@@ -228,6 +494,17 @@ TArray<FString> USkylandersSmokeTestSubsystem::EvaluateInvariants() const
 		// 90 s the player bot and at least one god have each bought a starter.
 		Require(C(TEXT("god_item_bought")) >= 1, TEXT("no AI god bought an item"));
 		Require(C(TEXT("item_bought")) >= 2, FString::Printf(TEXT("item_bought=%d, expected player + god starters"), C(TEXT("item_bought"))));
+	}
+	if (DurationSeconds >= 120.0f)
+	{
+		// The bot is levelled to 5 from 25 s and casts the ult on anything red in
+		// reach, so a full run must land at least one (counted on completion).
+		Require(C(TEXT("player_ult")) >= 1, TEXT("player bot never completed an ultimate"));
+	}
+	if (bItemTestRequested)
+	{
+		Require(bItemTestRan, TEXT("-SkyItemTest given but the item test never ran (no player pawn?)"));
+		Require(C(TEXT("item_test_fail")) == 0, FString::Printf(TEXT("item_test_fail=%d (see item_test.failures)"), C(TEXT("item_test_fail"))));
 	}
 	// AI state machine sanity: gods must change state at all (they lane, fight,
 	// die), but a 120 s match with hundreds of flips means the tower back-off
@@ -282,7 +559,18 @@ void USkylandersSmokeTestSubsystem::Finish()
 			}
 		}
 	}
-	Json += TEXT("},\n  \"errors\": [");
+	Json += TEXT("},\n");
+	if (bItemTestRequested)
+	{
+		Json += FString::Printf(TEXT("  \"item_test\": {\"ran\": %s, \"items_checked\": %d, %s\"checks\": %d, \"fail_count\": %d, \"failures\": ["),
+			bItemTestRan ? TEXT("true") : TEXT("false"), ItemTestItemsChecked, *ItemTestNotes, ItemTestChecks, ItemTestFailures.Num());
+		for (int32 i = 0; i < ItemTestFailures.Num(); i++)
+		{
+			Json += FString::Printf(TEXT("%s\"%s\""), i ? TEXT(", ") : TEXT(""), *JsonEscape(ItemTestFailures[i]));
+		}
+		Json += TEXT("]},\n");
+	}
+	Json += TEXT("  \"errors\": [");
 	for (int32 i = 0; i < ErrorSink.FirstErrors.Num(); i++)
 	{
 		Json += FString::Printf(TEXT("%s\"%s\""), i ? TEXT(", ") : TEXT(""), *JsonEscape(ErrorSink.FirstErrors[i]));

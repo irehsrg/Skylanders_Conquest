@@ -5,7 +5,8 @@
 //
 //   UnrealEditor-Cmd.exe <project>.uproject Joust -game -nullrhi -unattended -SkySmoke=120
 //
-// (Scripts/smoke_test.py wraps this.) Every second it samples the match through
+// (Scripts/smoke_test.py wraps this; add -SkyItemTest for the item stat check,
+// see RunItemTest). Every second it samples the match through
 // the actor registry; gameplay code bumps named counters via SKY_COUNT(...).
 // At the end it writes Saved/SmokeTest/report.json, evaluates the invariants in
 // EvaluateInvariants(), logs PASS/FAIL and exits with status 0 or 1.
@@ -48,6 +49,18 @@ private:
 	void Sample(UWorld* World);
 	void Finish();
 	TArray<FString> EvaluateInvariants() const;
+
+	// -SkyItemTest: a deterministic check of every catalog item's stats, the CDR
+	// caps, penetration math and the full-inventory refusal, run once on the
+	// player at the first sample; the player is restored afterwards so the rest
+	// of the match plays normally. Results go to report.json under "item_test".
+	void RunItemTest(UWorld* World, class ASkylandersCharacter* Player);
+	bool bItemTestRequested = false;
+	bool bItemTestRan = false;
+	int32 ItemTestItemsChecked = 0;
+	int32 ItemTestChecks = 0;
+	TArray<FString> ItemTestFailures;
+	FString ItemTestNotes; // JSON fields (no braces) with the measured headline numbers
 
 	static bool bActive;
 	static TMap<FName, int32> Counters;

@@ -32,7 +32,12 @@ namespace
 	// 3800 on our side) instead of walking into three red gods alone at mid.
 	constexpr float BotWaitLine = -3000.0f;
 	constexpr float BotAbilityRange = 900.0f;
-	constexpr float BotUltRange = 600.0f;
+	// The ult goes off on any living red god or minion this close: every kit's
+	// ult completes whether or not it hits, and the run must prove all four fire.
+	constexpr float BotUltRange = 900.0f;
+	// From this far into the match the bot is levelled to the ult (see below)
+	constexpr float BotForceUltLevelAt = 25.0f;
+	constexpr int32 BotUltLevel = 5;
 	constexpr float BotRetreatBelow = 0.30f;
 	constexpr float BotResumeAbove = 0.70f;
 	constexpr float BotRepathInterval = 0.5f;
@@ -76,6 +81,16 @@ void ASkylandersCharacter::DriveAsBot(float DeltaTime)
 	{
 		OnAbilityReleased(BotPendingRelease);
 		BotPendingRelease = -1;
+	}
+
+	// ---- Forces the ult window: a 120 s run rarely earns level 5 from XP, so the
+	// ult would never be exercised. The harness is not a balance test. One level
+	// per second (LevelUp is safe while dead; the points are spent once alive).
+	if (BotElapsed >= BotForceUltLevelAt && PlayerLevel < BotUltLevel && BotElapsed >= BotNextForcedLevelTime)
+	{
+		BotNextForcedLevelTime = BotElapsed + 1.0f;
+		LevelUp();
+		UE_LOG(LogTemp, Log, TEXT("[SmokeBot] t=%.0f forced level-up to %d (ult window)"), BotElapsed, PlayerLevel);
 	}
 
 	if (CurrentHealth <= 0.0f) return; // dead: wait for the respawn timer
@@ -156,7 +171,10 @@ void ASkylandersCharacter::DriveAsBot(float DeltaTime)
 	// ---- Target: nearest living red god within a lane-fight distance, else the
 	// nearest red minion, else the nearest red god anywhere.
 	AActor* Target = nullptr;
-	bool bTargetIsGod = false;
+	// What the ult is cast at: the nearest living red god within BotUltRange,
+	// else the nearest red minion within it (independent of Target, which may be
+	// a god further off while a minion is already in reach).
+	AActor* UltTarget = nullptr;
 	{
 		TArray<AActor*> Found;
 		float BestGod = TNumericLimits<float>::Max();
@@ -182,9 +200,12 @@ void ASkylandersCharacter::DriveAsBot(float DeltaTime)
 			if (D < BestMinion) { BestMinion = D; NearestMinion = A; }
 		}
 
-		if (NearestGod && BestGod <= 2500.0f) { Target = NearestGod; bTargetIsGod = true; }
+		if (NearestGod && BestGod <= 2500.0f) { Target = NearestGod; }
 		else if (NearestMinion) { Target = NearestMinion; }
-		else if (NearestGod) { Target = NearestGod; bTargetIsGod = true; }
+		else if (NearestGod) { Target = NearestGod; }
+
+		if (NearestGod && BestGod <= BotUltRange) UltTarget = NearestGod;
+		else if (NearestMinion && BestMinion <= BotUltRange) UltTarget = NearestMinion;
 	}
 
 	// ---- Choose a goal and whether to stand and shoot
@@ -265,6 +286,11 @@ void ASkylandersCharacter::DriveAsBot(float DeltaTime)
 	{
 		FaceDir = (Target->GetActorLocation() - MyLoc).GetSafeNormal2D();
 	}
+	else if (!bBotRetreating && UltTarget)
+	{
+		// Cone ults (Yamato, Titan's Wrath, Daybringer) fire along the facing
+		FaceDir = (UltTarget->GetActorLocation() - MyLoc).GetSafeNormal2D();
+	}
 	if (!FaceDir.IsNearlyZero())
 	{
 		Controller->SetControlRotation(FRotator(0.0f, FaceDir.Rotation().Yaw, 0.0f));
@@ -302,10 +328,12 @@ void ASkylandersCharacter::DriveAsBot(float DeltaTime)
 		FireProjectile();
 	}
 
-	// ---- Abilities: basics when ready and close, ult on a nearby god
+	// ---- Abilities: the ult first whenever anything red is in reach, then basics
+	// when ready and close. Every kit's UseAbility4 refuses while channeling, on
+	// cooldown or short of mana, so those are checked here; none is ground-aimed.
 	// A kit can refuse a cast for its own reasons (e.g. a channel in progress);
 	// the throttle keeps a refused press from repeating (and logging) every frame.
-	if (bFighting && BotPendingRelease < 0 && !IsChanneling() && BotElapsed >= BotNextCastTime)
+	if (BotPendingRelease < 0 && !IsChanneling() && BotElapsed >= BotNextCastTime)
 	{
 		auto TryCast = [this](int32 i) -> bool
 		{
@@ -313,16 +341,21 @@ void ASkylandersCharacter::DriveAsBot(float DeltaTime)
 			if (CurrentMana < AbilityManaCost(this, i)) return false;
 			OnAbilityPressed(i);
 			if (bAbilityUsesGroundAim[i]) BotPendingRelease = i;
+			else OnAbilityReleased(i); // a key press is always followed by a release
 			BotNextCastTime = BotElapsed + 0.5f;
 			return true;
 		};
+		if (UltTarget && TryCast(3)) return;
+		if (!bFighting) return;
+
+		// While the ult is learned and off cooldown, basics may not spend the mana
+		// it needs, or a mana-hungry kit would never have 100 left for it.
+		const bool bUltReady = AbilityLevels[3] > 0 && AbilityCooldown(this, 3) <= 0.0f;
+		const float Reserve = bUltReady ? AbilityManaCost(this, 3) : 0.0f;
 		for (int32 i = 0; i < 3; i++)
 		{
+			if (CurrentMana - AbilityManaCost(this, i) < Reserve) continue;
 			if (TryCast(i)) return; // one cast per tick
-		}
-		if (bTargetIsGod && TargetDist <= BotUltRange)
-		{
-			TryCast(3);
 		}
 	}
 }

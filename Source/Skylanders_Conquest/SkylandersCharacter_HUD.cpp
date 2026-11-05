@@ -692,7 +692,7 @@ void ASkylandersCharacter::UseAbility4()
 	{
 		// Cooldown scales with rank: at rank 1 = 116%, rank 5 = 100%
 		float CooldownScale = 1.2f - 0.04f * AbilityLevels[3];
-		Ability4_RemainingCooldown = Ability4_Cooldown * CooldownScale * GetCooldownMultiplier();
+		Ability4_RemainingCooldown = Ability4_Cooldown * CooldownScale * GetUltCooldownMultiplier();
 		UE_LOG(LogTemp, Warning, TEXT("YAMATO BLAST charging... Hold still!"));
 
 		if (AbilitySound)

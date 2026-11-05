@@ -343,6 +343,12 @@ float ASkylandersCharacter::GetCooldownMultiplier() const
 	return 1.0f - FMath::Clamp(ItemBonusStats.CooldownReduction, 0.0f, 0.40f);
 }
 
+float ASkylandersCharacter::GetUltCooldownMultiplier() const
+{
+	// Same sum, lower cap (ITEMS-DESIGN.md: ults at 40% CDR would be up too often)
+	return 1.0f - FMath::Clamp(ItemBonusStats.CooldownReduction, 0.0f, 0.25f);
+}
+
 // ========== ABILITY LEVELING ==========
 
 void ASkylandersCharacter::LevelUpAbility(int32 AbilityIndex)

@@ -10,10 +10,14 @@ log lines, and exits with the game's exit code (0 = pass).
     python Scripts/smoke_test.py --seconds 60
     python Scripts/smoke_test.py --character Spyro    # play a specific kit
     python Scripts/smoke_test.py --all-characters     # every playable kit, back to back
+    python Scripts/smoke_test.py --items              # + the item stat check (-SkyItemTest)
 
 --character passes -SkyCharacter=<ID> (USkylandersGameInstance::Init), using the
 character-select IDs. --all-characters runs each kit for --seconds, prints one
-summary line per character, and exits non-zero if any run failed.
+summary line per character, and exits non-zero if any run failed. --items adds
+-SkyItemTest: at the first sample the game checks every catalog item's stats,
+the CDR caps, penetration math and the full-inventory refusal on the player,
+restores it, and plays the match on; the report's "item_test" block is printed.
 """
 
 import argparse
@@ -34,7 +38,7 @@ ALL_CHARACTERS = ["TriggerHappy", "Hex", "TreeRex", "Spyro"]
 SUMMARY_COUNTERS = ["player_shot", "player_ability", "player_ult", "player_damage", "player_death"]
 
 
-def run_one(seconds: int, map_name: str, character: str | None) -> tuple[int, dict | None]:
+def run_one(seconds: int, map_name: str, character: str | None, items: bool = False) -> tuple[int, dict | None]:
     """Runs one headless match; prints the detailed result and returns (exit code, report)."""
     if REPORT.exists():
         REPORT.unlink()  # never report a stale result
@@ -43,6 +47,8 @@ def run_one(seconds: int, map_name: str, character: str | None) -> tuple[int, di
            "-nosplash", "-NoLiveCoding", f"-SkySmoke={seconds}", "-log=smoke.log"]
     if character:
         cmd.append(f"-SkyCharacter={character}")
+    if items:
+        cmd.append("-SkyItemTest")
     limit = seconds + STARTUP_GRACE_S
     who = f" as {character}" if character else ""
     print(f"[smoke] running {map_name}{who} headless for {seconds} s (timeout {limit} s)...", flush=True)
@@ -74,6 +80,11 @@ def run_one(seconds: int, map_name: str, character: str | None) -> tuple[int, di
             print(f"errors:   {r.get('error_count', len(errs))}")
             for e in errs:
                 print(f"  - {e}")
+            item_test = r.get("item_test")
+            if item_test is not None:
+                print_item_test(item_test)
+            elif items:
+                print("item_test: missing from the report")
             samples = r.get("samples") or []
             if samples:
                 print(f"last sample: {json.dumps(samples[-1])}")
@@ -97,6 +108,24 @@ def run_one(seconds: int, map_name: str, character: str | None) -> tuple[int, di
     return code, report
 
 
+def print_item_test(t: dict) -> None:
+    fails = t.get("failures") or []
+    print(f"item_test: ran={t.get('ran')} items_checked={t.get('items_checked')}/{t.get('catalog_items')} "
+          f"checks={t.get('checks')} failures={t.get('fail_count', len(fails))}")
+    cdr = t.get("cdr_stack")
+    if cdr:
+        print(f"  cdr_stack: items={cdr.get('items')} sum={cdr.get('sum')} "
+              f"multiplier={cdr.get('multiplier')} ult_multiplier={cdr.get('ult_multiplier')}")
+    pen = t.get("pen_stack")
+    if pen:
+        print(f"  pen_stack: items={pen.get('items')} penetration={pen.get('penetration')}")
+    for m in t.get("pen_math") or []:
+        print(f"  pen_math: pen={m.get('pen')} vs {m.get('god')} prot={m.get('god_prot')} "
+              f"expected_loss={m.get('expected_loss')} loss={m.get('loss')}")
+    for f in fails:
+        print(f"  FAIL {f}")
+
+
 def summary_line(character: str, code: int, report: dict | None) -> str:
     status = "PASS" if code == 0 else f"FAIL(exit={code})"
     if report is None:
@@ -115,16 +144,17 @@ def main() -> int:
     group = ap.add_mutually_exclusive_group()
     group.add_argument("--character", help="character-select ID to play (TriggerHappy, Hex, TreeRex, Spyro)")
     group.add_argument("--all-characters", action="store_true", help="run every playable kit back to back")
+    ap.add_argument("--items", action="store_true", help="also run the item stat check (-SkyItemTest)")
     args = ap.parse_args()
 
     if not args.all_characters:
-        code, _ = run_one(args.seconds, args.map, args.character)
+        code, _ = run_one(args.seconds, args.map, args.character, args.items)
         return code
 
     results = []
     for ch in ALL_CHARACTERS:
         print(f"\n========== {ch} ==========", flush=True)
-        code, report = run_one(args.seconds, args.map, ch)
+        code, report = run_one(args.seconds, args.map, ch, args.items)
         results.append((ch, code, report))
     print("\n========== summary ==========")
     for ch, code, report in results:
