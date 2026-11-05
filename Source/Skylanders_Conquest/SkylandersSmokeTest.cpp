@@ -220,6 +220,15 @@ TArray<FString> USkylandersSmokeTestSubsystem::EvaluateInvariants() const
 		Require(C(TEXT("god_item_bought")) >= 1, TEXT("no AI god bought an item"));
 		Require(C(TEXT("item_bought")) >= 2, FString::Printf(TEXT("item_bought=%d, expected player + god starters"), C(TEXT("item_bought"))));
 	}
+	// AI state machine sanity: gods must change state at all (they lane, fight,
+	// die), but a 120 s match with hundreds of flips means the tower back-off
+	// hysteresis has regressed into per-tick thrash.
+	Require(C(TEXT("god_state_change")) > 0, TEXT("no god ever changed AI state"));
+	if (DurationSeconds <= 120.0f)
+	{
+		Require(C(TEXT("god_state_change")) <= 200,
+			FString::Printf(TEXT("god_state_change=%d > 200: AI state thrash"), C(TEXT("god_state_change"))));
+	}
 	Require(Last.PlayerLevel >= 3, FString::Printf(TEXT("player level %d < 3"), Last.PlayerLevel));
 	Require(Last.PlayerCoins > 0, TEXT("player never earned gold"));
 	Require(ErrorSink.ErrorCount == 0, FString::Printf(TEXT("%d error(s) logged"), ErrorSink.ErrorCount));
@@ -245,6 +254,23 @@ void USkylandersSmokeTestSubsystem::Finish()
 	for (int32 i = 0; i < Keys.Num(); i++)
 	{
 		Json += FString::Printf(TEXT("%s\"%s\": %d"), i ? TEXT(", ") : TEXT(""), *Keys[i].ToString(), Counters[Keys[i]]);
+	}
+	// Per-god state-change counts (thrash measurement), also echoed to the log
+	Json += TEXT("},\n  \"god_state_changes\": {");
+	if (UWorld* World = GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr)
+	{
+		TArray<AActor*> Gods;
+		USkylandersActorRegistry::GetAllActorsOfClass(World, ASkylandersEnemyGod::StaticClass(), Gods);
+		int32 Written = 0;
+		for (AActor* A : Gods)
+		{
+			if (ASkylandersEnemyGod* G = Cast<ASkylandersEnemyGod>(A))
+			{
+				Json += FString::Printf(TEXT("%s\"%s\": %d"), Written++ ? TEXT(", ") : TEXT(""), *JsonEscape(G->GodName), G->StateChangeCount);
+				UE_LOG(LogTemp, Warning, TEXT("[Smoke] god_state_change %s (%s) = %d"), *G->GodName,
+					G->Team == ETowerTeam::Enemy ? TEXT("red") : TEXT("blue"), G->StateChangeCount);
+			}
+		}
 	}
 	Json += TEXT("},\n  \"errors\": [");
 	for (int32 i = 0; i < ErrorSink.FirstErrors.Num(); i++)

@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "SkylandersItem.h"
 #include "SkylandersTower.h" // ETowerTeam
+#include "SkylandersBuffCamp.h" // EBuffType
 #include "SkylandersEnemyGod.generated.h"
 
 class UWidgetComponent;
@@ -22,8 +23,10 @@ enum class EGodAIState : uint8
 {
 	Laning,      // Farming minions in lane
 	Fighting,    // Engaging the player
-	Retreating,  // Low HP, running to base
-	Dead         // Waiting to respawn
+	Retreating,  // Low HP, running to base to heal
+	Dead,        // Waiting to respawn
+	TowerBackoff,// Stepped into an enemy tower without cover: hold outside its range
+	Jungling     // Clearing a neutral buff camp
 };
 
 // Which item purchase list the god's shopping AI walks (see GetItemPurchasePriority).
@@ -143,6 +146,11 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "AI")
 	EGodAIState CurrentState;
 
+	// Number of actual state changes this match (SetState only counts real changes).
+	// Read by the smoke test for its per-god thrash summary.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
+	int32 StateChangeCount = 0;
+
 	// Item build this god shops for. Set by the map builder before FinishSpawning.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
 	EGodBuildArchetype BuildArchetype = EGodBuildArchetype::Bruiser;
@@ -210,6 +218,9 @@ public:
 	void RespawnGod();
 
 	void UpdateAI(float DeltaTime);
+
+	// Every CurrentState change after construction goes through here.
+	void SetState(EGodAIState NewState);
 	void UpdateHealthBar();
 	void FaceTarget(AActor* Target);
 
@@ -224,6 +235,13 @@ public:
 
 	/** 1 - clamp(item CDR, 0, 0.40); applied once when the ability timer is set */
 	float GetCooldownMultiplier() const;
+
+	// Called by ASkylandersBuffCamp when this god lands the killing blow: pays the
+	// camp's gold and applies its buff to this god's own stat fields for Duration.
+	void ApplyCampBuff(EBuffType Type, float DamageMultiplier, float Duration, int32 Coins, const FString& CampName);
+
+	// Is a camp buff of this type currently active on the god?
+	bool HasCampBuff(EBuffType Type) const;
 
 private:
 	// Internal timers
@@ -249,8 +267,67 @@ private:
 	// AttackRange when the god should *walk toward* the wave (laning); pass the
 	// default (AttackRange) when it should only consider what it can already hit.
 	ASkylandersMinion* FindNearestEnemyMinion(float SearchRadius = -1.0f);
+	// Lowest-health living FoeTeam() minion within Radius (last-hit priority).
+	ASkylandersMinion* FindWeakestEnemyMinion(float Radius);
+	// Living own-team minions within Radius of Pos (tower-dive cover).
+	int32 CountOwnMinionsNear(const FVector& Pos, float Radius) const;
+	// Every living opposing hero (player and/or gods).
+	void GatherEnemyHeroes(TArray<AActor*>& OutHeroes);
+	static bool IsHeroAlive(AActor* Hero);
 	void PerformAttack(AActor* Target);
-	void UseAbility(); // Burst damage ability
+	// Burst damage ability on Target (null = nearest opposing hero)
+	void UseAbility(AActor* Target = nullptr);
+
+	// Fighting target choice: lowest-health opposing hero in attack range, else the
+	// nearest within FightLeash; never one under an enemy tower. The current target
+	// is kept for at least MinTargetCommitSeconds so the god doesn't flicker.
+	AActor* SelectFightTarget(float Now);
+	void BeginFighting(AActor* Target, float Leash);
+	TWeakObjectPtr<AActor> FightTarget;
+	float FightTargetSince = 0.0f;
+	float FightLeash = 1500.0f;
+	float NextEngageTime = 0.0f; // Laning won't start a fight before this (world time)
+	static constexpr float MinTargetCommitSeconds = 1.5f;
+
+	// Blue allies join the player's fight (player within 2500 and took/dealt hero
+	// damage in the last 4 s). Returns true if it switched to Fighting.
+	bool TryAllyAssist(float Now, float HealthPct);
+
+	// Tower back-off (distinct from the low-health Retreating): walk to a hold
+	// point outside the tower's range + margin and stay for TowerBackoffMinHold
+	// seconds, re-entering only with minion cover or once the tower falls.
+	void EnterTowerBackoff(ASkylandersTower* Tower);
+	TWeakObjectPtr<ASkylandersTower> BackoffTower;
+	FVector BackoffHoldPoint = FVector::ZeroVector;
+	float BackoffStartTime = 0.0f;
+	static constexpr float TowerBackoffMinHold = 4.0f;
+	static constexpr float TowerBackoffMargin = 350.0f;
+	static constexpr int32 TowerCoverMinions = 3;
+
+	// Jungling: clear a buff camp this god doesn't already hold the buff of.
+	ASkylandersBuffCamp* FindJungleCamp(float MaxDist) const;
+	bool TryStartJungling(float MaxDist);
+	TWeakObjectPtr<ASkylandersBuffCamp> JungleTarget;
+	float JungleStartTime = 0.0f;
+	float NextJungleTime = 0.0f; // cooldown after an attempt, so lane <-> jungle can't flip
+	// Stall detection on the walk to the camp (see the Jungling case)
+	float JungleProgressTime = 0.0f;
+	float JungleBestDist = 0.0f;
+	bool bJungleSteerDirect = false;
+
+	// Active camp buffs: world time each expires (0 = inactive) and the exact
+	// bonus applied, so expiry subtracts what was added (level-ups stay intact).
+	float DamageBuffExpire = 0.0f;
+	float SpeedBuffExpire = 0.0f;
+	float ManaBuffExpire = 0.0f;
+	float CampPowerBonus = 0.0f;
+	float CampAttackBonus = 0.0f;
+	float CampSpeedBonus = 0.0f;
+	// Drop expired buffs (all of them when bForceAll, e.g. on death).
+	void ExpireCampBuffs(bool bForceAll);
+
+	// Walk speed with items and the speed camp buff
+	float GetWalkSpeed() const { return MoveSpeed + ItemBonusStats.MovementSpeed + CampSpeedBonus; }
 
 	// NavMesh-based movement: paths around structures/terrain via the AIController
 	// (falls back to straight steering if no navmesh/path). Throttled so it doesn't
@@ -261,6 +338,8 @@ private:
 
 	// Tower awareness: is a position inside an enemy (FoeTeam) tower's range?
 	bool IsPositionUnderEnemyTower(const FVector& Position) const;
+	// The living FoeTeam tower whose range covers Position (nearest), or null.
+	ASkylandersTower* FindEnemyTowerCovering(const FVector& Position) const;
 
 	// Check if chasing a target would put us under an enemy tower
 	bool WouldChaseIntoEnemyTower(AActor* Target) const;

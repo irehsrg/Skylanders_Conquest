@@ -20,6 +20,11 @@ SKELETON_PATH = "/Game/Characters/%s/Models/%s_Skeleton" % (CHAR, CHAR)
 
 asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
 
+# Route FBX through the legacy importer: Interchange raises on the rip's extra
+# bone tracks ("Unable to retrieve bone index for track: BehaviorHack") and
+# aborts the whole script. The legacy path skips unknown tracks.
+unreal.SystemLibrary.execute_console_command(None, "Interchange.FeatureFlags.Import.FBX 0")
+
 skeleton = unreal.EditorAssetLibrary.load_asset(SKELETON_PATH)
 if not skeleton:
     unreal.log_error("No skeleton at " + SKELETON_PATH)
@@ -55,8 +60,12 @@ for fbx in files:
         anim_options.set_editor_property("remove_redundant_keys", False)
     task.set_editor_property("options", options)
 
-    asset_tools.import_asset_tasks([task])
-    paths = list(task.get_editor_property("imported_object_paths"))
+    paths = []
+    try:
+        asset_tools.import_asset_tasks([task])
+        paths = list(task.get_editor_property("imported_object_paths"))
+    except Exception as e:  # one bad clip must not abort the batch
+        unreal.log_warning("  %s: %s" % (fbx, e))
     if paths:
         ok.append(os.path.splitext(fbx)[0])
     else:

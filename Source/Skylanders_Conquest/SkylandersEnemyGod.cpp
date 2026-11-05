@@ -15,6 +15,7 @@
 #include "SkylandersMinion.h"
 #include "SkylandersTower.h"
 #include "SkylandersTitan.h"
+#include "SkylandersBuffCamp.h"
 #include "SkylandersDamageNumber.h"
 #include "SkylandersItemCatalog.h"
 #include "Components/CapsuleComponent.h"
@@ -254,7 +255,7 @@ void ASkylandersEnemyGod::Tick(float DeltaTime)
 		AggroRange = FMath::Min(2000.0f, AggroRange + 30.0f);
 		// Movement speed scaling (cap at 600)
 		MoveSpeed = FMath::Min(600.0f, MoveSpeed + 5.0f);
-		GetCharacterMovement()->MaxWalkSpeed = MoveSpeed + ItemBonusStats.MovementSpeed;
+		GetCharacterMovement()->MaxWalkSpeed = GetWalkSpeed();
 		// Scale rewards with level
 		XPReward = 300.0f + (Level - 1) * 30.0f;
 		CoinReward = 150 + (Level - 1) * 15;
@@ -272,6 +273,9 @@ void ASkylandersEnemyGod::Tick(float DeltaTime)
 	{
 		AbilityCooldownTimer -= DeltaTime;
 	}
+
+	// === Camp buff expiry ===
+	ExpireCampBuffs(false);
 
 	// === AI ===
 	UpdateAI(DeltaTime);
@@ -294,6 +298,10 @@ void ASkylandersEnemyGod::TickPassiveRegen(float DeltaTime)
 	CurrentHealth = FMath::Min(CurrentHealth + HpRegen, EffMaxHealth);
 
 	float MpRegen = (EffMaxMana * MpRegenRate + ItemBonusStats.ManaRegen) * DeltaTime;
+	if (ManaBuffExpire > 0.0f)
+	{
+		MpRegen *= 2.0f; // blue buff: +100% mana regen, same as the player's
+	}
 	CurrentMana = FMath::Min(CurrentMana + MpRegen, EffMaxMana);
 }
 
@@ -332,27 +340,123 @@ float ASkylandersEnemyGod::GetCooldownMultiplier() const
 	return 1.0f - FMath::Clamp(ItemBonusStats.CooldownReduction, 0.0f, 0.40f);
 }
 
+// ========== CAMP BUFFS ==========
+
+bool ASkylandersEnemyGod::HasCampBuff(EBuffType Type) const
+{
+	switch (Type)
+	{
+	case EBuffType::Damage: return DamageBuffExpire > 0.0f;
+	case EBuffType::Speed:  return SpeedBuffExpire > 0.0f;
+	case EBuffType::Mana:   return ManaBuffExpire > 0.0f;
+	default:                return false;
+	}
+}
+
+void ASkylandersEnemyGod::ApplyCampBuff(EBuffType Type, float DamageMultiplier, float Duration, int32 Coins, const FString& CampName)
+{
+	const float Expire = GetWorld()->GetTimeSeconds() + Duration;
+	Gold += Coins;
+	SKY_COUNT("god_camp_kill");
+
+	// Same magnitudes as the player's camp buffs. Re-killing a camp whose buff is
+	// still active only refreshes the timer; the bonus is applied once.
+	FString BuffDesc = TEXT("no buff");
+	switch (Type)
+	{
+	case EBuffType::Damage:
+		if (DamageBuffExpire <= 0.0f)
+		{
+			// Both damage paths: AttackDamage (basic attacks) and BasePower (ability)
+			CampAttackBonus = AttackDamage * (DamageMultiplier - 1.0f);
+			CampPowerBonus = BasePower * (DamageMultiplier - 1.0f);
+			AttackDamage += CampAttackBonus;
+			BasePower += CampPowerBonus;
+		}
+		DamageBuffExpire = Expire;
+		BuffDesc = FString::Printf(TEXT("+%.0f%% damage"), (DamageMultiplier - 1.0f) * 100.0f);
+		break;
+	case EBuffType::Speed:
+		if (SpeedBuffExpire <= 0.0f)
+		{
+			CampSpeedBonus = MoveSpeed * 0.30f;
+		}
+		SpeedBuffExpire = Expire;
+		GetCharacterMovement()->MaxWalkSpeed = GetWalkSpeed();
+		BuffDesc = TEXT("+30% movement speed");
+		break;
+	case EBuffType::Mana:
+		ManaBuffExpire = Expire; // TickPassiveRegen doubles mana regen while set
+		BuffDesc = TEXT("+100% mana regen");
+		break;
+	default:
+		break;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("God '%s' (%s) cleared '%s': +%d gold, %s for %.0fs"),
+		*GodName, Team == ETowerTeam::Enemy ? TEXT("red") : TEXT("blue"), *CampName, Coins, *BuffDesc, Duration);
+	USkylandersKillFeedWidget::Post(this, FString::Printf(TEXT("%s took %s"), *GodName, *CampName),
+		Team == ETowerTeam::Enemy ? FLinearColor(1.0f, 0.5f, 0.3f) : FLinearColor(0.4f, 0.8f, 1.0f));
+}
+
+void ASkylandersEnemyGod::ExpireCampBuffs(bool bForceAll)
+{
+	const float Now = GetWorld()->GetTimeSeconds();
+	auto Due = [&](float Expire) { return Expire > 0.0f && (bForceAll || Now >= Expire); };
+
+	// Subtract exactly what was added, so level-ups during the buff are kept
+	if (Due(DamageBuffExpire))
+	{
+		AttackDamage = FMath::Max(AttackDamage - CampAttackBonus, 0.0f);
+		BasePower = FMath::Max(BasePower - CampPowerBonus, 0.0f);
+		CampAttackBonus = 0.0f;
+		CampPowerBonus = 0.0f;
+		DamageBuffExpire = 0.0f;
+		UE_LOG(LogTemp, Log, TEXT("God '%s' damage buff ended"), *GodName);
+	}
+	if (Due(SpeedBuffExpire))
+	{
+		CampSpeedBonus = 0.0f;
+		SpeedBuffExpire = 0.0f;
+		GetCharacterMovement()->MaxWalkSpeed = GetWalkSpeed();
+		UE_LOG(LogTemp, Log, TEXT("God '%s' speed buff ended"), *GodName);
+	}
+	if (Due(ManaBuffExpire))
+	{
+		ManaBuffExpire = 0.0f;
+		UE_LOG(LogTemp, Log, TEXT("God '%s' mana buff ended"), *GodName);
+	}
+}
+
 // ========== TOWER AWARENESS ==========
 
-bool ASkylandersEnemyGod::IsPositionUnderEnemyTower(const FVector& Position) const
+ASkylandersTower* ASkylandersEnemyGod::FindEnemyTowerCovering(const FVector& Position) const
 {
 	// Towers of the opposing team — this god should not dive into these.
 	TArray<AActor*> AllTowers;
 	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersTower::StaticClass(), AllTowers);
 
+	ASkylandersTower* Nearest = nullptr;
+	float NearestDist = TNumericLimits<float>::Max();
 	for (AActor* TowerActor : AllTowers)
 	{
 		ASkylandersTower* Tower = Cast<ASkylandersTower>(TowerActor);
 		if (Tower && Tower->Team == FoeTeam() && !Tower->bDestroyed)
 		{
 			float DistToTower = FVector::Dist(Position, Tower->GetActorLocation());
-			if (DistToTower < Tower->AttackRange)
+			if (DistToTower < Tower->AttackRange && DistToTower < NearestDist)
 			{
-				return true;
+				NearestDist = DistToTower;
+				Nearest = Tower;
 			}
 		}
 	}
-	return false;
+	return Nearest;
+}
+
+bool ASkylandersEnemyGod::IsPositionUnderEnemyTower(const FVector& Position) const
+{
+	return FindEnemyTowerCovering(Position) != nullptr;
 }
 
 bool ASkylandersEnemyGod::WouldChaseIntoEnemyTower(AActor* Target) const
@@ -462,7 +566,7 @@ void ASkylandersEnemyGod::RecalculateItemBonuses()
 	ItemBonusStats = NewStats;
 
 	// Apply movement speed from items
-	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed + ItemBonusStats.MovementSpeed;
+	GetCharacterMovement()->MaxWalkSpeed = GetWalkSpeed();
 
 	UE_LOG(LogTemp, Log, TEXT("Enemy God '%s' item bonuses: +%.0f Power, +%.0f HP, +%.0f Protections, +%.0f Speed, +%.0f%% Crit, +%.0f%% Lifesteal, +%.0f%% CDR, +%.0f Pen"),
 		*GodName, ItemBonusStats.Power, ItemBonusStats.MaxHealth, ItemBonusStats.Protections,
@@ -507,6 +611,57 @@ ASkylandersMinion* ASkylandersEnemyGod::FindNearestEnemyMinion(float SearchRadiu
 	return Nearest;
 }
 
+ASkylandersMinion* ASkylandersEnemyGod::FindWeakestEnemyMinion(float Radius)
+{
+	TArray<AActor*> AllMinions;
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
+
+	ASkylandersMinion* Weakest = nullptr;
+	float WeakestHp = TNumericLimits<float>::Max();
+	for (AActor* Actor : AllMinions)
+	{
+		ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
+		if (Minion && Minion->Team == FoeTeam() && !Minion->bDead
+			&& FVector::Dist(GetActorLocation(), Minion->GetActorLocation()) <= Radius
+			&& Minion->CurrentHealth < WeakestHp)
+		{
+			WeakestHp = Minion->CurrentHealth;
+			Weakest = Minion;
+		}
+	}
+	return Weakest;
+}
+
+int32 ASkylandersEnemyGod::CountOwnMinionsNear(const FVector& Pos, float Radius) const
+{
+	TArray<AActor*> AllMinions;
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), AllMinions);
+
+	int32 Count = 0;
+	for (AActor* Actor : AllMinions)
+	{
+		ASkylandersMinion* Minion = Cast<ASkylandersMinion>(Actor);
+		if (Minion && Minion->Team == Team && !Minion->bDead && FVector::Dist(Pos, Minion->GetActorLocation()) < Radius)
+		{
+			Count++;
+		}
+	}
+	return Count;
+}
+
+bool ASkylandersEnemyGod::IsHeroAlive(AActor* Hero)
+{
+	if (ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(Hero))
+	{
+		return Player->CurrentHealth > 0.0f;
+	}
+	if (ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Hero))
+	{
+		return God->CurrentState != EGodAIState::Dead;
+	}
+	return false;
+}
+
 float ASkylandersEnemyGod::GetHeroHealthPct(AActor* Hero)
 {
 	if (ASkylandersCharacter* Player = Cast<ASkylandersCharacter>(Hero))
@@ -521,27 +676,20 @@ float ASkylandersEnemyGod::GetHeroHealthPct(AActor* Hero)
 	return 0.0f;
 }
 
-// Nearest living opposing hero: for an enemy god that's the player plus any
+// Every living opposing hero: for an enemy god that's the player plus any
 // friendly ally gods; for a friendly ally that's the enemy gods.
-AActor* ASkylandersEnemyGod::FindEnemyHero()
+void ASkylandersEnemyGod::GatherEnemyHeroes(TArray<AActor*>& OutHeroes)
 {
-	AActor* Best = nullptr;
-	float BestDist = TNumericLimits<float>::Max();
-
-	// The player is on the Friendly team, so enemy gods count them as a hero.
+	OutHeroes.Reset();
 	if (FoeTeam() == ETowerTeam::Friendly)
 	{
-		if (ASkylandersCharacter* Player = FindPlayer())
+		ASkylandersCharacter* Player = FindPlayer();
+		if (IsHeroAlive(Player))
 		{
-			if (Player->CurrentHealth > 0.0f)
-			{
-				Best = Player;
-				BestDist = FVector::Dist(GetActorLocation(), Player->GetActorLocation());
-			}
+			OutHeroes.Add(Player);
 		}
 	}
 
-	// Opposing gods
 	TArray<AActor*> AllGods;
 	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllGods);
 	for (AActor* Actor : AllGods)
@@ -549,12 +697,26 @@ AActor* ASkylandersEnemyGod::FindEnemyHero()
 		ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Actor);
 		if (God && God != this && God->Team == FoeTeam() && God->CurrentState != EGodAIState::Dead)
 		{
-			float Dist = FVector::Dist(GetActorLocation(), God->GetActorLocation());
-			if (Dist < BestDist)
-			{
-				BestDist = Dist;
-				Best = God;
-			}
+			OutHeroes.Add(God);
+		}
+	}
+}
+
+// Nearest living opposing hero (see GatherEnemyHeroes for who counts).
+AActor* ASkylandersEnemyGod::FindEnemyHero()
+{
+	TArray<AActor*> Heroes;
+	GatherEnemyHeroes(Heroes);
+
+	AActor* Best = nullptr;
+	float BestDist = TNumericLimits<float>::Max();
+	for (AActor* H : Heroes)
+	{
+		const float Dist = FVector::Dist(GetActorLocation(), H->GetActorLocation());
+		if (Dist < BestDist)
+		{
+			BestDist = Dist;
+			Best = H;
 		}
 	}
 	return Best;
@@ -684,40 +846,277 @@ void ASkylandersEnemyGod::FaceTarget(AActor* Target)
 	}
 }
 
+void ASkylandersEnemyGod::SetState(EGodAIState NewState)
+{
+	// Single choke point for state changes so thrash is measurable: the smoke test
+	// sums god_state_change, and the per-god count is logged at match end.
+	if (CurrentState == NewState) return;
+	CurrentState = NewState;
+	StateChangeCount++;
+	SKY_COUNT("god_state_change");
+}
+
+AActor* ASkylandersEnemyGod::SelectFightTarget(float Now)
+{
+	// A target is usable while it lives, stays inside our leash and is not sitting
+	// under one of its own towers (chasing it there is a dive).
+	auto IsUsable = [&](AActor* H)
+	{
+		return IsHeroAlive(H) && !WouldChaseIntoEnemyTower(H)
+			&& FVector::Dist(GetActorLocation(), H->GetActorLocation()) <= FightLeash;
+	};
+
+	AActor* Current = FightTarget.Get();
+	const bool bCurrentUsable = Current && IsUsable(Current);
+
+	// Commit to a fresh target for a moment: re-picking every tick made gods
+	// flicker between two foes and never finish either.
+	if (bCurrentUsable && Now - FightTargetSince < MinTargetCommitSeconds)
+	{
+		return Current;
+	}
+
+	// SMITE AI "focus the squishy": among heroes we can already hit, the lowest
+	// health fraction; if none is in range, the nearest one inside the leash.
+	TArray<AActor*> Heroes;
+	GatherEnemyHeroes(Heroes);
+	AActor* Best = nullptr;
+	bool bBestInRange = false;
+	float BestPct = 2.0f;
+	float BestDist = TNumericLimits<float>::Max();
+	for (AActor* H : Heroes)
+	{
+		if (!IsUsable(H)) continue;
+		const float Dist = FVector::Dist(GetActorLocation(), H->GetActorLocation());
+		const bool bInRange = Dist <= AttackRange;
+		const float Pct = GetHeroHealthPct(H);
+		bool bBetter = false;
+		if (!Best || (bInRange && !bBestInRange))
+		{
+			bBetter = true;
+		}
+		else if (bInRange == bBestInRange)
+		{
+			bBetter = bInRange ? (Pct < BestPct) : (Dist < BestDist);
+		}
+		if (bBetter)
+		{
+			Best = H;
+			bBestInRange = bInRange;
+			BestPct = Pct;
+			BestDist = Dist;
+		}
+	}
+
+	if (Best != Current)
+	{
+		FightTarget = Best;
+		FightTargetSince = Now;
+	}
+	return Best;
+}
+
+void ASkylandersEnemyGod::BeginFighting(AActor* Target, float Leash)
+{
+	FightTarget = Target;
+	FightTargetSince = GetWorld()->GetTimeSeconds();
+	FightLeash = Leash;
+	JungleTarget = nullptr;
+	SetState(EGodAIState::Fighting);
+}
+
+bool ASkylandersEnemyGod::TryAllyAssist(float Now, float HealthPct)
+{
+	if (Team != ETowerTeam::Friendly || HealthPct < 0.4f) return false;
+
+	ASkylandersCharacter* Player = FindPlayer();
+	if (!IsHeroAlive(Player)) return false;
+	if (FVector::Dist(GetActorLocation(), Player->GetActorLocation()) > 2500.0f) return false;
+
+	const float FightWindow = 4.0f;
+
+	// Took hero damage recently (the player's own assist bookkeeping)...
+	bool bPlayerFighting = false;
+	for (const TPair<TWeakObjectPtr<AActor>, float>& Hit : Player->RecentHeroDamagers)
+	{
+		if (Hit.Key.IsValid() && Now - Hit.Value <= FightWindow)
+		{
+			bPlayerFighting = true;
+			break;
+		}
+	}
+
+	// ...or dealt it: every enemy god records the player when it gets hit.
+	TArray<AActor*> AllGods;
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), AllGods);
+	if (!bPlayerFighting)
+	{
+		for (AActor* Actor : AllGods)
+		{
+			ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Actor);
+			if (!God || God->Team != FoeTeam() || God->CurrentState == EGodAIState::Dead) continue;
+			const float* HitTime = God->RecentHeroDamagers.Find(TWeakObjectPtr<AActor>(Player));
+			if (HitTime && Now - *HitTime <= FightWindow)
+			{
+				bPlayerFighting = true;
+				break;
+			}
+		}
+	}
+	if (!bPlayerFighting) return false;
+
+	// Whoever is hitting the player (if that is a live enemy god and the hit is
+	// recent), else the enemy god nearest the player.
+	AActor* Target = nullptr;
+	if (ASkylandersEnemyGod* Attacker = Cast<ASkylandersEnemyGod>(Player->LastDamageCauser.Get()))
+	{
+		const float* HitTime = Player->RecentHeroDamagers.Find(TWeakObjectPtr<AActor>(Attacker));
+		if (Attacker->Team == FoeTeam() && Attacker->CurrentState != EGodAIState::Dead
+			&& HitTime && Now - *HitTime <= FightWindow)
+		{
+			Target = Attacker;
+		}
+	}
+	if (!Target)
+	{
+		float BestDist = 1500.0f;
+		for (AActor* Actor : AllGods)
+		{
+			ASkylandersEnemyGod* God = Cast<ASkylandersEnemyGod>(Actor);
+			if (!God || God->Team != FoeTeam() || God->CurrentState == EGodAIState::Dead) continue;
+			const float Dist = FVector::Dist(Player->GetActorLocation(), God->GetActorLocation());
+			if (Dist < BestDist)
+			{
+				BestDist = Dist;
+				Target = God;
+			}
+		}
+	}
+
+	// Allies still never dive towers for the player
+	if (!Target || WouldChaseIntoEnemyTower(Target)) return false;
+
+	// The fight can be up to ~4000 away (2500 to the player + 1500 to the foe), so
+	// widen the leash or Fighting would drop it on the very next tick.
+	BeginFighting(Target, 4000.0f);
+	SKY_COUNT("ally_assist_engage");
+	UE_LOG(LogTemp, Log, TEXT("Ally god '%s' joins the player's fight against '%s'"), *GodName, *Cast<ASkylandersEnemyGod>(Target)->GodName);
+	return true;
+}
+
+void ASkylandersEnemyGod::EnterTowerBackoff(ASkylandersTower* Tower)
+{
+	const FVector Loc = GetActorLocation();
+	const FVector TowerLoc = Tower->GetActorLocation();
+	BackoffTower = Tower;
+	BackoffStartTime = GetWorld()->GetTimeSeconds();
+	// Straight back down the lane toward our own base, to just outside the tower's
+	// range plus a margin, so a small shove or a minion body can't nudge us back in.
+	BackoffHoldPoint = FVector(TowerLoc.X - LaneSign() * (Tower->AttackRange + TowerBackoffMargin), Loc.Y, Loc.Z);
+	FightTarget = nullptr;
+	JungleTarget = nullptr;
+	SetState(EGodAIState::TowerBackoff);
+	SKY_COUNT("god_tower_backoff");
+	UE_LOG(LogTemp, Verbose, TEXT("God '%s' backing off '%s' to X=%.0f"), *GodName, *Tower->TowerName, BackoffHoldPoint.X);
+}
+
+ASkylandersBuffCamp* ASkylandersEnemyGod::FindJungleCamp(float MaxDist) const
+{
+	TArray<AActor*> Camps;
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersBuffCamp::StaticClass(), Camps);
+	TArray<AActor*> Gods;
+	USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersEnemyGod::StaticClass(), Gods);
+
+	ASkylandersBuffCamp* Best = nullptr;
+	float BestDist = MaxDist;
+	for (AActor* Actor : Camps)
+	{
+		ASkylandersBuffCamp* Camp = Cast<ASkylandersBuffCamp>(Actor);
+		if (!Camp || Camp->bDead || Camp->BuffType == EBuffType::None) continue;
+		// The boss camp (Golden Queen, 2500 HP) is a team objective, not a solo clear
+		if (Camp->MaxHealth > 1000.0f) continue;
+		if (HasCampBuff(Camp->BuffType)) continue;
+		if (IsPositionUnderEnemyTower(Camp->HomeLocation)) continue;
+
+		// One god per team per camp, so the whole team doesn't leave lane for it
+		bool bTaken = false;
+		for (AActor* GodActor : Gods)
+		{
+			const ASkylandersEnemyGod* Mate = Cast<ASkylandersEnemyGod>(GodActor);
+			if (Mate && Mate != this && Mate->Team == Team && Mate->CurrentState == EGodAIState::Jungling
+				&& Mate->JungleTarget.Get() == Camp)
+			{
+				bTaken = true;
+				break;
+			}
+		}
+		if (bTaken) continue;
+
+		const float Dist = FVector::Dist2D(GetActorLocation(), Camp->HomeLocation);
+		if (Dist < BestDist)
+		{
+			BestDist = Dist;
+			Best = Camp;
+		}
+	}
+	return Best;
+}
+
+bool ASkylandersEnemyGod::TryStartJungling(float MaxDist)
+{
+	const float Now = GetWorld()->GetTimeSeconds();
+	if (Now < NextJungleTime) return false;
+
+	ASkylandersBuffCamp* Camp = FindJungleCamp(MaxDist);
+	if (!Camp) return false;
+
+	JungleTarget = Camp;
+	JungleStartTime = Now;
+	JungleProgressTime = Now;
+	JungleBestDist = FVector::Dist(GetActorLocation(), Camp->GetActorLocation());
+	bJungleSteerDirect = false;
+	FightTarget = nullptr;
+	SetState(EGodAIState::Jungling);
+	SKY_COUNT("god_jungle_start");
+	UE_LOG(LogTemp, Log, TEXT("God '%s' goes to clear '%s'"), *GodName, *Camp->CampName);
+	return true;
+}
+
 void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 {
-	// The opposing hero this god fights (player for an enemy god; an enemy god for
-	// a friendly ally). FindEnemyHero only returns living heroes.
+	const float Now = GetWorld()->GetTimeSeconds();
+
+	// The nearest opposing hero (player for an enemy god; an enemy god for a
+	// friendly ally). FindEnemyHero only returns living heroes. Fighting picks its
+	// own target via SelectFightTarget; this one drives engage/cornered checks.
 	AActor* Hero = FindEnemyHero();
 	float DistToHero = Hero ? FVector::Dist(GetActorLocation(), Hero->GetActorLocation()) : 99999.0f;
 	bool bHeroAlive = Hero != nullptr;
 	float EffMaxHealth = MaxHealth + ItemBonusStats.MaxHealth;
 	float HealthPct = (EffMaxHealth > 0.0f) ? (CurrentHealth / EffMaxHealth) : 0.0f;
 
+	// Low-HP retreat threshold (gets braver as it levels up, min 15%)
+	const float RetreatThreshold = FMath::Max(0.15f, 0.30f - Level * 0.01f);
+
 	// === Item purchasing (any state, checks distance to base internally) ===
 	TryPurchaseItems();
 
 	// Respect enemy towers: if caught inside one without a real minion wave for
-	// cover, retreat instead of feeding. Towers now shoot gods, so diving solo is
-	// a death sentence.
-	if (CurrentState != EGodAIState::Retreating && IsPositionUnderEnemyTower(GetActorLocation()))
+	// cover, back off instead of feeding. Towers shoot gods, so diving solo is a
+	// death sentence. This is a tower back-off, not the low-health Retreating:
+	// it holds just outside range, so the two can't ping-pong (the old version
+	// flipped to Retreating, instantly "recovered" at >= 60% HP, stepped back in,
+	// and repeated many times per second).
+	if (CurrentState == EGodAIState::Laning || CurrentState == EGodAIState::Fighting || CurrentState == EGodAIState::Jungling)
 	{
-		int32 Cover = 0;
-		TArray<AActor*> Ms;
-		USkylandersActorRegistry::GetAllActorsOfClass(GetWorld(), ASkylandersMinion::StaticClass(), Ms);
-		for (AActor* A : Ms)
+		if (ASkylandersTower* Tower = FindEnemyTowerCovering(GetActorLocation()))
 		{
-			ASkylandersMinion* M = Cast<ASkylandersMinion>(A);
-			if (M && M->Team == Team && !M->bDead && FVector::Dist(GetActorLocation(), M->GetActorLocation()) < 900.0f)
+			const int32 Cover = CountOwnMinionsNear(GetActorLocation(), 900.0f);
+			if (Cover < TowerCoverMinions)
 			{
-				Cover++;
+				EnterTowerBackoff(Tower);
+				return;
 			}
-		}
-		if (Cover < 3)
-		{
-			CurrentState = EGodAIState::Retreating;
-			UE_LOG(LogTemp, Verbose, TEXT("God '%s' backing off an enemy tower (cover %d)"), *GodName, Cover);
-			return;
 		}
 	}
 
@@ -725,6 +1124,15 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 	{
 	case EGodAIState::Laning:
 	{
+		// Low health: walk home to heal before minion/tower chip damage finishes us
+		// (Laning used to have no exit for this and gods bled out in lane).
+		if (HealthPct < FMath::Max(0.25f, RetreatThreshold))
+		{
+			SetState(EGodAIState::Retreating);
+			UE_LOG(LogTemp, Log, TEXT("God '%s' low in lane (%.0f%%), heading home"), *GodName, HealthPct * 100.0f);
+			break;
+		}
+
 		// Nearest opposing minion to farm. Search out to AggroRange (wider than
 		// AttackRange) so the god actually walks up to the wave — searching only
 		// AttackRange made the approach branch below unreachable, and the god
@@ -785,6 +1193,13 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 				{
 					MoveToPoint(TargetPos, AttackRange * 0.85f, 1.0f);
 				}
+				else
+				{
+					// Not calling MoveToPoint isn't enough: the AIController keeps
+					// following the previous path, which is how gods kept walking
+					// into tower range. Halt it.
+					StopMoving();
+				}
 			}
 		}
 		else
@@ -835,6 +1250,7 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 				if (NearestStructureDist <= AttackRange)
 				{
 					FaceTarget(TargetStructure);
+					StopMoving();
 					if (AttackTimer <= 0.0f)
 					{
 						PerformAttack(TargetStructure);
@@ -847,6 +1263,10 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 					if (!IsPositionUnderEnemyTower(TargetPos))
 					{
 						MoveToPoint(TargetPos, AttackRange * 0.85f, 0.8f);
+					}
+					else
+					{
+						StopMoving();
 					}
 				}
 			}
@@ -864,11 +1284,17 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 					// around our own base structures instead of bumping into them.
 					MoveToPoint(GetActorLocation() + LaneDir * 2500.0f, 150.0f, 0.5f);
 				}
+				else
+				{
+					// The goal above is 2500 ahead: without an explicit stop the
+					// path carried the god past this check straight into tower range.
+					StopMoving();
+				}
 			}
 		}
 
 		// Check if a hero is close and we have enough HP to fight
-		if (bHeroAlive && DistToHero <= AggroRange && HealthPct > 0.5f)
+		if (bHeroAlive && DistToHero <= AggroRange && HealthPct > 0.5f && Now >= NextEngageTime)
 		{
 			// Tower awareness: don't engage a hero under their tower
 			if (!WouldChaseIntoEnemyTower(Hero))
@@ -878,11 +1304,24 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 
 				if (DistToHero <= AggroRange * 0.7f || bFoeVulnerable)
 				{
-					CurrentState = EGodAIState::Fighting;
+					BeginFighting(Hero, FMath::Max(1500.0f, AggroRange));
 					UE_LOG(LogTemp, Verbose, TEXT("God '%s' engages a hero! Distance: %.0f, FoeHP: %.0f%%"),
 						*GodName, DistToHero, FoeHealthPct * 100.0f);
+					break;
 				}
 			}
+		}
+
+		// Blue allies group up with the player when the player is in a fight
+		if (TryAllyAssist(Now, HealthPct))
+		{
+			break;
+		}
+
+		// Objective play: a nearby buff camp we don't hold the buff of
+		if (HealthPct >= 0.6f && TryStartJungling(2500.0f))
+		{
+			break;
 		}
 
 		break;
@@ -890,47 +1329,30 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 
 	case EGodAIState::Fighting:
 	{
-		if (!bHeroAlive)
-		{
-			CurrentState = EGodAIState::Laning;
-			UE_LOG(LogTemp, Verbose, TEXT("God '%s' returns to laning - no hero."), *GodName);
-			break;
-		}
-
-		// Disengage if the hero is too far
-		if (DistToHero > 1500.0f)
-		{
-			CurrentState = EGodAIState::Laning;
-			UE_LOG(LogTemp, Verbose, TEXT("God '%s' lost aggro, returning to lane."), *GodName);
-			break;
-		}
-
-		// Retreat if low HP (gets braver as it levels up, min 15%)
-		float RetreatThreshold = FMath::Max(0.15f, 0.30f - Level * 0.01f);
+		// Retreat if low HP
 		if (HealthPct < RetreatThreshold)
 		{
-			CurrentState = EGodAIState::Retreating;
+			SetState(EGodAIState::Retreating);
 			UE_LOG(LogTemp, Warning, TEXT("God '%s' retreating! HP: %.0f/%.0f (%.0f%%)"),
 				*GodName, CurrentHealth, EffMaxHealth, HealthPct * 100.0f);
 			break;
 		}
 
-		// Tower awareness: back off if chasing would put us under an enemy tower
-		if (WouldChaseIntoEnemyTower(Hero))
+		// Lowest-health hero in range (committed for MinTargetCommitSeconds). It
+		// never returns a hero under an enemy tower, so "no target" also covers
+		// the old "hero is under tower, disengage" case; standing under a tower
+		// ourselves is caught by the back-off check above.
+		AActor* Target = SelectFightTarget(Now);
+		if (!Target)
 		{
-			if (IsPositionUnderEnemyTower(GetActorLocation()))
-			{
-				CurrentState = EGodAIState::Retreating;
-				UE_LOG(LogTemp, Warning, TEXT("God '%s' retreating - under enemy tower!"), *GodName);
-				break;
-			}
-			else
-			{
-				CurrentState = EGodAIState::Laning;
-				UE_LOG(LogTemp, Verbose, TEXT("God '%s' disengaging - hero is under tower."), *GodName);
-				break;
-			}
+			// Brief re-engage cooldown: a foe stepping in and out of its tower's
+			// range would otherwise flip Laning <-> Fighting every few frames.
+			NextEngageTime = Now + 1.5f;
+			SetState(EGodAIState::Laning);
+			UE_LOG(LogTemp, Verbose, TEXT("God '%s' returns to laning - no reachable hero."), *GodName);
+			break;
 		}
+		const float DistToTarget = FVector::Dist(GetActorLocation(), Target->GetActorLocation());
 
 		// Last-hit low-HP minions for gold even during fights
 		ASkylandersMinion* NearMinion = FindNearestEnemyMinion();
@@ -949,15 +1371,15 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 		}
 
 		// Chase and kite: approach when attack is ready, back off when on cooldown
-		FaceTarget(Hero);
-		if (DistToHero > AttackRange)
+		FaceTarget(Target);
+		if (DistToTarget > AttackRange)
 		{
-			MoveToPoint(Hero->GetActorLocation(), AttackRange * 0.85f, 1.0f);
+			MoveToPoint(Target->GetActorLocation(), AttackRange * 0.85f, 1.0f);
 		}
-		else if (DistToHero < AttackRange * 0.4f && AttackTimer > 0.0f)
+		else if (DistToTarget < AttackRange * 0.4f && AttackTimer > 0.0f)
 		{
 			// Kite straight back a short hop (no pathfinding needed for a nudge)
-			FVector AwayDir = (GetActorLocation() - Hero->GetActorLocation()).GetSafeNormal2D();
+			FVector AwayDir = (GetActorLocation() - Target->GetActorLocation()).GetSafeNormal2D();
 			AddMovementInput(AwayDir, 0.6f);
 		}
 		else
@@ -966,26 +1388,158 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 		}
 
 		// Auto-attack
-		if (DistToHero <= AttackRange && AttackTimer <= 0.0f)
+		if (DistToTarget <= AttackRange && AttackTimer <= 0.0f)
 		{
-			PerformAttack(Hero);
+			PerformAttack(Target);
 			AttackTimer = AttackCooldown;
 		}
 
 		// Use ability (burst damage every 8 seconds)
-		if (AbilityCooldownTimer <= 0.0f && DistToHero <= AttackRange)
+		if (AbilityCooldownTimer <= 0.0f && DistToTarget <= AttackRange)
 		{
-			UseAbility();
+			UseAbility(Target);
 			AbilityCooldownTimer = 8.0f * GetCooldownMultiplier();
 		}
 
 		break;
 	}
 
+	case EGodAIState::TowerBackoff:
+	{
+		if (HealthPct < RetreatThreshold)
+		{
+			SetState(EGodAIState::Retreating);
+			break;
+		}
+
+		ASkylandersTower* Tower = BackoffTower.Get();
+		const bool bTowerGone = !Tower || Tower->bDestroyed;
+		if (!bTowerGone)
+		{
+			MoveToPoint(BackoffHoldPoint, 100.0f, 1.0f);
+		}
+
+		// Keep farming from the hold point: last-hit the weakest minion in reach,
+		// else poke an exposed hero that wandered into range.
+		if (AttackTimer <= 0.0f)
+		{
+			if (ASkylandersMinion* Minion = FindWeakestEnemyMinion(AttackRange))
+			{
+				FaceTarget(Minion);
+				PerformAttack(Minion);
+				AttackTimer = AttackCooldown;
+			}
+			else if (bHeroAlive && DistToHero <= AttackRange && !WouldChaseIntoEnemyTower(Hero))
+			{
+				FaceTarget(Hero);
+				PerformAttack(Hero);
+				AttackTimer = AttackCooldown;
+			}
+		}
+
+		// Hysteresis: hold for a minimum time, then re-enter only with a wave to
+		// tank the tower or once the tower is down.
+		if (Now - BackoffStartTime >= TowerBackoffMinHold)
+		{
+			const int32 Cover = CountOwnMinionsNear(GetActorLocation(), 900.0f);
+			if (bTowerGone || Cover >= TowerCoverMinions)
+			{
+				SetState(EGodAIState::Laning);
+				UE_LOG(LogTemp, Verbose, TEXT("God '%s' ends tower back-off (cover %d, tower %s)"),
+					*GodName, Cover, bTowerGone ? TEXT("down") : TEXT("up"));
+				break;
+			}
+
+			// Lane is pushed into their tower with no wave to tank it: take a
+			// buff camp instead of idling outside the tower.
+			if (HealthPct >= 0.6f && TryStartJungling(6000.0f))
+			{
+				break;
+			}
+		}
+		break;
+	}
+
+	case EGodAIState::Jungling:
+	{
+		ASkylandersBuffCamp* Camp = JungleTarget.Get();
+		if (!Camp || Camp->bDead)
+		{
+			// Cleared (by us or anyone else) or gone
+			JungleTarget = nullptr;
+			NextJungleTime = Now + 10.0f;
+			SetState(EGodAIState::Laning);
+			break;
+		}
+		if (HealthPct < RetreatThreshold)
+		{
+			JungleTarget = nullptr;
+			NextJungleTime = Now + 20.0f;
+			SetState(EGodAIState::Retreating);
+			break;
+		}
+		// Give up on a camp we can't reach or finish (blocked path, contested)
+		// rather than standing in the jungle forever.
+		if (Now - JungleStartTime > 40.0f)
+		{
+			UE_LOG(LogTemp, Log, TEXT("God '%s' gives up on '%s'"), *GodName, *Camp->CampName);
+			JungleTarget = nullptr;
+			NextJungleTime = Now + 30.0f;
+			SetState(EGodAIState::Laning);
+			break;
+		}
+
+		// The camp only takes hits from attackers inside its leash, so stand well
+		// within both the leash (from its home) and our attack range (from it).
+		const float DistToCamp = FVector::Dist(GetActorLocation(), Camp->GetActorLocation());
+		const float DistFromHome = FVector::Dist(GetActorLocation(), Camp->HomeLocation);
+		if (DistToCamp > AttackRange * 0.9f || DistFromHome > Camp->LeashRange * 0.8f)
+		{
+			// Progress check: the navmesh path to the center damage room can dead-end
+			// (the request "succeeds" with a partial path that ends where we stand,
+			// so the god re-requests forever without moving). If 2 s pass without
+			// getting 150 closer, steer straight at the camp instead.
+			if (Now - JungleProgressTime >= 2.0f)
+			{
+				if (!bJungleSteerDirect && JungleBestDist - DistToCamp < 150.0f)
+				{
+					bJungleSteerDirect = true;
+					StopMoving();
+					SKY_COUNT("god_jungle_steer_direct");
+					UE_LOG(LogTemp, Log, TEXT("God '%s' path to '%s' stalled, steering directly"), *GodName, *Camp->CampName);
+				}
+				JungleBestDist = DistToCamp;
+				JungleProgressTime = Now;
+			}
+
+			if (bJungleSteerDirect)
+			{
+				AddMovementInput((Camp->GetActorLocation() - GetActorLocation()).GetSafeNormal2D(), 1.0f);
+			}
+			else
+			{
+				MoveToPoint(Camp->GetActorLocation(), FMath::Min(AttackRange, Camp->LeashRange) * 0.5f, 1.0f);
+			}
+		}
+		else
+		{
+			JungleProgressTime = Now;
+			JungleBestDist = DistToCamp;
+			StopMoving();
+			FaceTarget(Camp);
+			if (AttackTimer <= 0.0f)
+			{
+				PerformAttack(Camp);
+				AttackTimer = AttackCooldown;
+			}
+		}
+		break;
+	}
+
 	case EGodAIState::Retreating:
 	{
 		// Move back to base at 1.3x speed (navmesh-pathed around structures)
-		GetCharacterMovement()->MaxWalkSpeed = (MoveSpeed + ItemBonusStats.MovementSpeed) * 1.3f;
+		GetCharacterMovement()->MaxWalkSpeed = GetWalkSpeed() * 1.3f;
 		MoveToPoint(BasePosition, 100.0f, 1.0f);
 
 		// Fight back if cornered (hero within 200 units)
@@ -1001,31 +1555,28 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 			// Use ability defensively when cornered
 			if (AbilityCooldownTimer <= 0.0f)
 			{
-				UseAbility();
+				UseAbility(Hero);
 				AbilityCooldownTimer = 8.0f * GetCooldownMultiplier();
 			}
 		}
 
-		// Resume when HP recovers above 50% (but prefer to be near base first)
-		if (HealthPct >= 0.50f)
+		// Low-health retreat ends only once healed (the fountain heals 10%/s), far
+		// above the ~30% entry threshold, so it can't flap. Tower back-offs no
+		// longer come through here at all.
+		if (HealthPct >= 0.90f)
 		{
-			float DistToBase = FVector::Dist(GetActorLocation(), BasePosition);
-			// Only re-engage if healed at base or HP is high enough
-			if (DistToBase < 400.0f || HealthPct >= 0.60f)
-			{
-				GetCharacterMovement()->MaxWalkSpeed = MoveSpeed + ItemBonusStats.MovementSpeed;
-				CurrentState = EGodAIState::Laning;
-				UE_LOG(LogTemp, Verbose, TEXT("Enemy God '%s' recovered, returning to lane. HP: %.0f/%.0f"),
-					*GodName, CurrentHealth, EffMaxHealth);
-				break;
-			}
+			GetCharacterMovement()->MaxWalkSpeed = GetWalkSpeed();
+			SetState(EGodAIState::Laning);
+			UE_LOG(LogTemp, Verbose, TEXT("Enemy God '%s' recovered, returning to lane. HP: %.0f/%.0f"),
+				*GodName, CurrentHealth, EffMaxHealth);
+			break;
 		}
 
 		// If arrived at base, use fountain regen (handled in TickPassiveRegen)
 		float DistToBase = FVector::Dist(GetActorLocation(), BasePosition);
 		if (DistToBase < 100.0f)
 		{
-			GetCharacterMovement()->MaxWalkSpeed = MoveSpeed + ItemBonusStats.MovementSpeed;
+			GetCharacterMovement()->MaxWalkSpeed = GetWalkSpeed();
 			UpdateHealthBar();
 		}
 
@@ -1152,6 +1703,7 @@ void ASkylandersEnemyGod::PerformAttack(AActor* Target)
 	ASkylandersTower* TowerTarget = Cast<ASkylandersTower>(Target);
 	if (TowerTarget)
 	{
+		SKY_COUNT("god_structure_attack");
 		TowerTarget->TakeDamage_Custom(EffectiveDamage, this);
 		return;
 	}
@@ -1159,16 +1711,28 @@ void ASkylandersEnemyGod::PerformAttack(AActor* Target)
 	ASkylandersTitan* TitanTarget = Cast<ASkylandersTitan>(Target);
 	if (TitanTarget)
 	{
+		SKY_COUNT("god_structure_attack");
+		SKY_COUNT("god_titan_attack");
 		TitanTarget->TakeDamage_Custom(EffectiveDamage, this);
+		return;
+	}
+
+	// Neutral buff camp (Jungling). The camp credits the killing god itself and
+	// calls back into ApplyCampBuff.
+	ASkylandersBuffCamp* CampTarget = Cast<ASkylandersBuffCamp>(Target);
+	if (CampTarget)
+	{
+		CampTarget->TakeDamage_Custom(EffectiveDamage, this);
 		return;
 	}
 }
 
 // ========== ABILITY ==========
 
-void ASkylandersEnemyGod::UseAbility()
+void ASkylandersEnemyGod::UseAbility(AActor* Target)
 {
-	AActor* Hero = FindEnemyHero();
+	// Burst the hero we are actually fighting; the nearest one is only a fallback.
+	AActor* Hero = IsHeroAlive(Target) ? Target : FindEnemyHero();
 	if (!Hero) return;
 
 	float DistToHero = FVector::Dist(GetActorLocation(), Hero->GetActorLocation());
@@ -1304,7 +1868,7 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 	// minions attack gods, letting any hit flip the state yanked the god out of
 	// lane on every wave tick. Tested against the resolved attacking pawn rather
 	// than the raw causer so a projectile's own location isn't what gets checked.
-	if (CurrentState == EGodAIState::Laning && LastDamageCauser)
+	if ((CurrentState == EGodAIState::Laning || CurrentState == EGodAIState::Jungling) && LastDamageCauser)
 	{
 		bool bHeroAttacker = false;
 		if (Cast<ASkylandersCharacter>(LastDamageCauser))
@@ -1318,7 +1882,8 @@ void ASkylandersEnemyGod::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 
 		if (bHeroAttacker && !WouldChaseIntoEnemyTower(LastDamageCauser))
 		{
-			CurrentState = EGodAIState::Fighting;
+			// Fight back at whoever hit us (a jungling god drops the camp for it)
+			BeginFighting(LastDamageCauser, FMath::Max(1500.0f, AggroRange));
 			UE_LOG(LogTemp, Verbose, TEXT("God '%s' aggro'd by damage!"), *GodName);
 		}
 	}
@@ -1478,7 +2043,11 @@ void ASkylandersEnemyGod::Die()
 			FLinearColor(1.0f, 0.5f, 0.3f));
 	}
 
-	CurrentState = EGodAIState::Dead;
+	SetState(EGodAIState::Dead);
+	// Camp buffs are lost on death, as in SMITE (and as the player's are)
+	ExpireCampBuffs(true);
+	FightTarget = nullptr;
+	JungleTarget = nullptr;
 	SetActorHiddenInGame(true);
 	SetActorEnableCollision(false);
 
@@ -1501,7 +2070,7 @@ void ASkylandersEnemyGod::RespawnGod()
 	CurrentMana = MaxMana + ItemBonusStats.MaxMana;
 
 	// Reset state
-	CurrentState = EGodAIState::Laning;
+	SetState(EGodAIState::Laning);
 	AttackTimer = 0.0f;
 	AbilityCooldownTimer = 8.0f;
 	LastDamageCauser = nullptr; // Don't let last life's killer credit this one's death
@@ -1513,7 +2082,7 @@ void ASkylandersEnemyGod::RespawnGod()
 	SetActorLocation(BasePosition);
 
 	// Reset speed (include item bonuses)
-	GetCharacterMovement()->MaxWalkSpeed = MoveSpeed + ItemBonusStats.MovementSpeed;
+	GetCharacterMovement()->MaxWalkSpeed = GetWalkSpeed();
 
 	// Reset health bar
 	CachedHealthBar = nullptr;

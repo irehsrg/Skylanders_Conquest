@@ -21,6 +21,8 @@ static FString StateToStr(EGodAIState S)
 	case EGodAIState::Fighting:  return TEXT("fighting");
 	case EGodAIState::Retreating:return TEXT("retreating");
 	case EGodAIState::Dead:      return TEXT("dead");
+	case EGodAIState::TowerBackoff: return TEXT("tower_backoff");
+	case EGodAIState::Jungling:  return TEXT("jungling");
 	default:                     return TEXT("?");
 	}
 }

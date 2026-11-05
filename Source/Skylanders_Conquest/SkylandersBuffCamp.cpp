@@ -10,6 +10,7 @@
 #include "Animation/AnimSequenceBase.h"
 #include "SkylandersKillFeedWidget.h"
 #include "SkylandersCharacter.h"
+#include "SkylandersEnemyGod.h"
 #include "SkylandersDamageNumber.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -261,7 +262,9 @@ void ASkylandersBuffCamp::UpdateAI(float DeltaTime)
 	if (bHasValidTarget)
 	{
 		ASkylandersCharacter* PlayerTarget = Cast<ASkylandersCharacter>(AggroTarget);
-		if (PlayerTarget && PlayerTarget->CurrentHealth <= 0.0f)
+		ASkylandersEnemyGod* GodTarget = Cast<ASkylandersEnemyGod>(AggroTarget);
+		if ((PlayerTarget && PlayerTarget->CurrentHealth <= 0.0f)
+			|| (GodTarget && GodTarget->CurrentState == EGodAIState::Dead))
 		{
 			bHasValidTarget = false;
 			AggroTarget = nullptr;
@@ -365,6 +368,12 @@ void ASkylandersBuffCamp::UpdateAI(float DeltaTime)
 
 				UE_LOG(LogTemp, Verbose, TEXT("Buff Camp '%s' attacked player for %.0f damage!"), *CampName, AttackDamage);
 			}
+			else if (ASkylandersEnemyGod* GodTarget = Cast<ASkylandersEnemyGod>(AggroTarget))
+			{
+				// AI gods jungle too; the camp fights back the same way
+				GodTarget->TakeDamage_Custom(AttackDamage, this);
+				AttackTimer = AttackCooldown;
+			}
 		}
 	}
 	else
@@ -426,6 +435,12 @@ void ASkylandersBuffCamp::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 	{
 		AggroTarget = AttackingPlayer;
 	}
+	else if (ASkylandersEnemyGod* AttackingGod = Cast<ASkylandersEnemyGod>(DmgPawn))
+	{
+		// Without aggro on gods the camp sat at home regenerating 5%/s while a
+		// god hit it, which out-healed an early god's damage.
+		AggroTarget = AttackingGod;
+	}
 
 	CurrentHealth = FMath::Clamp(CurrentHealth - DamageAmount, 0.0f, MaxHealth);
 	USkylandersHitFlashComponent::Flash(this);
@@ -458,6 +473,17 @@ void ASkylandersBuffCamp::TakeDamage_Custom(float DamageAmount, AActor* DamageCa
 		// Store the killing player for buff application
 		BuffedPlayer = KillingPlayer;
 		Die();
+
+		// An AI god landed the last hit: it gets the gold and the buff. The god
+		// owns the buff's lifetime (ApplyCampBuff/ExpireCampBuffs), so the camp's
+		// player-only RemoveBuff timer is not involved.
+		if (!KillingPlayer)
+		{
+			if (ASkylandersEnemyGod* KillingGod = Cast<ASkylandersEnemyGod>(DmgPawn))
+			{
+				KillingGod->ApplyCampBuff(BuffType, BuffDamageMultiplier, BuffDuration, CoinReward, CampName);
+			}
+		}
 	}
 }
 
