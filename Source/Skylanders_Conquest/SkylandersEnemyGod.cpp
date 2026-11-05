@@ -1530,10 +1530,16 @@ void ASkylandersEnemyGod::UpdateAI(float DeltaTime)
 		const float DistFromHome = FVector::Dist(GetActorLocation(), Camp->HomeLocation);
 		if (DistToCamp > AttackRange * 0.9f || DistFromHome > Camp->LeashRange * 0.8f)
 		{
-			// Progress check: the navmesh path to the center damage room can dead-end
-			// (the request "succeeds" with a partial path that ends where we stand,
-			// so the god re-requests forever without moving). If 2 s pass without
-			// getting 150 closer, steer straight at the camp instead.
+			// Progress check, kept as a safety net: if 2 s pass without getting 150
+			// closer, steer straight at the camp instead. It was added for the center
+			// Damage Buff, whose approach looked like a navmesh dead-end. The actual
+			// cause: the camp's own blocking sphere carved a ~120-unit hole in the
+			// navmesh around Camp->GetActorLocation(), so MoveTo could not project
+			// the goal (default extent 50) and returned Failed every tick, and the
+			// path-following immediate-finish zeroed our velocity each time. Fixed
+			// in ASkylandersBuffCamp (body no longer affects navigation); with this
+			// fallback disabled, a 180 s smoke run logged 0 stalls and a god cleared
+			// the Damage Buff through MoveTo alone.
 			if (Now - JungleProgressTime >= 2.0f)
 			{
 				if (!bJungleSteerDirect && JungleBestDist - DistToCamp < 150.0f)

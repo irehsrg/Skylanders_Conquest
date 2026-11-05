@@ -11,6 +11,7 @@
 #include "SkylandersEnemyGod.h"
 #include "SkylandersDamageNumber.h"
 #include "SkylandersVictoryWidget.h"
+#include "SkylandersStructureVisuals.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Components/ProgressBar.h"
@@ -27,35 +28,56 @@ ASkylandersTitan::ASkylandersTitan()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// Large body (big cube/cylinder)
+	// Thick body column (root, keeps the blocking collision). Its footprint stays
+	// close to the old 200x200 box so nothing that walks up to the titan changes.
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
 	RootComponent = BodyMesh;
 	BodyMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
 
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube"));
-	if (CubeMesh.Succeeded())
-	{
-		BodyMesh->SetStaticMesh(CubeMesh.Object);
-		BodyMesh->SetRelativeScale3D(FVector(2.0f, 2.0f, 3.0f)); // Big chunky body
-	}
-
-	// Head on top (sphere)
-	HeadMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HeadMesh"));
-	HeadMesh->SetupAttachment(BodyMesh);
-	HeadMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 220.0f));
-	HeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(TEXT("/Engine/BasicShapes/Cone"));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere"));
-	if (SphereMesh.Succeeded())
+	UStaticMesh* Cyl = CylinderMesh.Succeeded() ? CylinderMesh.Object : nullptr;
+	UStaticMesh* Cone = ConeMesh.Succeeded() ? ConeMesh.Object : nullptr;
+	UStaticMesh* Sphere = SphereMesh.Succeeded() ? SphereMesh.Object : nullptr;
+	if (Cyl)
 	{
-		HeadMesh->SetStaticMesh(SphereMesh.Object);
-		HeadMesh->SetRelativeScale3D(FVector(1.5f, 1.5f, 1.5f));
+		BodyMesh->SetStaticMesh(Cyl);
+		BodyMesh->SetRelativeScale3D(FVector(2.2f, 2.2f, 3.0f));
 	}
 
-	// Health bar
+	// Children hang off VisualRoot, which undoes the root's scale (a child of a
+	// scaled parent inherits it in size AND offset).
+	VisualRoot = CreateDefaultSubobject<USceneComponent>(TEXT("VisualRoot"));
+	VisualRoot->SetupAttachment(BodyMesh);
+
+	// Capital on top of the column (was the sphere head)
+	HeadMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HeadMesh"));
+	HeadMesh->SetupAttachment(VisualRoot);
+	HeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HeadMesh->SetCanEverAffectNavigation(false);
+	if (Cyl) HeadMesh->SetStaticMesh(Cyl);
+
+	CollarMesh = SkyStructVis::MakePart(this, VisualRoot, TEXT("CollarMesh"), Cone);
+	PlinthParts.Add(SkyStructVis::MakePart(this, VisualRoot, TEXT("PlinthLower"), Cyl));
+	PlinthParts.Add(SkyStructVis::MakePart(this, VisualRoot, TEXT("PlinthUpper"), Cyl));
+	static const TCHAR* PillarNames[] = { TEXT("Pillar0"), TEXT("Pillar1"), TEXT("Pillar2"), TEXT("Pillar3") };
+	static const TCHAR* CapNames[] = { TEXT("PillarCap0"), TEXT("PillarCap1"), TEXT("PillarCap2"), TEXT("PillarCap3") };
+	for (int32 i = 0; i < 4; i++)
+	{
+		PillarParts.Add(SkyStructVis::MakePart(this, VisualRoot, PillarNames[i], Cyl));
+		PillarCaps.Add(SkyStructVis::MakePart(this, VisualRoot, CapNames[i], Sphere));
+	}
+
+	CorePivot = CreateDefaultSubobject<USceneComponent>(TEXT("CorePivot"));
+	CorePivot->SetupAttachment(VisualRoot);
+	CoreParts.Add(SkyStructVis::MakePart(this, CorePivot, TEXT("CoreTop"), Cone));
+	CoreParts.Add(SkyStructVis::MakePart(this, CorePivot, TEXT("CoreBottom"), Cone));
+
+	// Health bar (height set in LayoutVisuals, above the core)
 	HealthBarComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidget"));
-	HealthBarComp->SetupAttachment(BodyMesh);
-	HealthBarComp->SetRelativeLocation(FVector(0.0f, 0.0f, 280.0f));
+	HealthBarComp->SetupAttachment(VisualRoot);
+	HealthBarComp->SetRelativeLocation(FVector(0.0f, 0.0f, 950.0f));
 	HealthBarComp->SetWidgetSpace(EWidgetSpace::Screen);
 	HealthBarComp->SetDrawSize(FVector2D(200.0f, 45.0f));
 	HealthBarComp->SetPivot(FVector2D(0.5f, 1.0f));
@@ -77,6 +99,10 @@ ASkylandersTitan::ASkylandersTitan()
 	CachedHealthBar = nullptr;
 	CachedNameText = nullptr;
 	CachedHealthText = nullptr;
+	CoreMID = nullptr;
+	CoreTime = 0.0f;
+	CoreBaseZ = 640.0f;
+	CoreShownVulnerable = -1;
 
 	// Audio
 	AttackSound = nullptr;
@@ -108,26 +134,8 @@ void ASkylandersTitan::BeginPlay()
 		HealthBarComp->InitWidget();
 	}
 
-	// Color based on team (BasicShapeMaterial has the "Color" param; the mesh's
-	// default DefaultMaterial does not, which left titans gray).
-	if (BodyMesh)
-	{
-		UMaterialInterface* DefaultMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
-		if (DefaultMat)
-		{
-			UMaterialInstanceDynamic* DynMat = UMaterialInstanceDynamic::Create(DefaultMat, this);
-			if (Team == ETowerTeam::Friendly)
-			{
-				DynMat->SetVectorParameterValue(FName("Color"), FLinearColor(0.05f, 0.2f, 0.8f)); // Dark blue
-			}
-			else
-			{
-				DynMat->SetVectorParameterValue(FName("Color"), FLinearColor(0.8f, 0.05f, 0.05f)); // Dark red
-			}
-			BodyMesh->SetMaterial(0, DynMat);
-			HeadMesh->SetMaterial(0, DynMat);
-		}
-	}
+	// Shape + team materials (needs Team, set before BeginPlay)
+	LayoutVisuals();
 
 	FTimerHandle InitTimerHandle;
 	GetWorld()->GetTimerManager().SetTimer(InitTimerHandle, this, &ASkylandersTitan::UpdateHealthBar, 0.1f, false);
@@ -141,6 +149,25 @@ void ASkylandersTitan::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	if (bDead) return;
+
+	// Core crystal: bright, fast and pulsing while vulnerable; dim and slow while
+	// a structure still shields it. Recolor only when the state flips.
+	CoreTime += DeltaTime;
+	const bool bVuln = IsVulnerable();
+	if (CoreMID && CoreShownVulnerable != (bVuln ? 1 : 0))
+	{
+		CoreShownVulnerable = bVuln ? 1 : 0;
+		const FLinearColor Team3 = SkyStructVis::TeamColor(Team == ETowerTeam::Friendly);
+		CoreMID->SetVectorParameterValue(FName("Color"), bVuln ? Team3 * 4.0f : Team3 * 0.6f);
+	}
+	if (CorePivot)
+	{
+		const float Pulse = bVuln ? 1.0f + 0.12f * FMath::Sin(CoreTime * 4.5f) : 1.0f;
+		CorePivot->SetRelativeLocationAndRotation(
+			FVector(0.0f, 0.0f, CoreBaseZ + 20.0f * FMath::Sin(CoreTime * 1.2f)),
+			FRotator(0.0f, FMath::Fmod(CoreTime * (bVuln ? 45.0f : 15.0f), 360.0f), 0.0f));
+		CorePivot->SetRelativeScale3D(FVector(Pulse));
+	}
 
 	// Distance-based health bar rendering
 	if (HealthBarComp)
@@ -296,7 +323,7 @@ void ASkylandersTitan::AttackTarget()
 	}
 
 	// Big beam attack from head
-	FVector HeadLoc = GetActorLocation() + FVector(0.0f, 0.0f, 220.0f);
+	FVector HeadLoc = CorePivot ? CorePivot->GetComponentLocation() : GetActorLocation() + FVector(0.0f, 0.0f, 220.0f);
 	FVector TargetLoc = CurrentTarget->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
 
 	// Thicker beam than tower
@@ -411,8 +438,7 @@ void ASkylandersTitan::Die()
 	}
 
 	// Hide titan (collision too, or the invisible body keeps blocking)
-	BodyMesh->SetVisibility(false);
-	HeadMesh->SetVisibility(false);
+	BodyMesh->SetVisibility(false, /*bPropagateToChildren*/ true);
 	SetActorEnableCollision(false);
 	CurrentTarget = nullptr;
 	if (HealthBarComp) HealthBarComp->SetVisibility(false);
@@ -514,4 +540,91 @@ void ASkylandersTitan::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		Registry->Unregister(this);
 	}
 	Super::EndPlay(EndPlayReason);
+}
+
+void ASkylandersTitan::LayoutVisuals()
+{
+	using namespace SkyStructVis;
+	const bool bBlue = (Team == ETowerTeam::Friendly);
+
+	// Heights are from the floor (Z=0); G converts to actor-relative space (the
+	// titan spawns at Z=150).
+	const float G = -GetActorLocation().Z;
+
+	// Column: r110 from below the floor up to 520. The root is centered on the
+	// actor, so it spans [-H/2, H/2]; whatever is under the floor is never seen.
+	const float ColR = 110.0f, ColTop = 520.0f;
+	if (BodyMesh && BodyMesh->GetStaticMesh())
+	{
+		const FVector Ext = BodyMesh->GetStaticMesh()->GetBounds().BoxExtent;
+		const float H = FMath::Max(2.0f * (ColTop + G), 50.0f);
+		const FVector RootScale(ColR / Ext.X, ColR / Ext.Y, H / (2.0f * Ext.Z));
+		BodyMesh->SetRelativeScale3D(RootScale);
+		VisualRoot->SetRelativeScale3D(FVector(1.0f / RootScale.X, 1.0f / RootScale.Y, 1.0f / RootScale.Z));
+	}
+
+	// Two 20-unit plinth tiers: low enough to step onto (pawn step 45, navmesh
+	// 35), so they get real collision and keep pawns from sinking into them.
+	// Projectiles ignore them; only the body is a damage volume.
+	Fit(PlinthParts[0], 340.0f, G, 20.0f);
+	Fit(PlinthParts[1], 260.0f, G + 20.0f, 20.0f);
+	for (UStaticMeshComponent* P : PlinthParts)
+	{
+		P->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+		P->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Ignore);
+		P->SetCanEverAffectNavigation(true);
+	}
+
+	// Four pillars on the diagonals (the lane approaches along X, so the axis
+	// stays open), each with a glowing cap.
+	for (int32 i = 0; i < 4; i++)
+	{
+		const float Ang = FMath::DegreesToRadians(45.0f + 90.0f * i);
+		const FVector2D XY(FMath::Cos(Ang) * 215.0f, FMath::Sin(Ang) * 215.0f);
+		Fit(PillarParts[i], 28.0f, G + 40.0f, 380.0f, false, XY);
+		PillarParts[i]->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+		PillarParts[i]->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Ignore);
+		PillarParts[i]->SetCanEverAffectNavigation(true);
+		Fit(PillarCaps[i], 42.0f, G + 420.0f, 84.0f, false, XY);
+	}
+
+	// Flared collar under a wide capital
+	Fit(CollarMesh, 150.0f, G + ColTop - 120.0f, 120.0f, /*bFlip*/ true);
+	Fit(HeadMesh, 155.0f, G + ColTop, 40.0f);
+
+	// Core: two cones base to base, 380 tall, floating above the capital
+	const float CoreHalfH = 190.0f;
+	CoreBaseZ = G + ColTop + 40.0f + 60.0f + CoreHalfH;
+	CorePivot->SetRelativeLocation(FVector(0.0f, 0.0f, CoreBaseZ));
+	Fit(CoreParts[0], 95.0f, 0.0f, CoreHalfH);
+	Fit(CoreParts[1], 95.0f, -CoreHalfH, CoreHalfH, /*bFlip*/ true);
+
+	if (HealthBarComp) HealthBarComp->SetRelativeLocation(FVector(0.0f, 0.0f, CoreBaseZ + CoreHalfH + 140.0f));
+
+	// Materials: neutral stone, team trim (capital/collar/upper plinth), glow
+	UMaterialInstanceDynamic* Stone = MakeLitMID(this, StoneColor(bBlue));
+	UMaterialInstanceDynamic* Trim = MakeLitMID(this, TeamColor(bBlue));
+	UMaterialInstanceDynamic* CapGlow = MakeGlowMID(this, TeamColor(bBlue) * 2.0f);
+	CoreMID = MakeGlowMID(this, TeamColor(bBlue) * 0.6f);
+	CoreShownVulnerable = -1; // Tick picks the real state on its first pass
+	for (UStaticMeshComponent* C : { BodyMesh, PlinthParts[0] })
+	{
+		if (C && Stone) C->SetMaterial(0, Stone);
+	}
+	for (UStaticMeshComponent* C : PillarParts)
+	{
+		if (C && Stone) C->SetMaterial(0, Stone);
+	}
+	for (UStaticMeshComponent* C : { HeadMesh, CollarMesh, PlinthParts[1] })
+	{
+		if (C && Trim) C->SetMaterial(0, Trim);
+	}
+	for (UStaticMeshComponent* C : PillarCaps)
+	{
+		if (C && CapGlow) C->SetMaterial(0, CapGlow);
+	}
+	for (UStaticMeshComponent* C : CoreParts)
+	{
+		if (C && CoreMID) C->SetMaterial(0, CoreMID);
+	}
 }

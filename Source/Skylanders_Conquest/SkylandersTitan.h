@@ -13,6 +13,8 @@ class UProgressBar;
 class UTextBlock;
 class USkylandersVictoryWidget;
 class USoundBase;
+class USceneComponent;
+class UMaterialInstanceDynamic;
 
 UCLASS()
 class SKYLANDERS_CONQUEST_API ASkylandersTitan : public AActor
@@ -100,4 +102,26 @@ public:
 	UProgressBar* CachedHealthBar;
 	UTextBlock* CachedNameText;
 	UTextBlock* CachedHealthText;
+
+	// ========== VISUALS (code-built, not exposed) ==========
+	// BodyMesh is the thick blocking column, HeadMesh its capital. Around them: a
+	// two-tier plinth, four pillars with glowing caps, a flared collar and a big
+	// floating core crystal that pulses while the titan is vulnerable.
+
+	// Cancels BodyMesh's scale so every part below is laid out in world units
+	UPROPERTY() USceneComponent* VisualRoot;
+	UPROPERTY() TArray<UStaticMeshComponent*> PlinthParts;
+	UPROPERTY() TArray<UStaticMeshComponent*> PillarParts;
+	UPROPERTY() TArray<UStaticMeshComponent*> PillarCaps;
+	UPROPERTY() UStaticMeshComponent* CollarMesh;
+	UPROPERTY() USceneComponent* CorePivot;
+	UPROPERTY() TArray<UStaticMeshComponent*> CoreParts;
+	UPROPERTY() UMaterialInstanceDynamic* CoreMID;
+
+	float CoreTime;
+	float CoreBaseZ;
+	// -1 = not yet applied, else the last vulnerability the core was colored for
+	int32 CoreShownVulnerable;
+
+	void LayoutVisuals();
 };

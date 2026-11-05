@@ -11,6 +11,8 @@ class UWidgetComponent;
 class UProgressBar;
 class UTextBlock;
 class USoundBase;
+class USceneComponent;
+class UMaterialInstanceDynamic;
 
 UENUM(BlueprintType)
 enum class ETowerTeam : uint8
@@ -126,4 +128,28 @@ public:
 	UProgressBar* CachedHealthBar;
 	UTextBlock* CachedNameText;
 	UTextBlock* CachedHealthText;
+
+	// ========== VISUALS (code-built, not exposed) ==========
+	// BaseMesh is the blocking upper step and TowerMesh the column; the rest only
+	// dress the silhouette: a wide lower slab, a flared skirt, a chalice under a
+	// ring platform and a floating team crystal (two on a phoenix).
+
+	// Cancels BaseMesh's scale so every part below is laid out in world units
+	UPROPERTY() USceneComponent* VisualRoot;
+	UPROPERTY() UStaticMeshComponent* SlabMesh;
+	UPROPERTY() UStaticMeshComponent* SkirtMesh;
+	UPROPERTY() UStaticMeshComponent* ChaliceMesh;
+	UPROPERTY() UStaticMeshComponent* PlatformMesh;
+	UPROPERTY() USceneComponent* CrystalPivot;
+	// Two cones per crystal (top, bottom); [2],[3] are the phoenix's second crystal
+	UPROPERTY() TArray<UStaticMeshComponent*> CrystalParts;
+	UPROPERTY() UMaterialInstanceDynamic* StoneMID;
+	UPROPERTY() UMaterialInstanceDynamic* TrimMID;
+
+	float CrystalTime;
+	float CrystalBaseZ;
+
+	void LayoutVisuals();
+	// Phoenix ruin look (dark stone, crystals out) vs. alive
+	void SetRuinedLook(bool bRuined);
 };

@@ -38,6 +38,14 @@ ASkylandersBuffCamp::ASkylandersBuffCamp()
 	// player up its curve and lift them off the ground. Let the player pass
 	// through it (overlap) instead; projectiles still block/hit it for damage.
 	BodyMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+	// Pawns pass through the sphere, so it must not carve the navmesh either. It
+	// used to: the blocking sphere cut a ~120-unit hole (radius 75 + agent radius)
+	// around the camp's own location, so projecting a MoveTo goal of
+	// Camp->GetActorLocation() onto the navmesh failed (default query extent is
+	// 50), AAIController::MoveTo returned Failed, and its immediate-finish stopped
+	// the god's movement every tick -- the "dead-end path into the Damage Buff
+	// room" was this, not the corridor or the terrain.
+	BodyMesh->SetCanEverAffectNavigation(false);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere"));
 	if (SphereMesh.Succeeded())

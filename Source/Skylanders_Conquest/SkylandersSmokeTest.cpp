@@ -475,6 +475,8 @@ TArray<FString> USkylandersSmokeTestSubsystem::EvaluateInvariants() const
 	Require(Last.Towers == 4, FString::Printf(TEXT("expected 4 towers, saw %d"), Last.Towers));
 	Require(Last.Titans == 2, FString::Printf(TEXT("expected 2 titans, saw %d"), Last.Titans));
 	Require(Last.Camps >= 4, FString::Printf(TEXT("expected >=4 buff camps, saw %d"), Last.Camps));
+	// The map builder instances its rock/tree/landmark dressing at BeginPlay
+	Require(C(TEXT("dressing_placed")) >= 50, FString::Printf(TEXT("dressing_placed=%d < 50"), C(TEXT("dressing_placed"))));
 	Require(MaxMinionsSeen >= 12, FString::Printf(TEXT("expected a full wave (>=12 minions) at some point, max seen %d"), MaxMinionsSeen));
 	Require(C(TEXT("minion_spawn")) >= 12, FString::Printf(TEXT("minion_spawn=%d"), C(TEXT("minion_spawn"))));
 	if (DurationSeconds >= 90.0f)

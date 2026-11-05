@@ -32,6 +32,12 @@ protected:
 	AActor* SpawnFloorSeg(FVector From, FVector To, float Width, float Z, FLinearColor Color);
 	AActor* SpawnWallSeg(FVector From, FVector To, float Height, float Thickness, FLinearColor Color);
 
+	// Rocks/trees along every walkable edge plus landmarks (lighthouses, whale,
+	// border cliffs), instanced on one actor. Needs the structures spawned first
+	// (it keeps clear of them).
+	void SpawnDressing(const TArray<FVector>& WalkCircles, const TArray<float>& Corrs,
+		float PX, float PY, float Cell, float TerrainTop);
+
 	// ========== STRUCTURES ==========
 
 	// Blue (Player) side

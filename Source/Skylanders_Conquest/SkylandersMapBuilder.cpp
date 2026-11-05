@@ -9,6 +9,9 @@
 #include "SkylandersEnemyGod.h"
 #include "SkylandersTelemetry.h"
 #include "SkylandersGameInstance.h"
+#include "SkylandersSmokeTest.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Misc/Paths.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -422,6 +425,9 @@ void ASkylandersMapBuilder::BuildMap()
 	BullDemonKing = SpawnCamp(FVector(0, 3400, 75), TEXT("Golden Queen"), EBuffType::Damage, 1.50f, 2500.0f, 200.0f, 150, TEXT("GoldenQueen"));
 	MidCamp = SpawnCamp(FVector(0, -3400, 75), TEXT("Bad Juju"), EBuffType::None, 1.0f, 300.0f, 80.0f, 40, TEXT("BadJuju"));
 
+	// Set dressing last among the static pieces: it steers clear of everything above
+	SpawnDressing(WalkCircles, Corrs, PX, PY, Cell, TerrainTop);
+
 	// ========================================================================
 	// GODS: a full 3v3 — the player + 2 AI allies (blue) vs 3 AI enemies (red).
 	// Spawned deferred so Team is set before BeginPlay colors them / sets a base.
@@ -667,4 +673,406 @@ AActor* ASkylandersMapBuilder::SpawnWallSeg(FVector From, FVector To, float Heig
 	FVector Scale(Length / 100.0f, Thickness / 100.0f, Height / 100.0f);
 	return SpawnColoredPrimitive(GetWorld(), TEXT("/Engine/BasicShapes/Cube"),
 		Mid, Rot, Scale, Color, TEXT("MapWall"));
+}
+
+// ============================================================================
+// SET DRESSING: real level_505 / hub statics around the playable shape. All of
+// it lives on ONE actor as one instanced component per mesh, so a couple of
+// hundred props cost a handful of draw calls and actors instead of hundreds.
+// Everything sits outside the walkable area, so it keeps its collision but is
+// kept out of navmesh generation (the runtime navmesh rebuild cost stays put).
+// ============================================================================
+namespace MapDressing
+{
+	struct FKind
+	{
+		const TCHAR* Path;
+		const TCHAR* Material;     // asset material, or nullptr = tinted BasicShapeMaterial
+		FLinearColor Tint;
+		float TargetHeight;        // before the 0.8-1.3 random scale
+		float MaxRadius;           // footprint cap; a mesh fatter than this is scaled down
+		float Bury;                // fraction of the height sunk below its ground
+	};
+
+	struct FStats
+	{
+		int32 Count = 0;
+		FVector RawExtent = FVector::ZeroVector;
+		float MinH = FLT_MAX;
+		float MaxH = 0.0f;
+		bool bRejected = false;
+	};
+}
+
+void ASkylandersMapBuilder::SpawnDressing(const TArray<FVector>& WalkCircles, const TArray<float>& Corrs,
+	float PX, float PY, float Cell, float TerrainTop)
+{
+	using namespace MapDressing;
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	static const TCHAR* TerrainMat = TEXT("/Game/Environment/M_Terrain.M_Terrain");
+	static const TCHAR* GrassMat = TEXT("/Game/Environment/M_Ground.M_Ground");
+	enum EKind { RockBig, RockSmall, RockGroup, Spires, Canopy, Lighthouse, Whale, CliffA, CliffB, CliffC, KindCount };
+	// Cliff slots get their real paths from the probe below
+	FKind Kinds[KindCount] =
+	{
+		{ TEXT("/Game/Environment/Level505/1505_rock02"),           TerrainMat, FLinearColor::White, 260.0f, 260.0f, 0.15f },
+		{ TEXT("/Game/Environment/Level505/l505_rock04"),           TerrainMat, FLinearColor::White, 180.0f, 200.0f, 0.15f },
+		{ TEXT("/Game/Environment/Level505/1505_rock_grp"),         TerrainMat, FLinearColor::White, 300.0f, 380.0f, 0.15f },
+		{ TEXT("/Game/Environment/Level505/L505_trees"),            TerrainMat, FLinearColor::White, 650.0f, 300.0f, 0.03f },
+		{ TEXT("/Game/Environment/Hub2016/H2016_tree_canopy_A"),    GrassMat,   FLinearColor::White, 700.0f, 450.0f, 0.03f },
+		{ TEXT("/Game/Environment/Level505/L505_Lighthouse"),       nullptr,    FLinearColor(0.80f, 0.78f, 0.72f), 2000.0f, 1100.0f, 0.02f },
+		{ TEXT("/Game/Environment/L505Fixed/l505_whale"),           nullptr,    FLinearColor(0.25f, 0.36f, 0.52f), 1500.0f, 4000.0f, 0.25f },
+		{ TEXT("(no sane alpine mesh)"), TerrainMat, FLinearColor::White, 1900.0f, 1500.0f, 0.05f },
+		{ TEXT("(no sane alpine mesh)"), TerrainMat, FLinearColor::White, 1900.0f, 1500.0f, 0.05f },
+		{ TEXT("(no sane alpine mesh)"), TerrainMat, FLinearColor::White, 1900.0f, 1500.0f, 0.05f },
+	};
+
+	// Cliff chunks: most ripped alpine parts have broken bounds (a stray vertex
+	// billions of units out) or are flat decal planes, and which ones survive
+	// only shows at runtime. Probe the candidates in order and keep the first
+	// three that are sane and upright enough to read as a cliff.
+	TArray<FString> CliffPaths;
+	{
+		TArray<FString> Candidates = {
+			TEXT("/Game/Environment/L505Fixed/L505_alpine_Part02"),
+			TEXT("/Game/Environment/L505Fixed/L505_alpine_Part07"),
+			TEXT("/Game/Environment/L505Fixed/L505_alpine_Part13") };
+		for (int32 i = 1; i <= 13; i++)
+		{
+			Candidates.Add(FString::Printf(TEXT("/Game/Environment/Level505/L505_alpine_Part%02d"), i));
+		}
+		static const int32 SubCounts[] = { 3, 0, 2, 6, 4, 4, 2, 2, 5, 5 }; // _Mesh_N pieces of Part01..Part10
+		for (int32 i = 0; i < UE_ARRAY_COUNT(SubCounts); i++)
+		{
+			for (int32 m = 0; m < SubCounts[i]; m++)
+			{
+				Candidates.Add(FString::Printf(TEXT("/Game/Environment/Level505/L505_alpine_Part%02d_Mesh_%d"), i + 1, m));
+			}
+		}
+		for (int32 m = 0; m < 3; m++)
+		{
+			Candidates.Add(FString::Printf(TEXT("/Game/Environment/Level505/L505_Rock_Island_Mesh_%d"), m));
+		}
+		for (const FString& Path : Candidates)
+		{
+			if (CliffPaths.Num() >= 3) break;
+			UStaticMesh* M = LoadObject<UStaticMesh>(nullptr, *Path);
+			if (!M) continue;
+			const FVector Ext = M->GetBounds().BoxExtent;
+			const bool bSane = Ext.GetMax() < 20000.0f && Ext.Z >= 250.0f && Ext.Z >= 0.25f * FMath::Max(Ext.X, Ext.Y);
+			UE_LOG(LogTemp, Log, TEXT("Dressing: cliff probe %s extent %s -> %s"), *Path, *Ext.ToString(),
+				bSane ? TEXT("use") : TEXT("skip"));
+			if (bSane) CliffPaths.Add(Path);
+		}
+		for (int32 i = 0; i < CliffPaths.Num(); i++)
+		{
+			Kinds[CliffA + i].Path = *CliffPaths[i];
+		}
+	}
+
+	// Signed distance to the walkable shape (negative = inside it)
+	auto Clearance = [&](const FVector2D& P) -> float
+	{
+		float Best = FLT_MAX;
+		for (const FVector& C : WalkCircles)
+		{
+			Best = FMath::Min(Best, FVector2D::Distance(P, FVector2D(C.X, C.Y)) - C.Z);
+		}
+		for (int32 i = 0; i + 4 < Corrs.Num(); i += 5)
+		{
+			Best = FMath::Min(Best, DistPointToSeg2D(P, FVector2D(Corrs[i], Corrs[i + 1]),
+				FVector2D(Corrs[i + 2], Corrs[i + 3])) - Corrs[i + 4]);
+		}
+		return Best;
+	};
+
+	// Floor height under a point: the raised out-of-bounds block top, or the
+	// ground plane where the terrain grid left the cell walkable / never reached.
+	auto GroundZ = [&](const FVector2D& P) -> float
+	{
+		const int32 IX = FMath::RoundToInt((P.X + PX) / Cell);
+		const int32 IY = FMath::RoundToInt((P.Y + PY) / Cell);
+		const FVector2D CellCenter(-PX + IX * Cell, -PY + IY * Cell);
+		if (IX < 0 || IY < 0 || CellCenter.X > PX + 1.0f || CellCenter.Y > PY + 1.0f) return 0.0f;
+		return Clearance(CellCenter) < 0.0f ? 0.0f : TerrainTop;
+	};
+
+	// Nothing within 900 of a structure, camp, spawn area or minion spawner
+	TArray<FVector2D> Avoid;
+	for (AActor* A : TArray<AActor*>{ BlueTower, BluePhoenix, BlueTitan, BlueSpawner, BlueSpawnArea,
+		RedTower, RedPhoenix, RedTitan, RedSpawner, RedSpawnArea,
+		BullDemonKing, DamageCamp, MidCamp, BlueBlueBuff, RedBlueBuff })
+	{
+		if (A) Avoid.Add(FVector2D(A->GetActorLocation()));
+	}
+	auto NearAvoid = [&](const FVector2D& P) -> bool
+	{
+		for (const FVector2D& A : Avoid)
+		{
+			if (FVector2D::DistSquared(P, A) < 900.0f * 900.0f) return true;
+		}
+		return false;
+	};
+
+	// One actor, one instanced component per mesh (created on first use)
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AActor* Dressing = World->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+	if (!Dressing) return;
+	USceneComponent* DressRoot = NewObject<USceneComponent>(Dressing, TEXT("DressingRoot"));
+	Dressing->SetRootComponent(DressRoot);
+	DressRoot->RegisterComponent();
+#if WITH_EDITOR
+	Dressing->SetActorLabel(TEXT("MapDressing"));
+#endif
+
+	UStaticMesh* Meshes[KindCount] = {};
+	UInstancedStaticMeshComponent* ISMs[KindCount] = {};
+	FStats Stats[KindCount];
+	for (int32 k = 0; k < KindCount; k++)
+	{
+		// Unfilled cliff slots carry a "(...)" placeholder, not an asset path
+		UStaticMesh* M = Kinds[k].Path[0] == TEXT('/') ? LoadObject<UStaticMesh>(nullptr, Kinds[k].Path) : nullptr;
+		if (!M) { Stats[k].bRejected = true; continue; }
+		// Plenty of ripped statics carry degenerate or astronomical bounds; a
+		// bad one would either vanish or swallow the map, so skip it outright.
+		const FVector Ext = M->GetBounds().BoxExtent;
+		Stats[k].RawExtent = Ext;
+		// Flat (decal planes) counts as broken too: scaled to a height it becomes a sheet.
+		if (Ext.Z < 1.0f || Ext.GetMax() > 50000.0f || Ext.Z < 0.05f * FMath::Max(Ext.X, Ext.Y))
+		{
+			Stats[k].bRejected = true;
+			UE_LOG(LogTemp, Log, TEXT("Dressing: rejected %s (bounds extent %s)"), Kinds[k].Path, *Ext.ToString());
+			continue;
+		}
+		UE_LOG(LogTemp, Verbose, TEXT("Dressing: %s bounds origin %s extent %s"), Kinds[k].Path,
+			*M->GetBounds().Origin.ToString(), *Ext.ToString());
+		Meshes[k] = M;
+	}
+
+	auto GetISM = [&](int32 k) -> UInstancedStaticMeshComponent*
+	{
+		if (ISMs[k]) return ISMs[k];
+		UInstancedStaticMeshComponent* ISM = NewObject<UInstancedStaticMeshComponent>(Dressing,
+			*FString::Printf(TEXT("Dress_%s"), *FPaths::GetBaseFilename(Kinds[k].Path)));
+		ISM->SetStaticMesh(Meshes[k]);
+		ISM->SetCanEverAffectNavigation(false);
+		ISM->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+		ISM->SetupAttachment(DressRoot);
+		ISM->RegisterComponent();
+		UMaterialInterface* Mat = Kinds[k].Material ? LoadObject<UMaterialInterface>(nullptr, Kinds[k].Material) : nullptr;
+		if (!Mat)
+		{
+			if (UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial")))
+			{
+				UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Base, Dressing);
+				MID->SetVectorParameterValue(FName("Color"), Kinds[k].Tint);
+				Mat = MID;
+			}
+		}
+		// The ripped meshes carry no material references; fill every slot.
+		for (int32 m = 0; m < FMath::Max(1, ISM->GetNumMaterials()); m++)
+		{
+			if (Mat) ISM->SetMaterial(m, Mat);
+		}
+		ISMs[k] = ISM;
+		return ISM;
+	};
+
+	struct FPlaced { FVector2D P; float R; };
+	TArray<FPlaced> Placed;
+
+	// Scale for a desired height, capped by footprint radius
+	auto ScaleFor = [&](int32 k, float Height) -> float
+	{
+		const FVector Ext = Meshes[k]->GetBounds().BoxExtent;
+		float S = Height / (2.0f * Ext.Z);
+		const float R = FMath::Max(Ext.X, Ext.Y) * S;
+		if (R > Kinds[k].MaxRadius) S *= Kinds[k].MaxRadius / R;
+		return S;
+	};
+
+	// Every sample of the rotated footprint must stay MinClear outside the
+	// walkable shape -- a radial check would reject long meshes for nothing.
+	auto FootprintClear = [&](int32 k, const FVector2D& P, float Yaw, float S, float MinClear) -> bool
+	{
+		const FBoxSphereBounds B = Meshes[k]->GetBounds();
+		const FVector2D Half(B.BoxExtent.X * S, B.BoxExtent.Y * S);
+		const float C = FMath::Cos(FMath::DegreesToRadians(Yaw)), Sn = FMath::Sin(FMath::DegreesToRadians(Yaw));
+		for (int32 ix = -2; ix <= 2; ix++)
+		{
+			for (int32 iy = -2; iy <= 2; iy++)
+			{
+				const FVector2D L(Half.X * ix * 0.5f, Half.Y * iy * 0.5f);
+				const FVector2D W(P.X + L.X * C - L.Y * Sn, P.Y + L.X * Sn + L.Y * C);
+				if (Clearance(W) < MinClear) return false;
+			}
+		}
+		return true;
+	};
+
+	auto AddInstance = [&](int32 k, const FVector2D& P, float Yaw, float S, float BaseZ) -> bool
+	{
+		UInstancedStaticMeshComponent* ISM = GetISM(k);
+		if (!ISM) return false;
+		const FBoxSphereBounds B = Meshes[k]->GetBounds();
+		const float H = B.BoxExtent.Z * 2.0f * S;
+		// Center the bounds (not the pivot) on P, and its bottom on BaseZ
+		const FRotator Rot(0.0f, Yaw, 0.0f);
+		const FVector Off = Rot.RotateVector(FVector(B.Origin.X * S, B.Origin.Y * S, 0.0f));
+		const FVector Loc(P.X - Off.X, P.Y - Off.Y, BaseZ - (B.Origin.Z - B.BoxExtent.Z) * S - Kinds[k].Bury * H);
+		ISM->AddInstance(FTransform(Rot, Loc, FVector(S)), /*bWorldSpace*/ true);
+		Placed.Add({ P, static_cast<float>(FMath::Max(B.BoxExtent.X, B.BoxExtent.Y)) * S });
+		FStats& St = Stats[k];
+		St.Count++;
+		St.MinH = FMath::Min(St.MinH, H);
+		St.MaxH = FMath::Max(St.MaxH, H);
+		SKY_COUNT("dressing_placed");
+		return true;
+	};
+
+	FRandomStream Rng(505);
+
+	// ---------- rim props: rocks and trees outside every edge ----------
+	auto TryRimProp = [&](const FVector2D& Edge, const FVector2D& Normal)
+	{
+		// Roll everything up front so the stream stays in step whether or not
+		// this spot is used (keeps the layout stable when one spot is rejected).
+		const float Roll = Rng.FRand();
+		const float Margin = Rng.FRandRange(150.0f, 250.0f);
+		const float Yaw = Rng.FRandRange(0.0f, 360.0f);
+		const float ScaleMul = Rng.FRandRange(0.8f, 1.3f);
+		const float Pick = Rng.FRand();
+
+		int32 k;
+		if (Roll < 0.55f) k = Pick < 0.4f ? RockBig : (Pick < 0.75f ? RockSmall : RockGroup);
+		else k = Pick < 0.5f ? Spires : Canopy;
+		if (!Meshes[k]) return;
+
+		const float S = ScaleFor(k, Kinds[k].TargetHeight * ScaleMul);
+		const FVector Ext = Meshes[k]->GetBounds().BoxExtent;
+		const float R = FMath::Max(Ext.X, Ext.Y) * S;
+		const FVector2D P = Edge + Normal * (Margin + R);
+
+		if (FMath::Abs(P.X) > 13300.0f || FMath::Abs(P.Y) > 5150.0f) return;  // off the ground plane
+		if (NearAvoid(P)) return;
+		if (!FootprintClear(k, P, Yaw, S, 120.0f)) return;
+		for (const FPlaced& O : Placed)
+		{
+			if (FVector2D::Distance(O.P, P) < FMath::Max(350.0f, (O.R + R) * 0.8f)) return;
+		}
+		AddInstance(k, P, Yaw, S, GroundZ(P));
+	};
+
+	// Both sides of every corridor
+	for (int32 i = 0; i + 4 < Corrs.Num(); i += 5)
+	{
+		const FVector2D A(Corrs[i], Corrs[i + 1]), B(Corrs[i + 2], Corrs[i + 3]);
+		const float HW = Corrs[i + 4];
+		const float Len = FVector2D::Distance(A, B);
+		if (Len < 1.0f) continue;
+		const FVector2D Dir = (B - A) / Len;
+		const FVector2D N(-Dir.Y, Dir.X);
+		for (float T = Rng.FRandRange(150.0f, 450.0f); T < Len; T += Rng.FRandRange(600.0f, 900.0f))
+		{
+			const FVector2D Mid = A + Dir * T;
+			TryRimProp(Mid + N * HW, N);
+			TryRimProp(Mid - N * HW, -N);
+		}
+	}
+
+	// Around every walkable circle's rim
+	for (const FVector& C : WalkCircles)
+	{
+		const FVector2D Ctr(C.X, C.Y);
+		const float Start = Rng.FRandRange(0.0f, 2.0f * PI);
+		for (float Arc = 0.0f; Arc < 2.0f * PI * C.Z; Arc += Rng.FRandRange(600.0f, 900.0f))
+		{
+			const float Ang = Start + Arc / C.Z;
+			const FVector2D N(FMath::Cos(Ang), FMath::Sin(Ang));
+			TryRimProp(Ctr + N * C.Z, N);
+		}
+	}
+
+	// ---------- landmarks ----------
+	// Place k near Start, pushing along Push until its footprint clears the
+	// walkable shape (and the structures) by MinClear.
+	auto PlaceLandmark = [&](int32 k, FVector2D Start, const FVector2D& Push, float Yaw, float Height,
+		float MinClear, float BaseZOverride, bool bUseGround) -> bool
+	{
+		if (!Meshes[k]) return false;
+		const float S = ScaleFor(k, Height);
+		for (int32 Step = 0; Step < 16; Step++)
+		{
+			const FVector2D P = Start + Push * (250.0f * Step);
+			if (NearAvoid(P) || !FootprintClear(k, P, Yaw, S, MinClear)) continue;
+			return AddInstance(k, P, Yaw, S, bUseGround ? GroundZ(P) : BaseZOverride);
+		}
+		UE_LOG(LogTemp, Log, TEXT("Dressing: no clear spot for %s near %s"), Kinds[k].Path, *Start.ToString());
+		return false;
+	};
+
+	// Long axis of a mesh along world X (yaw 0) or Y (yaw 90)
+	auto AlongX = [&](int32 k) -> float
+	{
+		if (!Meshes[k]) return 0.0f;
+		const FVector Ext = Meshes[k]->GetBounds().BoxExtent;
+		return Ext.X >= Ext.Y ? 0.0f : 90.0f;
+	};
+
+	// A lighthouse behind each base, out past the chamber toward the map's ends
+	PlaceLandmark(Lighthouse, FVector2D(-12500.0f, 2600.0f), FVector2D(-0.6f, 0.8f), 0.0f, 2000.0f, 200.0f, 0.0f, true);
+	PlaceLandmark(Lighthouse, FVector2D(12500.0f, 2600.0f), FVector2D(0.6f, 0.8f), 180.0f, 2000.0f, 200.0f, 0.0f, true);
+
+	// The whale surfaces beyond the north edge, behind the Golden Queen pit,
+	// lying along the map edge; partly sunk so it reads as breaching.
+	PlaceLandmark(Whale, FVector2D(0.0f, 5400.0f), FVector2D(0.0f, 1.0f), AlongX(Whale), 1500.0f, 250.0f, -150.0f, false);
+
+	// Cliff chunks framing the outer border (the out-of-bounds edge of the
+	// terrain grid), cycling the three alpine pieces. They rise from the floor
+	// plane through the raised terrain blocks.
+	{
+		const float BX = PX + 300.0f, BY = PY + 350.0f;
+		const FVector2D Corners[] = { FVector2D(-BX, -BY), FVector2D(BX, -BY), FVector2D(BX, BY), FVector2D(-BX, BY) };
+		TArray<int32> CliffKinds;
+		for (int32 k = CliffA; k <= CliffC; k++)
+		{
+			if (Meshes[k]) CliffKinds.Add(k);
+		}
+		int32 Which = 0;
+		for (int32 Side = 0; Side < 4; Side++)
+		{
+			const FVector2D A = Corners[Side], B = Corners[(Side + 1) % 4];
+			const float Len = FVector2D::Distance(A, B);
+			const FVector2D Dir = (B - A) / Len;
+			const FVector2D Out(Dir.Y, -Dir.X); // corners run counter-clockwise
+			for (float T = Rng.FRandRange(0.0f, 600.0f); T < Len && CliffKinds.Num() > 0; T += Rng.FRandRange(1500.0f, 2100.0f))
+			{
+				const float Yaw = Rng.FRandRange(0.0f, 360.0f);
+				const float H = Rng.FRandRange(1500.0f, 2300.0f);
+				const int32 k = CliffKinds[Which++ % CliffKinds.Num()];
+				PlaceLandmark(k, A + Dir * T, Out, Yaw, H, 150.0f, 0.0f, false);
+			}
+		}
+	}
+
+	// ---------- summary for review ----------
+	int32 Total = 0;
+	for (int32 k = 0; k < KindCount; k++)
+	{
+		const FStats& St = Stats[k];
+		Total += St.Count;
+		if (St.bRejected)
+		{
+			UE_LOG(LogTemp, Log, TEXT("Dressing: %-48s REJECTED/missing (raw extent %s)"), Kinds[k].Path, *St.RawExtent.ToString());
+		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("Dressing: %-48s placed=%3d raw extent=%s height used=%.0f..%.0f"),
+				Kinds[k].Path, St.Count, *St.RawExtent.ToString(), St.Count ? St.MinH : 0.0f, St.MaxH);
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("Dressing: %d statics placed on 1 actor"), Total);
 }

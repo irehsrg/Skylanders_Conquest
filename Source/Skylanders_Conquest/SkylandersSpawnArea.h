@@ -10,6 +10,7 @@
 class USphereComponent;
 class UDecalComponent;
 class UStaticMeshComponent;
+class USceneComponent;
 
 UCLASS()
 class SKYLANDERS_CONQUEST_API ASkylandersSpawnArea : public AActor
@@ -46,6 +47,17 @@ protected:
 	// damage number actor every frame per victim
 	float FountainPulseAccumulator;
 	static constexpr float FountainPulseInterval = 0.25f;
+
+	// ========== VISUALS (code-built, not exposed) ==========
+	// A ring of six posts with glowing caps around the platform and a floating
+	// team crystal over its center.
+	UPROPERTY() TArray<UStaticMeshComponent*> PostParts;
+	UPROPERTY() TArray<UStaticMeshComponent*> PostCaps;
+	UPROPERTY() USceneComponent* CrystalPivot;
+	UPROPERTY() TArray<UStaticMeshComponent*> CrystalParts;
+	float CrystalTime;
+
+	void LayoutVisuals();
 
 public:
 

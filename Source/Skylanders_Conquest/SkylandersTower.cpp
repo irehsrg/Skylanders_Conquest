@@ -13,6 +13,7 @@
 #include "SkylandersMinion.h"
 #include "SkylandersEnemyGod.h"
 #include "SkylandersDamageNumber.h"
+#include "SkylandersStructureVisuals.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Components/ProgressBar.h"
@@ -28,34 +29,53 @@ ASkylandersTower::ASkylandersTower()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// Base platform
+	// Blocking upper step of the base (root). Sized in LayoutVisuals once
+	// bIsPhoenix is known (it is set between construction and BeginPlay).
 	BaseMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BaseMesh"));
 	RootComponent = BaseMesh;
 	BaseMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder"));
-	if (CylinderMesh.Succeeded())
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(TEXT("/Engine/BasicShapes/Cone"));
+	UStaticMesh* Cyl = CylinderMesh.Succeeded() ? CylinderMesh.Object : nullptr;
+	UStaticMesh* Cone = ConeMesh.Succeeded() ? ConeMesh.Object : nullptr;
+	if (Cyl)
 	{
-		BaseMesh->SetStaticMesh(CylinderMesh.Object);
-		BaseMesh->SetRelativeScale3D(FVector(1.5f, 1.5f, 0.3f)); // Wide flat base
+		BaseMesh->SetStaticMesh(Cyl);
+		BaseMesh->SetRelativeScale3D(FVector(1.5f, 1.5f, 1.0f));
 	}
 
-	// Tower body (tall cylinder on top)
+	// Children hang off VisualRoot, which undoes the root's scale: a child of a
+	// scaled parent inherits that scale in both size and offset, which is why the
+	// old 200-unit column offset really sat 60 units up.
+	VisualRoot = CreateDefaultSubobject<USceneComponent>(TEXT("VisualRoot"));
+	VisualRoot->SetupAttachment(BaseMesh);
+
+	// Column (keeps its collision: it is the part projectiles aimed high hit)
 	TowerMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TowerMesh"));
-	TowerMesh->SetupAttachment(BaseMesh);
-	TowerMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 200.0f));
+	TowerMesh->SetupAttachment(VisualRoot);
 	TowerMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	TowerMesh->SetCollisionProfileName(TEXT("BlockAllDynamic"));
-	if (CylinderMesh.Succeeded())
+	if (Cyl) TowerMesh->SetStaticMesh(Cyl);
+
+	// Visual-only dressing (no collision, no navmesh)
+	SlabMesh = SkyStructVis::MakePart(this, VisualRoot, TEXT("SlabMesh"), Cyl);
+	SkirtMesh = SkyStructVis::MakePart(this, VisualRoot, TEXT("SkirtMesh"), Cone);
+	ChaliceMesh = SkyStructVis::MakePart(this, VisualRoot, TEXT("ChaliceMesh"), Cone);
+	PlatformMesh = SkyStructVis::MakePart(this, VisualRoot, TEXT("TopPlatform"), Cyl);
+
+	CrystalPivot = CreateDefaultSubobject<USceneComponent>(TEXT("CrystalPivot"));
+	CrystalPivot->SetupAttachment(VisualRoot);
+	static const TCHAR* CrystalNames[] = { TEXT("CrystalA_Top"), TEXT("CrystalA_Bottom"), TEXT("CrystalB_Top"), TEXT("CrystalB_Bottom") };
+	for (const TCHAR* Name : CrystalNames)
 	{
-		TowerMesh->SetStaticMesh(CylinderMesh.Object);
-		TowerMesh->SetRelativeScale3D(FVector(0.5f, 0.5f, 2.0f)); // Tall narrow tower
+		CrystalParts.Add(SkyStructVis::MakePart(this, CrystalPivot, Name, Cone));
 	}
 
-	// Health bar
+	// Health bar (height set in LayoutVisuals, above the crystal)
 	HealthBarComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidget"));
-	HealthBarComp->SetupAttachment(BaseMesh);
-	HealthBarComp->SetRelativeLocation(FVector(0.0f, 0.0f, 450.0f));
+	HealthBarComp->SetupAttachment(VisualRoot);
+	HealthBarComp->SetRelativeLocation(FVector(0.0f, 0.0f, 900.0f));
 	HealthBarComp->SetWidgetSpace(EWidgetSpace::Screen);
 	HealthBarComp->SetDrawSize(FVector2D(180.0f, 40.0f));
 	HealthBarComp->SetPivot(FVector2D(0.5f, 1.0f));
@@ -81,6 +101,10 @@ ASkylandersTower::ASkylandersTower()
 	CachedHealthBar = nullptr;
 	CachedNameText = nullptr;
 	CachedHealthText = nullptr;
+	StoneMID = nullptr;
+	TrimMID = nullptr;
+	CrystalTime = 0.0f;
+	CrystalBaseZ = 700.0f;
 
 	// Audio
 	AttackSound = nullptr;
@@ -116,42 +140,8 @@ void ASkylandersTower::BeginPlay()
 		HealthBarComp->InitWidget();
 	}
 
-	// Color the tower based on team. Build from BasicShapeMaterial explicitly —
-	// the cylinder's default slot is the engine DefaultMaterial (no "Color" param),
-	// so tinting it was silently ignored and towers rendered gray.
-	if (BaseMesh)
-	{
-		UMaterialInterface* DefaultMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
-		if (DefaultMat)
-		{
-			UMaterialInstanceDynamic* DynMat = UMaterialInstanceDynamic::Create(DefaultMat, this);
-			if (Team == ETowerTeam::Friendly)
-			{
-				DynMat->SetVectorParameterValue(FName("Color"), FLinearColor(0.1f, 0.3f, 1.0f)); // Blue
-			}
-			else
-			{
-				DynMat->SetVectorParameterValue(FName("Color"), FLinearColor(1.0f, 0.15f, 0.1f)); // Red
-			}
-			BaseMesh->SetMaterial(0, DynMat);
-			TowerMesh->SetMaterial(0, DynMat);
-		}
-	}
-
-	// Phoenix override: golden/orange color
-	if (bIsPhoenix && BaseMesh)
-	{
-		UMaterialInterface* PhxMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial"));
-		if (PhxMat)
-		{
-			UMaterialInstanceDynamic* PhxDynMat = UMaterialInstanceDynamic::Create(PhxMat, this);
-			FLinearColor PhxColor = (Team == ETowerTeam::Friendly)
-				? FLinearColor(0.2f, 0.4f, 1.0f) : FLinearColor(0.9f, 0.4f, 0.05f);
-			PhxDynMat->SetVectorParameterValue(FName("Color"), PhxColor);
-			BaseMesh->SetMaterial(0, PhxDynMat);
-			TowerMesh->SetMaterial(0, PhxDynMat);
-		}
-	}
+	// Shape + team materials (needs bIsPhoenix/Team, both set before BeginPlay)
+	LayoutVisuals();
 
 	FTimerHandle InitTimerHandle;
 	GetWorld()->GetTimerManager().SetTimer(InitTimerHandle, this, &ASkylandersTower::UpdateHealthBar, 0.1f, false);
@@ -166,6 +156,15 @@ void ASkylandersTower::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	if (bDestroyed) return;
+
+	// Crystal: slow spin + bob. Two relative-transform writes a tick, no physics.
+	CrystalTime += DeltaTime;
+	if (CrystalPivot)
+	{
+		CrystalPivot->SetRelativeLocationAndRotation(
+			FVector(0.0f, 0.0f, CrystalBaseZ + 15.0f * FMath::Sin(CrystalTime * 1.6f)),
+			FRotator(0.0f, FMath::Fmod(CrystalTime * 40.0f, 360.0f), 0.0f));
+	}
 
 	// Distance-based health bar rendering
 	if (HealthBarComp)
@@ -372,7 +371,8 @@ void ASkylandersTower::AttackTarget()
 	}
 
 	// Visual beam from tower top to target
-	FVector TowerTop = GetActorLocation() + FVector(0.0f, 0.0f, 400.0f);
+	// Beam leaves from the crystal (purely visual)
+	FVector TowerTop = CrystalPivot ? CrystalPivot->GetComponentLocation() : GetActorLocation() + FVector(0.0f, 0.0f, 400.0f);
 	FVector TargetLoc = CurrentTarget->GetActorLocation() + FVector(0.0f, 0.0f, 40.0f);
 
 	FColor BeamColor = (Team == ETowerTeam::Friendly) ? FColor(20, 40, 160) : FColor::Red;
@@ -528,8 +528,16 @@ void ASkylandersTower::Die()
 	// Hide but don't destroy (rubble could go here later).
 	// Collision must go too, or the invisible tower keeps blocking movement
 	// and absorbing projectiles.
-	BaseMesh->SetVisibility(false);
-	TowerMesh->SetVisibility(false);
+	// A phoenix stays as a dark ruin (crystals out) until it respawns; a plain
+	// tower vanishes along with all of its dressing.
+	if (bIsPhoenix)
+	{
+		SetRuinedLook(true);
+	}
+	else
+	{
+		BaseMesh->SetVisibility(false, /*bPropagateToChildren*/ true);
+	}
 	SetActorEnableCollision(false);
 	CurrentTarget = nullptr;
 	ForcedPlayerTarget = nullptr;
@@ -563,8 +571,7 @@ void ASkylandersTower::RespawnPhoenix()
 
 	bDestroyed = false;
 	CurrentHealth = MaxHealth;
-	BaseMesh->SetVisibility(true);
-	TowerMesh->SetVisibility(true);
+	SetRuinedLook(false);
 	SetActorEnableCollision(true);
 	if (HealthBarComp) HealthBarComp->SetVisibility(true);
 	bHealthBarInitialized = false; // Re-cache health bar
@@ -639,4 +646,111 @@ void ASkylandersTower::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		Registry->Unregister(this);
 	}
 	Super::EndPlay(EndPlayReason);
+}
+
+void ASkylandersTower::LayoutVisuals()
+{
+	using namespace SkyStructVis;
+	const bool bBlue = (Team == ETowerTeam::Friendly);
+	const bool bPhx = bIsPhoenix;
+
+	// Every height below is measured from the floor (Z=0); G converts to the
+	// actor-relative space VisualRoot uses (towers spawn a little above the floor).
+	const float G = -GetActorLocation().Z;
+
+	// Blocking step. Its radius stays where the old base was (75; phoenix 85):
+	// melee minions (range 120, capsule 20) measure to the actor center and must
+	// still be able to stand close enough to hit it.
+	const float StepR = bPhx ? 85.0f : 75.0f;
+	const float StepTop = bPhx ? 70.0f : 65.0f;
+	if (BaseMesh && BaseMesh->GetStaticMesh())
+	{
+		const FVector Ext = BaseMesh->GetStaticMesh()->GetBounds().BoxExtent;
+		// Root is centered on the actor, so it spans [-H/2, H/2] relative
+		const float H = FMath::Max(2.0f * (StepTop + G), 20.0f);
+		const FVector RootScale(StepR / Ext.X, StepR / Ext.Y, H / (2.0f * Ext.Z));
+		BaseMesh->SetRelativeScale3D(RootScale);
+		VisualRoot->SetRelativeScale3D(FVector(1.0f / RootScale.X, 1.0f / RootScale.Y, 1.0f / RootScale.Z));
+	}
+
+	// Silhouette (world units from the floor). The tower tops out around 850,
+	// the phoenix is squatter and wider with twin crystals.
+	const float SlabR    = bPhx ? 170.0f : 130.0f;
+	const float SkirtR   = bPhx ? 105.0f : 85.0f;
+	const float SkirtH   = bPhx ? 260.0f : 240.0f;
+	const float ColR     = bPhx ? 62.0f : 48.0f;
+	const float ColTop   = bPhx ? 500.0f : 560.0f;
+	const float CupR     = bPhx ? 175.0f : 130.0f;
+	const float CupH     = bPhx ? 130.0f : 110.0f;
+	const float RingR    = bPhx ? 180.0f : 135.0f;
+	const float RingH    = 22.0f;
+	const float GemZ     = bPhx ? 650.0f : 720.0f;
+	const float GemR     = bPhx ? 36.0f : 45.0f;
+	const float GemHalfH = bPhx ? 95.0f : 115.0f;
+	const float GemOrbit = bPhx ? 90.0f : 0.0f;
+	const float BarZ     = bPhx ? 830.0f : 900.0f;
+
+	Fit(SlabMesh, SlabR, G, bPhx ? 14.0f : 12.0f);
+	Fit(SkirtMesh, SkirtR, G + StepTop, SkirtH);
+	Fit(TowerMesh, ColR, G + StepTop, ColTop - StepTop);
+	Fit(ChaliceMesh, CupR, G + ColTop - CupH, CupH, /*bFlip*/ true);
+	Fit(PlatformMesh, RingR, G + ColTop, RingH);
+
+	// Crystals are two cones base to base, laid out around CrystalPivot (which
+	// Tick spins and bobs). A tower uses one centered gem, a phoenix two orbiting.
+	CrystalBaseZ = G + GemZ;
+	CrystalPivot->SetRelativeLocation(FVector(0.0f, 0.0f, CrystalBaseZ));
+	for (int32 Gem = 0; Gem < 2 && CrystalParts.Num() >= 4; Gem++)
+	{
+		const FVector2D XY(Gem == 0 ? GemOrbit : -GemOrbit, 0.0f);
+		Fit(CrystalParts[Gem * 2], GemR, 0.0f, GemHalfH, false, XY);
+		Fit(CrystalParts[Gem * 2 + 1], GemR, -GemHalfH, GemHalfH, true, XY);
+	}
+
+	if (HealthBarComp) HealthBarComp->SetRelativeLocation(FVector(0.0f, 0.0f, G + BarZ));
+
+	// Materials: neutral stone body, team trim (gold on a phoenix so the two
+	// structure types read apart), glowing team crystals.
+	StoneMID = MakeLitMID(this, StoneColor(bBlue));
+	TrimMID = MakeLitMID(this, bPhx ? FLinearColor(0.95f, 0.7f, 0.25f) : TeamColor(bBlue));
+	UMaterialInstanceDynamic* GlowMID = MakeGlowMID(this, TeamColor(bBlue) * 3.0f);
+	for (UStaticMeshComponent* C : { BaseMesh, TowerMesh, SlabMesh, SkirtMesh })
+	{
+		if (C && StoneMID) C->SetMaterial(0, StoneMID);
+	}
+	for (UStaticMeshComponent* C : { ChaliceMesh, PlatformMesh })
+	{
+		if (C && TrimMID) C->SetMaterial(0, TrimMID);
+	}
+	for (UStaticMeshComponent* C : CrystalParts)
+	{
+		if (C && GlowMID) C->SetMaterial(0, GlowMID);
+	}
+
+	SetRuinedLook(false);
+}
+
+void ASkylandersTower::SetRuinedLook(bool bRuined)
+{
+	const bool bBlue = (Team == ETowerTeam::Friendly);
+	if (StoneMID)
+	{
+		StoneMID->SetVectorParameterValue(FName("Color"),
+			bRuined ? FLinearColor(0.08f, 0.08f, 0.08f) : SkyStructVis::StoneColor(bBlue));
+	}
+	if (TrimMID)
+	{
+		TrimMID->SetVectorParameterValue(FName("Color"), bRuined ? FLinearColor(0.12f, 0.12f, 0.12f)
+			: (bIsPhoenix ? FLinearColor(0.95f, 0.7f, 0.25f) : SkyStructVis::TeamColor(bBlue)));
+	}
+	// Shell parts are always shown here; Die() hides a plain tower wholesale
+	for (UStaticMeshComponent* C : { BaseMesh, TowerMesh, SlabMesh, SkirtMesh, ChaliceMesh, PlatformMesh })
+	{
+		if (C) C->SetVisibility(true);
+	}
+	for (int32 i = 0; i < CrystalParts.Num(); i++)
+	{
+		// The second gem only exists on a phoenix
+		if (CrystalParts[i]) CrystalParts[i]->SetVisibility(!bRuined && (i < 2 || bIsPhoenix));
+	}
 }
