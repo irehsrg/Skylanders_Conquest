@@ -713,7 +713,7 @@ void ASkylandersTower::LayoutVisuals()
 	// structure types read apart), glowing team crystals.
 	StoneMID = MakeLitMID(this, StoneColor(bBlue));
 	TrimMID = MakeLitMID(this, bPhx ? FLinearColor(0.95f, 0.7f, 0.25f) : TeamColor(bBlue));
-	UMaterialInstanceDynamic* GlowMID = MakeGlowMID(this, TeamColor(bBlue) * 3.0f);
+	UMaterialInstanceDynamic* GlowMID = MakeGlowMID(this, TeamColor(bBlue) * 1.4f);
 	for (UStaticMeshComponent* C : { BaseMesh, TowerMesh, SlabMesh, SkirtMesh })
 	{
 		if (C && StoneMID) C->SetMaterial(0, StoneMID);

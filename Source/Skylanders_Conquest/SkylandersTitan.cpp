@@ -158,7 +158,7 @@ void ASkylandersTitan::Tick(float DeltaTime)
 	{
 		CoreShownVulnerable = bVuln ? 1 : 0;
 		const FLinearColor Team3 = SkyStructVis::TeamColor(Team == ETowerTeam::Friendly);
-		CoreMID->SetVectorParameterValue(FName("Color"), bVuln ? Team3 * 4.0f : Team3 * 0.6f);
+		CoreMID->SetVectorParameterValue(FName("Color"), bVuln ? Team3 * 1.8f : Team3 * 0.6f);
 	}
 	if (CorePivot)
 	{
@@ -604,7 +604,7 @@ void ASkylandersTitan::LayoutVisuals()
 	// Materials: neutral stone, team trim (capital/collar/upper plinth), glow
 	UMaterialInstanceDynamic* Stone = MakeLitMID(this, StoneColor(bBlue));
 	UMaterialInstanceDynamic* Trim = MakeLitMID(this, TeamColor(bBlue));
-	UMaterialInstanceDynamic* CapGlow = MakeGlowMID(this, TeamColor(bBlue) * 2.0f);
+	UMaterialInstanceDynamic* CapGlow = MakeGlowMID(this, TeamColor(bBlue) * 1.2f);
 	CoreMID = MakeGlowMID(this, TeamColor(bBlue) * 0.6f);
 	CoreShownVulnerable = -1; // Tick picks the real state on its first pass
 	for (UStaticMeshComponent* C : { BodyMesh, PlinthParts[0] })

@@ -47,6 +47,12 @@ played solo against bots. Networking is deliberately last.
 The character art is Activision's. This is a non-commercial fan project and the
 assets are used only to see what the game could look like.
 
+<p>
+<img src="docs/images/tower.png" width="32%" alt="A tower with its team crystal, lane dressing and the HUD">
+<img src="docs/images/shop.png" width="32%" alt="The in-match shop">
+<img src="docs/images/endscreen.png" width="32%" alt="The end-of-match results screen">
+</p>
+
 ## Controls
 
 | Input | Action |

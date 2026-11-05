@@ -244,7 +244,7 @@ void ASkylandersSpawnArea::LayoutVisuals()
 	}
 
 	UMaterialInstanceDynamic* Stone = MakeLitMID(this, StoneColor(bBlue));
-	UMaterialInstanceDynamic* Glow = MakeGlowMID(this, TeamColor(bBlue) * 3.0f);
+	UMaterialInstanceDynamic* Glow = MakeGlowMID(this, TeamColor(bBlue) * 1.4f);
 
 	// Six posts just outside the platform edge, rotated 30 deg so none sits on
 	// the +/-X axis the base path runs along. Solid, and small enough that the
