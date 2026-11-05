@@ -3,6 +3,7 @@
 #include "SkylandersHexCharacter.h"
 #include "SkylandersKillFeedWidget.h"
 #include "SkylandersAoEExplosion.h"
+#include "SkylandersSmokeTest.h"
 #include "SkylandersSimpleAnimInstance.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -295,6 +296,7 @@ void ASkylandersHexCharacter::UseAbility4()
 
 		int32 HitCount = DamageEnemiesInSphere(GetActorLocation(), NovaRadius, NovaDamage);
 		UE_LOG(LogTemp, Warning, TEXT("SKULL STORM hit %d targets for %.0f damage!"), HitCount, NovaDamage);
+		SKY_COUNT("player_ult");
 		if (HitCount > 0) AddCoins(HitCount * 5);
 	}
 }

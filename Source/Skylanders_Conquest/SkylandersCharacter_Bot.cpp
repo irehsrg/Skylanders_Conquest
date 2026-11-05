@@ -284,6 +284,14 @@ void ASkylandersCharacter::DriveAsBot(float DeltaTime)
 			Target ? *Target->GetName() : TEXT("none"), Target ? TargetDist : 0.0f, BotPath.Num());
 	}
 
+	// Ground-aimed casts land on the target (read when the press is released
+	// next tick); with nothing to fight, fall back to the normal crosshair aim
+	bBotHasGroundAim = !bBotRetreating && Target != nullptr;
+	if (bBotHasGroundAim)
+	{
+		BotGroundAimPoint = Target->GetActorLocation();
+	}
+
 	if (bBotRetreating || !Target) return;
 
 	// ---- Shoot whenever a shot can reach (FireProjectile rate-limits itself).

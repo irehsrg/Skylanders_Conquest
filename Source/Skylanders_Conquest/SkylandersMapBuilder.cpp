@@ -8,6 +8,7 @@
 #include "SkylandersSpawnArea.h"
 #include "SkylandersEnemyGod.h"
 #include "SkylandersTelemetry.h"
+#include "SkylandersGameInstance.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -446,9 +447,38 @@ void ASkylandersMapBuilder::BuildMap()
 	SpawnGod(FVector(8000, 700, 100), ETowerTeam::Enemy, TEXT("Cynder"), TEXT("Cynder"), EGodBuildArchetype::Tank);
 	SpawnGod(FVector(8000, -700, 100), ETowerTeam::Enemy, TEXT("Chompy Mage"), TEXT("ChompyMage"), EGodBuildArchetype::Bruiser);
 
-	// Blue team (AI allies) near the blue base (-X), fighting alongside the player
-	SpawnGod(FVector(-8000, 700, 100), ETowerTeam::Friendly, TEXT("Spyro"), TEXT("Spyro"), EGodBuildArchetype::Bruiser);
-	SpawnGod(FVector(-8000, -700, 100), ETowerTeam::Friendly, TEXT("Stealth Elf"), TEXT("StealthElf"), EGodBuildArchetype::Assassin);
+	// Blue team (AI allies) near the blue base (-X), fighting alongside the player.
+	// The two allies come from a pool in priority order, skipping whichever god
+	// the player picked so the same Skylander never shows up twice on blue.
+	// Model keys match the FGodModelDef table in SkylandersEnemyGod.cpp, and the
+	// pool's IDs match the character-select IDs (Trigger Happy has no AI model,
+	// so picking him excludes nothing).
+	struct FAllyPick
+	{
+		const TCHAR* ID;
+		const TCHAR* DisplayName;
+		EGodBuildArchetype Archetype;
+	};
+	static const FAllyPick AllyPool[] =
+	{
+		{ TEXT("Spyro"),      TEXT("Spyro"),       EGodBuildArchetype::Bruiser },
+		{ TEXT("StealthElf"), TEXT("Stealth Elf"), EGodBuildArchetype::Assassin },
+		{ TEXT("Hex"),        TEXT("Hex"),         EGodBuildArchetype::Assassin },
+		{ TEXT("TreeRex"),    TEXT("Tree Rex"),    EGodBuildArchetype::Tank },
+	};
+	FName PlayerPick = NAME_None;
+	if (const USkylandersGameInstance* GI = Cast<USkylandersGameInstance>(World->GetGameInstance()))
+	{
+		PlayerPick = GI->SelectedCharacterID;
+	}
+	const FVector AllySpawns[] = { FVector(-8000, 700, 100), FVector(-8000, -700, 100) };
+	int32 AlliesSpawned = 0;
+	for (const FAllyPick& Pick : AllyPool)
+	{
+		if (AlliesSpawned >= UE_ARRAY_COUNT(AllySpawns)) break;
+		if (PlayerPick == FName(Pick.ID)) continue;
+		SpawnGod(AllySpawns[AlliesSpawned++], ETowerTeam::Friendly, Pick.DisplayName, Pick.ID, Pick.Archetype);
+	}
 
 	// ========================================================================
 	// INITIAL SPAWN: the GameMode drops the pawn at the .umap PlayerStart, which

@@ -5,6 +5,7 @@
 #include "SkylandersBuffCamp.h"
 #include "SkylandersCharacter.h"
 #include "SkylandersEnemyGod.h"
+#include "SkylandersGameInstance.h"
 #include "SkylandersMinion.h"
 #include "SkylandersTitan.h"
 #include "SkylandersTower.h"
@@ -110,6 +111,14 @@ bool USkylandersSmokeTestSubsystem::Tick(float DeltaTime)
 	// abilities and leveling actually get exercised (see SkylandersCharacter_Bot.cpp).
 	if (ASkylandersCharacter* P = Cast<ASkylandersCharacter>(UGameplayStatics::GetPlayerPawn(World, 0)))
 	{
+		if (CharacterName.IsEmpty())
+		{
+			CharacterName = P->CharacterName.IsEmpty() ? P->GetClass()->GetName() : P->CharacterName;
+			const USkylandersGameInstance* GI = Cast<USkylandersGameInstance>(GetGameInstance());
+			CharacterID = GI ? GI->SelectedCharacterID.ToString() : FString();
+			UE_LOG(LogTemp, Warning, TEXT("[Smoke] character=%s (id=%s, class=%s)"),
+				*CharacterName, *CharacterID, *P->GetClass()->GetName());
+		}
 		P->DriveAsBot(DeltaTime);
 	}
 	if (SinceSample >= 1.0f)
@@ -242,6 +251,7 @@ void USkylandersSmokeTestSubsystem::Finish()
 
 	FString Json = TEXT("{\n");
 	Json += FString::Printf(TEXT("  \"duration\": %.0f,\n  \"passed\": %s,\n"), DurationSeconds, Failures.Num() == 0 ? TEXT("true") : TEXT("false"));
+	Json += FString::Printf(TEXT("  \"character\": \"%s\",\n  \"character_id\": \"%s\",\n"), *JsonEscape(CharacterName), *JsonEscape(CharacterID));
 	Json += TEXT("  \"failures\": [");
 	for (int32 i = 0; i < Failures.Num(); i++)
 	{

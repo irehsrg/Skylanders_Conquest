@@ -6,8 +6,14 @@ Launches UnrealEditor-Cmd on the Joust map with -nullrhi and -SkySmoke=<seconds>
 prints a compact summary of Saved/SmokeTest/report.json plus the last [Smoke]
 log lines, and exits with the game's exit code (0 = pass).
 
-    python Scripts/smoke_test.py               # 120 s match
+    python Scripts/smoke_test.py                      # 120 s match as Trigger Happy
     python Scripts/smoke_test.py --seconds 60
+    python Scripts/smoke_test.py --character Spyro    # play a specific kit
+    python Scripts/smoke_test.py --all-characters     # every playable kit, back to back
+
+--character passes -SkyCharacter=<ID> (USkylandersGameInstance::Init), using the
+character-select IDs. --all-characters runs each kit for --seconds, prints one
+summary line per character, and exits non-zero if any run failed.
 """
 
 import argparse
@@ -23,21 +29,23 @@ UPROJECT = PROJECT_DIR / "Skylanders_Conquest.uproject"
 REPORT = PROJECT_DIR / "Saved" / "SmokeTest" / "report.json"
 LOG = PROJECT_DIR / "Saved" / "Logs" / "smoke.log"
 STARTUP_GRACE_S = 180  # engine boot + shader/asset load before the match clock starts
+# Character-select IDs of every playable kit (FSkylanderSelectEntry::GetRoster)
+ALL_CHARACTERS = ["TriggerHappy", "Hex", "TreeRex", "Spyro"]
+SUMMARY_COUNTERS = ["player_shot", "player_ability", "player_ult", "player_damage", "player_death"]
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--seconds", type=int, default=120, help="match length to simulate (default 120)")
-    ap.add_argument("--map", default="Joust", help="map to load (default Joust)")
-    args = ap.parse_args()
-
+def run_one(seconds: int, map_name: str, character: str | None) -> tuple[int, dict | None]:
+    """Runs one headless match; prints the detailed result and returns (exit code, report)."""
     if REPORT.exists():
         REPORT.unlink()  # never report a stale result
 
-    cmd = [str(ENGINE_CMD), str(UPROJECT), args.map, "-game", "-nullrhi", "-unattended", "-nosound",
-           "-nosplash", "-NoLiveCoding", f"-SkySmoke={args.seconds}", "-log=smoke.log"]
-    limit = args.seconds + STARTUP_GRACE_S
-    print(f"[smoke] running {args.map} headless for {args.seconds} s (timeout {limit} s)...", flush=True)
+    cmd = [str(ENGINE_CMD), str(UPROJECT), map_name, "-game", "-nullrhi", "-unattended", "-nosound",
+           "-nosplash", "-NoLiveCoding", f"-SkySmoke={seconds}", "-log=smoke.log"]
+    if character:
+        cmd.append(f"-SkyCharacter={character}")
+    limit = seconds + STARTUP_GRACE_S
+    who = f" as {character}" if character else ""
+    print(f"[smoke] running {map_name}{who} headless for {seconds} s (timeout {limit} s)...", flush=True)
     start = time.monotonic()
     proc = subprocess.Popen(cmd, cwd=str(PROJECT_DIR), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -49,9 +57,12 @@ def main() -> int:
         code = 124
     print(f"[smoke] exit={code} after {time.monotonic() - start:.0f} s")
 
+    report = None
     if REPORT.exists():
         try:
             r = json.loads(REPORT.read_text(encoding="utf-8"))
+            report = r
+            print(f"character: {r.get('character')} (id {r.get('character_id')})")
             print(f"passed:   {r.get('passed')}")
             fails = r.get("failures") or []
             print(f"failures: {'none' if not fails else ''}")
@@ -78,9 +89,47 @@ def main() -> int:
             for l in lines[-5:]:
                 print("  " + l)
 
-    if code == 0 and not REPORT.exists():
-        return 1  # exited cleanly without running the test: treat as failure
-    return code
+    if code == 0 and report is None:
+        return 1, None  # exited cleanly without running the test: treat as failure
+    if code == 0 and character and report.get("character_id") != character:
+        print(f"[smoke] asked for {character} but the run played {report.get('character_id')}")
+        return 1, report
+    return code, report
+
+
+def summary_line(character: str, code: int, report: dict | None) -> str:
+    status = "PASS" if code == 0 else f"FAIL(exit={code})"
+    if report is None:
+        return f"{character:<13} {status}  no report"
+    c = report.get("counters") or {}
+    counts = " ".join(f"{k}={c.get(k, 0)}" for k in SUMMARY_COUNTERS)
+    fails = report.get("failures") or []
+    tail = f"  failures: {'; '.join(fails)}" if fails else ""
+    return f"{character:<13} {status}  played={report.get('character')}  {counts}{tail}"
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--seconds", type=int, default=120, help="match length to simulate (default 120)")
+    ap.add_argument("--map", default="Joust", help="map to load (default Joust)")
+    group = ap.add_mutually_exclusive_group()
+    group.add_argument("--character", help="character-select ID to play (TriggerHappy, Hex, TreeRex, Spyro)")
+    group.add_argument("--all-characters", action="store_true", help="run every playable kit back to back")
+    args = ap.parse_args()
+
+    if not args.all_characters:
+        code, _ = run_one(args.seconds, args.map, args.character)
+        return code
+
+    results = []
+    for ch in ALL_CHARACTERS:
+        print(f"\n========== {ch} ==========", flush=True)
+        code, report = run_one(args.seconds, args.map, ch)
+        results.append((ch, code, report))
+    print("\n========== summary ==========")
+    for ch, code, report in results:
+        print(summary_line(ch, code, report))
+    return 0 if all(code == 0 for _, code, _ in results) else 1
 
 
 if __name__ == "__main__":

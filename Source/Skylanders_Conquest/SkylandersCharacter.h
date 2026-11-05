@@ -616,6 +616,11 @@ protected:
 	FVector BotPathGoal = FVector::ZeroVector;
 	float BotRepathTimer = 0.0f;
 	float BotNextCastTime = 0.0f;   // throttles cast attempts that get refused
+	// Where the bot wants ground-aimed abilities to land. The camera trace in
+	// GetGroundAimPoint follows the mouse; the bot has none (its camera always
+	// looks at the ground a step ahead), so it hands the aim point in directly.
+	bool bBotHasGroundAim = false;
+	FVector BotGroundAimPoint = FVector::ZeroVector;
 
 protected:
 	// Input callbacks

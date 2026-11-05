@@ -4,6 +4,7 @@
 #include "SkylandersKillFeedWidget.h"
 #include "SkylandersTower.h"
 #include "SkylandersTitan.h"
+#include "SkylandersSmokeTest.h"
 #include "SkylandersSimpleAnimInstance.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -373,4 +374,5 @@ void ASkylandersTreeRexCharacter::FinishTitanCharge()
 	}
 
 	UE_LOG(LogTemp, Warning, TEXT("TITAN'S WRATH smash hit %d targets for %.0f damage!"), HitCount, WrathDamage);
+	SKY_COUNT("player_ult"); // the smash is the ult landing (the charge before it is just travel)
 }

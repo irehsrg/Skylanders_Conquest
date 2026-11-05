@@ -86,7 +86,13 @@ FVector ASkylandersCharacter::GetGroundAimPoint(float MaxRange) const
 	QueryParams.AddIgnoredActor(this);
 
 	FVector GroundPoint;
-	if (GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECC_Visibility, QueryParams))
+	if (bBotHasGroundAim)
+	{
+		// Smoke-test bot: aim at its target instead of the crosshair (still
+		// clamped to the ability's range below like a player's aim)
+		GroundPoint = BotGroundAimPoint;
+	}
+	else if (GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECC_Visibility, QueryParams))
 	{
 		GroundPoint = HitResult.Location;
 	}

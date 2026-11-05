@@ -70,4 +70,9 @@ private:
 	};
 	TArray<FSample> Samples;
 	int32 MaxMinionsSeen = 0;
+
+	// Which kit the player pawn is running (logged once at match start and
+	// written to the report, so a run proves which character it exercised)
+	FString CharacterName;
+	FString CharacterID;
 };

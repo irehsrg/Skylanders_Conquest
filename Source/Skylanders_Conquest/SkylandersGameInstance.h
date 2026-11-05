@@ -18,7 +18,11 @@ class SKYLANDERS_CONQUEST_API USkylandersGameInstance : public UGameInstance
 	GENERATED_BODY()
 
 public:
-	// "TriggerHappy" (default), "Hex", or "TreeRex"
+	// Honors -SkyCharacter=<ID> on the command line so headless runs (the smoke
+	// test) can pick a kit without going through the menu.
+	virtual void Init() override;
+
+	// "TriggerHappy" (default), "Hex", "TreeRex", or "Spyro"
 	UPROPERTY(BlueprintReadWrite, Category = "Character Select")
 	FName SelectedCharacterID = TEXT("TriggerHappy");
 

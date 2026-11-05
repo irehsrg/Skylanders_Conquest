@@ -89,6 +89,25 @@ const TArray<FSkylanderSelectEntry>& FSkylanderSelectEntry::GetRoster()
 		TR.CaptureDistance = 420.0f;
 		TR.AimHeight = 80.0f;
 		Roster.Add(TR);
+
+		FSkylanderSelectEntry Spyro;
+		Spyro.ID = TEXT("Spyro");
+		Spyro.DisplayName = TEXT("SPYRO");
+		Spyro.Role = TEXT("Purple Dragon  ·  Bruiser");
+		Spyro.Accent = FLinearColor(0.55f, 0.30f, 0.95f, 1.0f);
+		Spyro.StatLine = TEXT("HP 172   MP 130   ·   Mobile brawler, fire and charges");
+		Spyro.AutoAttack = TEXT("Flameball — lobbed fireballs at a steady clip.");
+		Spyro.Abilities[0] = TEXT("Flame Breath|Breathe a cone of fire in front of Spyro. (220% power)");
+		Spyro.Abilities[1] = TEXT("Charge|Horns down: dash forward, ramming everything in the path, then +25% speed for 2s. (200% power)");
+		Spyro.Abilities[2] = TEXT("Comet Dash|Leap to the target area and crash down on it. (280% power)");
+		Spyro.Abilities[3] = TEXT("Daybringer Flame  [ULT]|Rear up for a second, then scorch a huge frontal cone. (900% power)");
+		Spyro.MeshPath = TEXT("/Game/Characters/Spyro/Models/Spyro");
+		Spyro.IdleAnimPath = TEXT("/Game/Characters/Spyro/Animations/drive_modswap_pose01");
+		Spyro.MeshScale = 0.52f;    // Same scale as the in-match model (AI table / player pawn)
+		Spyro.MeshZOffset = 0.0f;   // Animations put the ground at the skeleton origin
+		Spyro.CaptureDistance = 240.0f; // Small quadruped: pull the camera in
+		Spyro.AimHeight = 25.0f;
+		Roster.Add(Spyro);
 	}
 	return Roster;
 }
@@ -174,10 +193,11 @@ void USkylandersCharacterSelectWidget::NativeOnInitialized()
 		GS->SetVerticalAlignment(VAlign_Fill);
 		TileButtons.Add(Tile);
 	}
-	// AddDynamic needs literal function names — bind the three roster slots
+	// AddDynamic needs literal function names — bind each roster slot
 	if (TileButtons.Num() > 0) TileButtons[0]->OnClicked.AddDynamic(this, &USkylandersCharacterSelectWidget::OnTile0);
 	if (TileButtons.Num() > 1) TileButtons[1]->OnClicked.AddDynamic(this, &USkylandersCharacterSelectWidget::OnTile1);
 	if (TileButtons.Num() > 2) TileButtons[2]->OnClicked.AddDynamic(this, &USkylandersCharacterSelectWidget::OnTile2);
+	if (TileButtons.Num() > 3) TileButtons[3]->OnClicked.AddDynamic(this, &USkylandersCharacterSelectWidget::OnTile3);
 
 	// Locked placeholder tiles to fill the grid (future roster)
 	for (int32 i = Roster.Num(); i < 6; i++)
@@ -379,6 +399,7 @@ void USkylandersCharacterSelectWidget::UpdateTileHighlights()
 void USkylandersCharacterSelectWidget::OnTile0() { SelectCharacter(FSkylanderSelectEntry::GetRoster()[0].ID); }
 void USkylandersCharacterSelectWidget::OnTile1() { SelectCharacter(FSkylanderSelectEntry::GetRoster()[1].ID); }
 void USkylandersCharacterSelectWidget::OnTile2() { SelectCharacter(FSkylanderSelectEntry::GetRoster()[2].ID); }
+void USkylandersCharacterSelectWidget::OnTile3() { SelectCharacter(FSkylanderSelectEntry::GetRoster()[3].ID); }
 
 void USkylandersCharacterSelectWidget::OnLockIn()
 {

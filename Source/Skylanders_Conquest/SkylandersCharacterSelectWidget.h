@@ -69,6 +69,7 @@ private:
 	UFUNCTION() void OnTile0();
 	UFUNCTION() void OnTile1();
 	UFUNCTION() void OnTile2();
+	UFUNCTION() void OnTile3();
 	UFUNCTION() void OnLockIn();
 	UFUNCTION() void OnBack();
 
